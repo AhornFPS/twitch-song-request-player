@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.1.0 - 2026-03-15
+
 - Added "Compact" overlay theme: slim ticker layout with stacked crimson/green/teal badges, inline UP NEXT queue bar, and artwork-left design from community mockup.
 - Added "Winamp Classic" overlay theme: beveled chrome borders, blue Winamp title bar, recessed LCD green track display, segmented EQ-style progress bar, and flat playlist queue rows.
 - Fixed saved OBS overlay themes and custom ports being overwritten by built-in defaults when no environment override was set.
