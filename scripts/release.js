@@ -16,12 +16,36 @@ const packageJsonPath = path.join(rootDir, "package.json");
 const changelogPath = path.join(rootDir, "CHANGELOG.md");
 const defaultArtifactPath = path.join(rootDir, "dist", "TwitchSongRequestPlayer.exe");
 
+function quoteWindowsArg(value) {
+  const stringValue = String(value ?? "");
+  if (stringValue.length === 0) {
+    return "\"\"";
+  }
+
+  if (!/[\s"]/u.test(stringValue)) {
+    return stringValue;
+  }
+
+  return `"${stringValue.replace(/"/g, '\\"')}"`;
+}
+
 function run(command, args, options = {}) {
-  const result = execFileSync(command, args, {
+  const execOptions = {
     cwd: rootDir,
     stdio: options.captureOutput ? ["ignore", "pipe", "pipe"] : "inherit",
     encoding: options.captureOutput ? "utf8" : undefined
-  });
+  };
+
+  const shouldUseCmdShim =
+    process.platform === "win32" && /\.(cmd|bat)$/i.test(String(command));
+
+  const result = shouldUseCmdShim
+    ? execFileSync(
+        "cmd.exe",
+        ["/d", "/s", "/c", [command, ...args].map(quoteWindowsArg).join(" ")],
+        execOptions
+      )
+    : execFileSync(command, args, execOptions);
 
   return options.captureOutput ? result.trim() : "";
 }
