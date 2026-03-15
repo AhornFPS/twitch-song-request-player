@@ -1,0 +1,44 @@
+:root,
+:root[data-theme="aurora"] {
+  --panel: rgba(7, 14, 28, 0.88);
+  --panel-border: rgba(120, 229, 201, 0.3);
+  --panel-highlight: rgba(84, 151, 255, 0.2);
+  --text: #f4f7fb;
+  --muted: #98abc2;
+  --accent: #78e5c9;
+  --accent-strong: #ffcb77;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-strong: rgba(255, 255, 255, 0.12);
+  --overlay-card-start: rgba(12, 24, 44, 0.87);
+  --overlay-card-end: rgba(7, 14, 28, 0.89);
+  --overlay-orb-left: rgba(120, 229, 201, 0.2);
+  --overlay-orb-right: rgba(84, 151, 255, 0.22);
+  --overlay-artwork-start: rgba(35, 57, 85, 0.95);
+  --overlay-artwork-end: rgba(13, 23, 40, 0.95);
+  --overlay-queue-item-start: rgba(255, 255, 255, 0.12);
+  --overlay-queue-item-end: rgba(255, 255, 255, 0.06);
+  --overlay-progress-end: #8dc8ff;
+}
+
+:root[data-theme="sunset"] {
+  --panel: rgba(34, 14, 10, 0.9);
+  --panel-border: rgba(255, 168, 115, 0.28);
+  --panel-highlight: rgba(255, 207, 128, 0.18);
+  --text: #fff6ee;
+  --muted: #d0b3a2;
+  --accent: #ffad66;
+  --accent-strong: #ffe27a;
+  --shadow: 0 18px 50px rgba(0, 0, 0, 0.58);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.1);
+  --overlay-card-start: rgba(61, 26, 15, 0.92);
+  --overlay-card-end: rgba(24, 9, 6, 0.94);
+  --overlay-orb-left: rgba(255, 173, 102, 0.22);
+  --overlay-orb-right: rgba(255, 95, 72, 0.2);
+  --overlay-artwork-start: rgba(89, 42, 24, 0.96);
+  --overlay-artwork-end: rgba(27, 11, 7, 0.95);
+  --overlay-queue-item-start: rgba(255, 214, 184, 0.14);
+  --overlay-queue-item-end: rgba(255, 255, 255, 0.05);
+  --overlay-progress-end: #ffd47f;
+}

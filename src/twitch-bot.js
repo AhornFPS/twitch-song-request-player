@@ -35,14 +35,8 @@ export class TwitchBot {
       },
       channels: [config.twitch.channel]
     });
-
-    this.playerController.onTrackPlayback(async () => {
-      await this.announceNowPlaying(this.playerController.getCurrentTrack());
-    });
-  }
-
-  async connect() {
-    this.client.on("message", async (channel, tags, message, self) => {
+    this.isConnected = false;
+    this.handleIncomingMessage = async (channel, tags, message, self) => {
       if (self || !message.startsWith("!")) {
         return;
       }
@@ -53,11 +47,37 @@ export class TwitchBot {
         console.error(error);
         await this.reply(channel, `Error: ${error.message}`);
       }
-    });
+    };
 
+    this.removeTrackPlaybackListener = this.playerController.onTrackPlayback(async () => {
+      await this.announceNowPlaying(this.playerController.getCurrentTrack());
+    });
+  }
+
+  async connect() {
+    if (this.isConnected) {
+      return;
+    }
+
+    this.client.removeAllListeners?.("message");
+    this.client.on?.("message", this.handleIncomingMessage);
     await this.client.connect();
+    this.isConnected = true;
     this.channelInfo.logConfigurationState();
     console.log(`Connected to Twitch chat for #${this.config.twitch.channel}`);
+  }
+
+  async disconnect() {
+    this.client.removeAllListeners?.("message");
+    this.removeTrackPlaybackListener?.();
+    this.removeTrackPlaybackListener = null;
+
+    if (!this.isConnected) {
+      return;
+    }
+
+    await this.client.disconnect?.();
+    this.isConnected = false;
   }
 
   async handleCommand(channel, tags, message) {

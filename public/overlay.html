@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en" data-theme="aurora">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Twitch Song Request Player</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/themes.css?v=20260315p" />
+    <link rel="stylesheet" href="/styles.css?v=20260315p" />
+    <script>
+      window.__playerLog = function(level, message, details) {
+        try {
+          fetch("/api/client-log", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              level: level,
+              message: message,
+              details: details || null
+            })
+          });
+        } catch (_error) {
+        }
+      };
+
+      window.addEventListener("error", function(event) {
+        window.__playerLog("error", "Window error", {
+          message: event.message,
+          filename: event.filename,
+          lineno: event.lineno,
+          colno: event.colno
+        });
+      });
+
+      window.addEventListener("unhandledrejection", function(event) {
+        window.__playerLog("error", "Unhandled promise rejection", {
+          reason: String(event.reason)
+        });
+      });
+    </script>
+  </head>
+  <body>
+    <main class="overlay-shell">
+      <section id="player-card" class="player-card">
+        <div class="player-card__glow"></div>
+        <div class="player-card__top">
+          <div class="player-card__media">
+            <img id="artwork-image" class="artwork-image" alt="Track artwork" />
+            <div id="artwork-fallback" class="artwork-fallback">SR</div>
+          </div>
+
+          <div class="player-card__main">
+            <div class="player-card__header">
+              <div class="player-card__copy">
+                <h1 id="current-title">
+                  <span id="current-title-marquee" class="current-title__marquee">
+                    <span id="current-title-text" class="current-title__text">Waiting for a track</span>
+                    <span class="current-title__gap" aria-hidden="true"></span>
+                    <span id="current-title-text-clone" class="current-title__text current-title__clone" aria-hidden="true">Waiting for a track</span>
+                  </span>
+                </h1>
+              </div>
+              <div class="player-card__status">
+                <div class="status-pill">
+                  <span class="status-pill__dot"></span>
+                  <span id="queue-count">0 queued</span>
+                </div>
+                <div class="badge-row">
+                  <div id="provider-badge" class="provider-badge">Idle</div>
+                  <div id="save-badge" class="save-badge save-badge--idle">Unsaved</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="timeline">
+              <span id="current-time" class="timeline__time">0:00</span>
+              <div class="timeline__track">
+                <div id="progress-fill" class="timeline__fill"></div>
+              </div>
+              <span id="duration-time" class="timeline__time">0:00</span>
+            </div>
+
+          </div>
+        </div>
+
+        <aside class="queue-panel">
+          <div class="queue-panel__header">
+            <p class="queue-label">Up next</p>
+          </div>
+          <ul id="queue-list" class="queue-list"></ul>
+        </aside>
+      </section>
+    </main>
+
+    <section class="player-surface">
+      <div id="youtube-player" class="player-slot"></div>
+      <iframe
+        id="soundcloud-player"
+        class="player-slot"
+        title="SoundCloud player"
+        allow="autoplay"
+      ></iframe>
+    </section>
+
+    <script
+      src="/socket.io/socket.io.js"
+      onerror="window.__playerLog('error', 'Failed to load /socket.io/socket.io.js')"
+    ></script>
+    <script
+      src="https://www.youtube.com/iframe_api"
+      onerror="window.__playerLog('error', 'Failed to load YouTube iframe API')"
+    ></script>
+    <script
+      src="https://w.soundcloud.com/player/api.js"
+      onerror="window.__playerLog('error', 'Failed to load SoundCloud widget API')"
+    ></script>
+    <script src="/app.js?v=20260315m"></script>
+  </body>
+</html>

@@ -53,11 +53,16 @@ let soundCloudDurationProbeTimer = null;
 let youtubeAutoplayRetryTimer = null;
 let youtubeApiReady = false;
 let youtubePlayerReady = false;
+let youtubeEndedTrackId = "";
 let displayedTrackId = null;
 let trackExitTimer = null;
 let trackEnterTimer = null;
 let titleMarqueeFrame = null;
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
+
+function applyOverlayTheme(themeId) {
+  document.documentElement.dataset.theme = themeId || "aurora";
+}
 
 function scheduleTitleMarqueeUpdate() {
   if (titleMarqueeFrame) {
@@ -278,11 +283,20 @@ function createYouTubePlayer() {
           event.data === window.YT.PlayerState.UNSTARTED ||
           event.data === window.YT.PlayerState.CUED
         ) {
+          if (youtubeEndedTrackId && youtubeEndedTrackId === currentTrackId) {
+            sendClientLog("info", "Ignoring YouTube recovery after track end", {
+              currentTrackId,
+              state: event.data
+            });
+            return;
+          }
+
           const currentVideoId = extractYouTubeVideoId(activeTrack?.url ?? "");
           forceYoutubePlayback(currentVideoId);
         }
 
         if (event.data === window.YT.PlayerState.ENDED) {
+          youtubeEndedTrackId = currentTrackId ?? "";
           stopYouTubeAutoplayRetry();
           stopPlaybackTimer();
           emitStatus("ended");
@@ -568,6 +582,10 @@ function updateState(state) {
     });
   }
 
+  if (typeof state.theme === "string" && state.theme) {
+    applyOverlayTheme(state.theme);
+  }
+
   if (displayedTrackId !== null && currentTrack?.id !== displayedTrackId) {
     animateUiToState(state);
   } else {
@@ -713,6 +731,7 @@ function emitStatus(status, extra = {}) {
 }
 
 function resetPlayers() {
+  youtubeEndedTrackId = "";
   stopPlaybackTimer();
   stopYouTubeAutoplayRetry();
   stopSoundCloudDurationProbe();
@@ -962,6 +981,9 @@ if (socket) {
   socket.on("connect_error", () => {
     sendClientLog("error", "Socket connection error");
     handleSocketDisconnect();
+  });
+  socket.on("app:settings", (payload) => {
+    applyOverlayTheme(payload?.theme);
   });
 } else {
   sendClientLog("warn", "Socket.IO client was not available in the browser source");

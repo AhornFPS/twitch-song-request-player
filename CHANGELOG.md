@@ -4,6 +4,21 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Changed the desktop GUI overlay theme picker to a dropdown that only controls the OBS player theme, not the GUI itself.
+- Fixed automatic YouTube-to-SoundCloud transitions so a finished YouTube track does not restart and overlap the next SoundCloud song.
+- Added a native desktop GUI for the main program so settings and credentials can be managed without a terminal window.
+- Added saved OBS overlay theme selection from the desktop GUI for future player theme variants.
+- Fixed the desktop GUI overlay theme cards so they align correctly and preview the selected theme immediately.
+- Moved the OBS Browser Source render to `/overlay` so the main app page can stay dedicated to program controls.
+- Added automatic Twitch chat reconnects after saving updated credentials, with restart notices when the local port changes.
+- Fixed the desktop app appearing to do nothing on launch by opening the GUI before Twitch startup finishes in the background.
+- Fixed the portable desktop app reading `settings.json` from a temporary extraction folder instead of next to the `.exe`.
+- Improved portable runtime path detection so packaged desktop builds keep using the real launch folder for `settings.json` and `playlist.csv`.
+- Fixed packaged desktop launches from other working directories preferring a stray `playlist.csv` over the saved `settings.json` beside the `.exe`.
+- Reduced the desktop GUI to a single copyable OBS overlay URL instead of showing extra app URLs.
+- Fixed the desktop GUI Twitch status badge so it refreshes after the bot finishes connecting in the background.
+- Fixed the Windows desktop app leaving the OBS player service running after the GUI window was closed.
+
 ## 1.0.3 - 2026-03-15
 
 - Fixed scrolling marquee text not working in the OBS overlay.

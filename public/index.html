@@ -3,123 +3,163 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Twitch Song Request Player</title>
+    <title>Twitch Song Request Player Control Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=20260315m" />
-    <script>
-      window.__playerLog = function(level, message, details) {
-        try {
-          fetch("/api/client-log", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              level: level,
-              message: message,
-              details: details || null
-            })
-          });
-        } catch (_error) {
-        }
-      };
-
-      window.addEventListener("error", function(event) {
-        window.__playerLog("error", "Window error", {
-          message: event.message,
-          filename: event.filename,
-          lineno: event.lineno,
-          colno: event.colno
-        });
-      });
-
-      window.addEventListener("unhandledrejection", function(event) {
-        window.__playerLog("error", "Unhandled promise rejection", {
-          reason: String(event.reason)
-        });
-      });
-    </script>
+    <link rel="stylesheet" href="/dashboard.css?v=20260315o" />
   </head>
   <body>
-    <main class="overlay-shell">
-      <section id="player-card" class="player-card">
-        <div class="player-card__glow"></div>
-        <div class="player-card__top">
-          <div class="player-card__media">
-            <img id="artwork-image" class="artwork-image" alt="Track artwork" />
-            <div id="artwork-fallback" class="artwork-fallback">SR</div>
+    <main class="dashboard-shell">
+      <section class="hero-panel">
+        <div class="hero-panel__copy">
+          <p class="eyebrow">Program GUI</p>
+          <h1>Twitch Song Request Player</h1>
+          <p class="hero-panel__lede">
+            Configure credentials, adjust runtime settings, and manage the OBS overlay URL from one place.
+          </p>
+        </div>
+        <div class="hero-panel__status">
+          <div class="hero-stat">
+            <span class="hero-stat__label">Twitch</span>
+            <span id="twitch-status-pill" class="status-pill status-pill--idle">Waiting</span>
           </div>
-
-          <div class="player-card__main">
-            <div class="player-card__header">
-              <div class="player-card__copy">
-                <h1 id="current-title">
-                  <span id="current-title-marquee" class="current-title__marquee">
-                    <span id="current-title-text" class="current-title__text">Waiting for a track</span>
-                    <span class="current-title__gap" aria-hidden="true"></span>
-                    <span id="current-title-text-clone" class="current-title__text current-title__clone" aria-hidden="true">Waiting for a track</span>
-                  </span>
-                </h1>
-              </div>
-              <div class="player-card__status">
-                <div class="status-pill">
-                  <span class="status-pill__dot"></span>
-                  <span id="queue-count">0 queued</span>
-                </div>
-                <div class="badge-row">
-                  <div id="provider-badge" class="provider-badge">Idle</div>
-                  <div id="save-badge" class="save-badge save-badge--idle">Unsaved</div>
-                </div>
-              </div>
-            </div>
-
-            <div class="timeline">
-              <span id="current-time" class="timeline__time">0:00</span>
-              <div class="timeline__track">
-                <div id="progress-fill" class="timeline__fill"></div>
-              </div>
-              <span id="duration-time" class="timeline__time">0:00</span>
-            </div>
-
+          <div class="hero-stat">
+            <span class="hero-stat__label">Server</span>
+            <span id="server-port-pill" class="status-pill status-pill--accent">Port 3000</span>
           </div>
         </div>
+      </section>
 
-        <aside class="queue-panel">
-          <div class="queue-panel__header">
-            <p class="queue-label">Up next</p>
+      <section class="dashboard-grid">
+        <form id="settings-form" class="panel settings-panel">
+          <div class="panel__header">
+            <div>
+              <p class="panel__eyebrow">Settings</p>
+              <h2>Credentials and runtime</h2>
+            </div>
+            <button id="save-button" class="primary-button" type="submit">Save settings</button>
           </div>
-          <ul id="queue-list" class="queue-list"></ul>
+
+          <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+          <div class="form-grid">
+            <label class="field">
+              <span class="field__label">Twitch channel</span>
+              <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
+            </label>
+
+            <label class="field">
+              <span class="field__label">Bot username</span>
+              <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
+            </label>
+
+            <label class="field field--full">
+              <span class="field__label">Bot OAuth token</span>
+              <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
+            </label>
+
+            <label class="field">
+              <span class="field__label">Twitch Client ID</span>
+              <input id="twitchClientId" name="twitchClientId" type="password" autocomplete="off" />
+            </label>
+
+            <label class="field">
+              <span class="field__label">Twitch Client Secret</span>
+              <input id="twitchClientSecret" name="twitchClientSecret" type="password" autocomplete="off" />
+            </label>
+
+            <label class="field field--full">
+              <span class="field__label">YouTube API key</span>
+              <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
+            </label>
+
+            <label class="field field--narrow">
+              <span class="field__label">Local port</span>
+              <input id="port" name="port" type="number" min="1" max="65535" />
+            </label>
+          </div>
+
+          <section class="theme-section">
+            <div class="theme-section__header">
+              <div>
+                <p class="panel__eyebrow">Player Theme</p>
+                <h3>Overlay player appearance</h3>
+              </div>
+              <p class="theme-section__note">Choose the theme used by the OBS player overlay. This does not change the desktop GUI.</p>
+            </div>
+            <div class="theme-select">
+              <label class="field" for="theme-select">
+                <span class="field__label">Player overlay theme</span>
+                <select id="theme-select" name="theme" aria-describedby="theme-description"></select>
+              </label>
+              <p id="theme-description" class="theme-select__description"></p>
+            </div>
+          </section>
+        </form>
+
+        <aside class="stack">
+          <section class="panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Runtime</p>
+                <h2>Status and OBS URL</h2>
+              </div>
+            </div>
+            <div class="runtime-list">
+              <div class="runtime-item">
+                <span class="runtime-item__label">Twitch status</span>
+                <span id="twitch-status-text" class="runtime-item__value">Waiting for configuration.</span>
+              </div>
+              <div class="runtime-item">
+                <span class="runtime-item__label">Overlay URL</span>
+                <div class="copy-row">
+                  <input id="overlay-url" class="copy-row__input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
+                </div>
+              </div>
+              <div class="runtime-item">
+                <span class="runtime-item__label">Restart notice</span>
+                <span id="restart-note" class="runtime-item__value">Port changes are applied immediately when you restart the app.</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">OBS</p>
+                <h2>Overlay output</h2>
+              </div>
+            </div>
+            <div class="overlay-note">
+              <p class="overlay-note__title">The overlay stays separate from the program GUI.</p>
+              <p class="overlay-note__body">
+                Use the overlay URL in OBS as your Browser Source. The dashboard does not embed or control that render directly, so the final output stays clean and untouched.
+              </p>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Playback</p>
+                <h2>Now playing</h2>
+              </div>
+            </div>
+            <div class="playback-card">
+              <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
+              <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <ul id="queue-preview" class="queue-preview"></ul>
+            </div>
+          </section>
         </aside>
       </section>
     </main>
 
-    <section class="player-surface">
-      <div id="youtube-player" class="player-slot"></div>
-      <iframe
-        id="soundcloud-player"
-        class="player-slot"
-        title="SoundCloud player"
-        allow="autoplay"
-      ></iframe>
-    </section>
-
-    <script
-      src="/socket.io/socket.io.js"
-      onerror="window.__playerLog('error', 'Failed to load /socket.io/socket.io.js')"
-    ></script>
-    <script
-      src="https://www.youtube.com/iframe_api"
-      onerror="window.__playerLog('error', 'Failed to load YouTube iframe API')"
-    ></script>
-    <script
-      src="https://w.soundcloud.com/player/api.js"
-      onerror="window.__playerLog('error', 'Failed to load SoundCloud widget API')"
-    ></script>
-    <script src="/app.js?v=20260315m"></script>
+    <script src="/dashboard.js?v=20260315o"></script>
   </body>
 </html>

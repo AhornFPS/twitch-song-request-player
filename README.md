@@ -10,7 +10,7 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
 - When the queue is empty, playback falls back to a random entry from `playlist.csv`.
 - When a queued song finishes normally, it is appended to `playlist.csv`.
 - If a YouTube song errors during playback, matching entries are removed from `playlist.csv`.
-- OBS only needs a browser source pointing at the web page served by this app.
+- The app serves a dashboard at `/` and the OBS Browser Source render at `/overlay`.
 
 ## Setup
 
@@ -35,10 +35,12 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
    npm start
    ```
 
-4. In OBS, add a Browser Source pointing to:
+4. The desktop app opens its own GUI window automatically.
+
+5. In OBS, add a Browser Source pointing to:
 
    ```text
-   http://localhost:3000
+   http://localhost:3000/overlay
    ```
 
 ## Commands
@@ -65,7 +67,9 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
    dist\TwitchSongRequestPlayer.exe
    ```
 
-3. On first launch, it will ask for:
+3. On first launch, the app opens its own desktop GUI window.
+
+4. Set or update:
 
    - Twitch channel
    - Twitch bot username
@@ -74,14 +78,27 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
    - Twitch app Client Secret (optional)
    - YouTube API key
    - Local port
+   - Dashboard theme
 
-4. Those values are saved in `settings.json` next to the `.exe`.
+5. Those values are saved in `settings.json` next to the `.exe`.
 
-5. To re-run the setup wizard later:
+6. Use the desktop window for program control and the `/overlay` URL in OBS.
+
+7. The local server still runs on the configured port, so the overlay URL remains:
 
    ```text
-   dist\TwitchSongRequestPlayer.exe --setup
+   http://localhost:3000/overlay
    ```
+
+## Server-Only Mode
+
+If you want to run the raw local web server without the desktop shell:
+
+```bash
+npm run start:server
+```
+
+That serves the dashboard at `http://localhost:3000/` and the OBS render at `http://localhost:3000/overlay`.
 
 ## Versioning And Releases
 
@@ -105,4 +122,4 @@ npm run release -- patch --dry-run
 - YouTube search uses the official YouTube Data API `search` endpoint with `videoCategoryId=10`.
 - If `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` are configured, outgoing chat messages are automatically suppressed while the Twitch category is `Music` or `DJs`.
 - This project keeps queue state in memory. Restarting the process clears the live queue but keeps `playlist.csv`.
-- The packaged `.exe` reads `public/` from the bundled app and reads/writes `playlist.csv` beside the executable.
+- The packaged `.exe` reads the bundled app assets internally and reads/writes `playlist.csv` and `settings.json` beside the executable.
