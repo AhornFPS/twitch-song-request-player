@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed scrolling marquee text not working in the OBS overlay.
+
 ## 1.0.2 - 2026-03-15
 
 - Improved the OBS overlay styling with larger, higher-contrast track details for better stream readability.
