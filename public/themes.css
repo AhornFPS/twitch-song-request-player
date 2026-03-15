@@ -42,3 +42,54 @@
   --overlay-queue-item-end: rgba(255, 255, 255, 0.05);
   --overlay-progress-end: #ffd47f;
 }
+
+:root[data-theme="winamp"] {
+  --panel: rgba(22, 22, 22, 0.95);
+  --panel-border: rgba(0, 230, 50, 0.45);
+  --panel-highlight: rgba(0, 200, 40, 0.15);
+  --text: #00e632;
+  --muted: #7ba87b;
+  --accent: #00e632;
+  --accent-strong: #ffe100;
+  --shadow: 0 12px 40px rgba(0, 0, 0, 0.85);
+  --surface: rgba(0, 180, 30, 0.08);
+  --surface-strong: rgba(0, 180, 30, 0.16);
+  --overlay-card-start: rgba(25, 30, 22, 0.96);
+  --overlay-card-end: rgba(15, 15, 13, 0.98);
+  --overlay-orb-left: rgba(0, 220, 50, 0.15);
+  --overlay-orb-right: rgba(0, 180, 40, 0.12);
+  --overlay-artwork-start: rgba(20, 40, 20, 0.97);
+  --overlay-artwork-end: rgba(10, 12, 10, 0.98);
+  --overlay-queue-item-start: rgba(0, 200, 30, 0.14);
+  --overlay-queue-item-end: rgba(0, 200, 30, 0.06);
+  --overlay-progress-end: #00ff44;
+}
+
+:root[data-theme="compact"] {
+  --panel: rgba(8, 10, 18, 0.93);
+  --panel-border: rgba(255, 255, 255, 0.12);
+  --panel-highlight: rgba(255, 255, 255, 0.07);
+  --text: #e6ecf8;
+  --muted: #7a8ba8;
+  --accent: #38b6ff;
+  --accent-strong: #4ade80;
+  --shadow: 0 16px 48px rgba(0, 0, 0, 0.72);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.1);
+  --overlay-card-start: rgba(10, 13, 22, 0.95);
+  --overlay-card-end: rgba(6, 8, 14, 0.96);
+  --overlay-orb-left: rgba(56, 182, 255, 0.18);
+  --overlay-orb-right: rgba(74, 222, 128, 0.14);
+  --overlay-artwork-start: rgba(18, 24, 42, 0.97);
+  --overlay-artwork-end: rgba(8, 10, 18, 0.98);
+  --overlay-queue-item-start: rgba(255, 255, 255, 0.08);
+  --overlay-queue-item-end: rgba(255, 255, 255, 0.03);
+  --overlay-progress-end: #38b6ff;
+  /* Compact-specific badge palette */
+  --badge-provider-bg: #8b1a1a;
+  --badge-provider-text: #ffd0d0;
+  --badge-save-bg: #155a2a;
+  --badge-save-text: #a8f0c0;
+  --badge-queue-bg: #0d4a52;
+  --badge-queue-text: #a0e8f0;
+}

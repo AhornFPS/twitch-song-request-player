@@ -26,6 +26,16 @@ const themeOptions = [
     id: "sunset",
     label: "Sunset",
     description: "Warm amber glow with deeper contrast."
+  },
+  {
+    id: "winamp",
+    label: "Winamp Classic",
+    description: "Retro dark-steel skin with glowing green EQ bars."
+  },
+  {
+    id: "compact",
+    label: "Compact",
+    description: "Slim ticker bar: stacked coloured badges, inline UP NEXT queue."
   }
 ];
 const validThemeIds = new Set(themeOptions.map((theme) => theme.id));
@@ -59,6 +69,61 @@ function normalizeSettings(raw) {
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
     theme: normalizeTheme(raw.theme ?? raw.THEME)
   };
+}
+
+function hasOwnSetting(raw, keys) {
+  return keys.some((key) => {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) {
+      return false;
+    }
+
+    const value = raw[key];
+    if (value === null || typeof value === "undefined") {
+      return false;
+    }
+
+    return typeof value === "string"
+      ? value.trim().length > 0
+      : true;
+  });
+}
+
+function normalizeOverrideSettings(raw) {
+  const overrides = {};
+
+  if (hasOwnSetting(raw, ["twitchChannel", "TWITCH_CHANNEL"])) {
+    overrides.twitchChannel = trimValue(raw.twitchChannel ?? raw.TWITCH_CHANNEL).replace(/^#/, "");
+  }
+
+  if (hasOwnSetting(raw, ["twitchUsername", "TWITCH_USERNAME"])) {
+    overrides.twitchUsername = trimValue(raw.twitchUsername ?? raw.TWITCH_USERNAME);
+  }
+
+  if (hasOwnSetting(raw, ["twitchOauthToken", "TWITCH_OAUTH_TOKEN"])) {
+    overrides.twitchOauthToken = trimValue(raw.twitchOauthToken ?? raw.TWITCH_OAUTH_TOKEN);
+  }
+
+  if (hasOwnSetting(raw, ["twitchClientId", "TWITCH_CLIENT_ID"])) {
+    overrides.twitchClientId = trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID);
+  }
+
+  if (hasOwnSetting(raw, ["twitchClientSecret", "TWITCH_CLIENT_SECRET"])) {
+    overrides.twitchClientSecret = trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET);
+  }
+
+  if (hasOwnSetting(raw, ["youtubeApiKey", "YOUTUBE_API_KEY"])) {
+    overrides.youtubeApiKey = trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY);
+  }
+
+  if (hasOwnSetting(raw, ["port", "PORT"])) {
+    overrides.port = normalizePort(raw.port ?? raw.PORT);
+  }
+
+  if (hasOwnSetting(raw, ["theme", "THEME"])) {
+    overrides.theme = normalizeTheme(raw.theme ?? raw.THEME);
+  }
+
+  return overrides;
 }
 
 function mergeSettings(baseSettings, overridingSettings) {
@@ -114,7 +179,7 @@ export class ConfigStore {
   loadEnvSettings() {
     dotenv.config({ path: this.runtimeEnvPath, override: false });
     dotenv.config({ override: false });
-    return normalizeSettings(process.env);
+    return normalizeOverrideSettings(process.env);
   }
 
   async loadEffectiveSettings() {

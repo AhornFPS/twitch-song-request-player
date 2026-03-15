@@ -176,7 +176,7 @@ body {
 #current-title {
   margin: 0;
   font-family: "Dosis ExtraLight", "Space Grotesk", sans-serif;
-  font-size: clamp(1.4rem, 2.35vw, 1.95rem);
+  font-size: clamp(1.48rem, 2.5vw, 2.05rem);
   font-weight: 200;
   line-height: 1;
   letter-spacing: 0.03em;
@@ -251,7 +251,7 @@ body {
 
 .timeline__time {
   color: var(--muted);
-  font-size: 0.68rem;
+  font-size: 0.74rem;
 }
 
 .timeline__track {
@@ -592,6 +592,494 @@ body {
   }
 }
 
+/* =====================================================
+   Winamp Classic – Structural & Visual Overrides
+   These rules reinterpret the overlay card as a
+   faithful Winamp 2.x skin: beveled chrome borders,
+   blue title bar, LCD green display, segmented EQ
+   progress bar, and hard-edged rectangular everything.
+   ===================================================== */
+
+/* ── Card shell ── */
+[data-theme="winamp"] .player-card {
+  border-radius: 0;
+  padding-top: 24px; /* room for the title bar strip */
+  background: linear-gradient(180deg, #353535 0%, #202020 40%, #181818 100%);
+  border: 2px solid;
+  border-color: #888 #111 #111 #888; /* raised bevel: bright top/left, dark bottom/right */
+  box-shadow:
+    inset 2px 2px 0 #b0b0b0,
+    inset -2px -2px 0 #050505,
+    6px 6px 24px rgba(0, 0, 0, 0.97);
+  backdrop-filter: none;
+  gap: 6px;
+}
+
+/* ── Blue Winamp title bar (repurpose ::before glow orb) ── */
+[data-theme="winamp"] .player-card::before {
+  content: "► TWITCH PLAYER";
+  /* reset the default orb positioning */
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: 22px;
+  border-radius: 0;
+  /* metallic blue gradient like classic Winamp */
+  background:
+    repeating-linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.08) 0px,
+      rgba(255, 255, 255, 0.08) 1px,
+      transparent 1px,
+      transparent 2px
+    ),
+    linear-gradient(90deg, #1e67b8 0%, #0d4080 48%, #1e67b8 100%);
+  display: flex;
+  align-items: center;
+  padding-left: 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #b8d8ff;
+  text-shadow: 0 0 8px rgba(100, 180, 255, 0.7);
+  border-bottom: 1px solid #0a2848;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15);
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Hide decorative glow orb – not Winamp-like */
+[data-theme="winamp"] .player-card__glow {
+  display: none;
+}
+
+/* ── Frame font ── */
+[data-theme="winamp"] .player-card__copy,
+[data-theme="winamp"] .queue-title,
+[data-theme="winamp"] .queue-meta,
+[data-theme="winamp"] .queue-label,
+[data-theme="winamp"] .timeline__time,
+[data-theme="winamp"] #queue-count {
+  font-family: "IBM Plex Mono", monospace;
+}
+
+/* ── LCD display zone (track title area) ── */
+[data-theme="winamp"] .player-card__copy {
+  background: #040c04;
+  border: 2px solid;
+  border-color: #111 #606060 #606060 #111; /* sunken/inset bevel */
+  box-shadow:
+    inset 2px 2px 6px rgba(0, 0, 0, 0.95),
+    inset 0 0 20px rgba(0, 0, 0, 0.6);
+  padding: 6px 10px;
+  min-height: 52px;
+}
+
+[data-theme="winamp"] #current-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(0.88rem, 2vw, 1.15rem);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-shadow:
+    0 0 6px #00e632,
+    0 0 14px rgba(0, 220, 50, 0.4),
+    0 0 30px rgba(0, 200, 40, 0.15);
+}
+
+/* ── Artwork: square with Win32 inset chrome ── */
+[data-theme="winamp"] .artwork-image,
+[data-theme="winamp"] .artwork-fallback {
+  border-radius: 0;
+  border: 2px solid;
+  border-color: #111 #777 #777 #111; /* outset bevel – feels "elevated" */
+  box-shadow: none;
+}
+
+[data-theme="winamp"] .artwork-image {
+  border: 2px solid;
+  border-color: #111 #777 #777 #111;
+  box-shadow: none;
+}
+
+/* ── Progress / timeline ── */
+[data-theme="winamp"] .timeline__track {
+  border-radius: 0;
+  background: #040c04;
+  border: 2px solid;
+  border-color: #111 #555 #555 #111; /* sunken */
+  height: 12px;
+  box-shadow: inset 2px 2px 5px rgba(0, 0, 0, 0.9);
+}
+
+[data-theme="winamp"] .timeline__fill {
+  border-radius: 0;
+  /* Segmented EQ bar: repeating dark separators over a green gradient */
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.45) 0px,
+      rgba(0, 0, 0, 0.45) 1px,
+      transparent 1px,
+      transparent 6px
+    ),
+    linear-gradient(90deg, #008818, #00d42a, #00ff44);
+  box-shadow: 0 0 10px rgba(0, 220, 50, 0.55), 0 0 20px rgba(0, 200, 40, 0.2);
+}
+
+[data-theme="winamp"] .timeline__time {
+  text-shadow: 0 0 5px currentColor;
+}
+
+/* ── Status pill: flat, beveled, boxy ── */
+[data-theme="winamp"] .status-pill {
+  border-radius: 0;
+  background: #141414;
+  border: 1px solid;
+  border-color: #080808 #606060 #606060 #080808;
+  box-shadow: inset 1px 1px 3px rgba(0, 0, 0, 0.85);
+}
+
+/* Diamond dot instead of circle */
+[data-theme="winamp"] .status-pill__dot {
+  border-radius: 0;
+  transform: rotate(45deg);
+  box-shadow: 0 0 5px currentColor;
+}
+
+/* ── Provider / save badges ── */
+[data-theme="winamp"] .provider-badge {
+  border-radius: 0;
+  background: #141414;
+  border: 1px solid;
+  border-color: #080808 #606060 #606060 #080808;
+  color: var(--accent);
+}
+
+[data-theme="winamp"] .save-badge {
+  border-radius: 0;
+  border: 1px solid;
+  border-color: #080808 #606060 #606060 #080808;
+  background: #141414;
+}
+
+[data-theme="winamp"] .save-badge--saved {
+  background: #131000;
+  color: var(--accent-strong);
+  border-color: #080808 #606060 #606060 #080808;
+}
+
+[data-theme="winamp"] .save-badge--idle {
+  background: #141414;
+  color: var(--muted);
+}
+
+/* ── Queue: playlist-style flat rows ── */
+[data-theme="winamp"] .queue-panel {
+  border-top: 2px solid;
+  border-color: #111 #555 #555 #111;
+  padding-top: 4px;
+}
+
+[data-theme="winamp"] .queue-panel__header {
+  margin-bottom: 2px;
+}
+
+[data-theme="winamp"] .queue-label {
+  letter-spacing: 0.18em;
+  font-size: 0.64rem;
+}
+
+[data-theme="winamp"] #queue-count {
+  text-shadow: 0 0 5px currentColor;
+}
+
+[data-theme="winamp"] .queue-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+  /* sunken container like a Winamp playlist box */
+  border: 2px solid;
+  border-color: #111 #555 #555 #111;
+  box-shadow: inset 1px 1px 4px rgba(0, 0, 0, 0.8);
+  background: #0e0e0e;
+}
+
+[data-theme="winamp"] .queue-item {
+  border-radius: 0;
+  background: #0e0e0e;
+  border: none;
+  border-bottom: 1px solid #1e1e1e;
+  flex: 1 1 100%;
+  padding: 4px 8px;
+  animation: winamp-row-in 280ms ease both;
+}
+
+[data-theme="winamp"] .queue-item:nth-child(even) {
+  background: #131313;
+}
+
+[data-theme="winamp"] .queue-item:last-child {
+  border-bottom: none;
+}
+
+[data-theme="winamp"] .queue-title {
+  font-size: 0.64rem;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+[data-theme="winamp"] .queue-meta {
+  font-size: 0.54rem;
+  letter-spacing: 0.06em;
+}
+
+@keyframes winamp-row-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* =====================================================
+   Compact Theme – Structural & Visual Overrides
+   Inspired by the mockup: three-column layout with
+   artwork | content | stacked badges, and an inline
+   UP NEXT queue bar.
+   ===================================================== */
+
+/* ── Card shell ── */
+[data-theme="compact"] .player-card {
+  padding: 8px 10px 6px;
+  border-radius: 14px;
+  width: min(580px, calc(100vw - 16px));
+  /* Left margin leaves room for artwork that floats outside the card */
+  margin-left: 74px;
+  gap: 4px;
+  overflow: visible;
+  position: relative;
+}
+
+/* ── Three-column layout: reserve right space for absolute badge column ── */
+[data-theme="compact"] .player-card__top {
+  position: static;
+  overflow: visible;
+  /* Single content column — artwork is now outside the card */
+  grid-template-columns: minmax(0, 1fr);
+  padding-right: 108px;
+  gap: 0;
+  align-items: center;
+}
+
+/* ── Artwork: floats OUTSIDE the card to the left ── */
+[data-theme="compact"] .player-card__media {
+  /* Pull out of grid flow and position to the left of the card */
+  position: absolute;
+  left: -74px;   /* mirror the card's margin-left */
+  top: 50%;
+  transform: translateY(-50%);
+  width: 66px;
+  height: 66px;
+  z-index: 2;
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.7));
+}
+
+[data-theme="compact"] .artwork-image,
+[data-theme="compact"] .artwork-fallback {
+  border-radius: 10px;
+  outline: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+/* ── Main content: static so badges reference .player-card, not here ── */
+[data-theme="compact"] .player-card__main {
+  position: static;
+  min-width: 0;
+}
+
+/* ── Header: just the title, status column floats to the right ── */
+[data-theme="compact"] .player-card__header {
+  gap: 0;
+}
+
+/* ── Title: bolder, slightly bigger ── */
+[data-theme="compact"] #current-title {
+  font-size: clamp(1.1rem, 2.2vw, 1.45rem);
+  font-weight: 600;
+  font-family: "Space Grotesk", sans-serif;
+  letter-spacing: 0.01em;
+}
+
+/* ── Copy zone should not pad extra height ── */
+[data-theme="compact"] .player-card__copy {
+  min-height: 0;
+  align-items: flex-start;
+  padding-top: 2px;
+}
+
+/* ── Timeline: thinner, tighter margin ── */
+[data-theme="compact"] .timeline {
+  margin-top: 4px;
+  gap: 6px;
+}
+
+[data-theme="compact"] .timeline__track {
+  height: 5px;
+}
+
+[data-theme="compact"] .timeline__fill {
+  border-radius: 999px;
+}
+
+/* ── Status column: absolute relative to .player-card (not __top) ── */
+[data-theme="compact"] .player-card__status {
+  position: absolute;
+  /* Align to the card's own padding edges so badges are flush to the right
+     and vertically fill the card without clipping */
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 100px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: stretch;
+  gap: 3px;
+  /* Inner padding matches the card's own padding so badges sit within
+     the visual border, not pressed against the very edge */
+  padding: 8px 0 6px;
+}
+
+/* YOUTUBE (order 1), SAVED (order 2), QUEUED (order 3) — all equal height */
+[data-theme="compact"] .status-pill {
+  order: 3;
+  flex: 1;
+  border-radius: 5px;
+  background: var(--badge-queue-bg);
+  border: none;
+  box-shadow: none;
+  padding: 5px 7px;
+  justify-content: center;
+}
+
+[data-theme="compact"] .status-pill__dot {
+  display: none; /* hide the dot; the badge itself communicates status */
+}
+
+[data-theme="compact"] #queue-count {
+  color: var(--badge-queue-text);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+/* Flatten badge-row so its children join the parent flex context,
+   then flex:1 on all three badges gives them equal height */
+[data-theme="compact"] .badge-row {
+  display: contents;
+}
+
+[data-theme="compact"] .provider-badge {
+  order: 1;
+  flex: 1;
+  border-radius: 5px;
+  background: var(--badge-provider-bg);
+  color: var(--badge-provider-text);
+  border: none;
+  padding: 5px 7px;
+  justify-content: center;
+  font-size: 0.6rem;
+  font-weight: 700;
+}
+
+[data-theme="compact"] .save-badge {
+  order: 2;
+  flex: 1;
+  border-radius: 5px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  padding: 5px 7px;
+  justify-content: center;
+}
+
+[data-theme="compact"] .save-badge--saved {
+  background: var(--badge-save-bg);
+  color: var(--badge-save-text);
+  border: none;
+}
+
+[data-theme="compact"] .save-badge--idle {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  border: none;
+}
+
+/* ── Queue panel: collapse into a slim inline "UP NEXT" bar ── */
+[data-theme="compact"] .queue-panel {
+  padding: 3px 0 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+[data-theme="compact"] .queue-panel__header {
+  display: none; /* "Up next" label comes from the list ::before instead */
+}
+
+[data-theme="compact"] .queue-list {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0;
+  overflow: hidden;
+  align-items: center;
+  /* Extra right padding so queue text doesn't slide under badge column */
+  padding-right: 108px;
+}
+
+/* "UP NEXT" prefix label */
+[data-theme="compact"] .queue-list::before {
+  content: "UP NEXT";
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--accent);
+  flex-shrink: 0;
+  margin-right: 10px;
+  text-shadow: 0 0 8px rgba(56, 182, 255, 0.4);
+}
+
+/* Show only the first queue item inline */
+[data-theme="compact"] .queue-item {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+[data-theme="compact"] .queue-item + .queue-item {
+  display: none;
+}
+
+[data-theme="compact"] .queue-title {
+  font-size: 0.66rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+[data-theme="compact"] .queue-meta {
+  display: none; /* hide requester in compact UP NEXT row */
+}
+
 @media (max-width: 640px) {
   .overlay-shell {
     padding: 8px;
@@ -622,7 +1110,7 @@ body {
   }
 
   #current-title {
-    font-size: clamp(1.26rem, 4.8vw, 1.62rem);
+    font-size: clamp(1.32rem, 5vw, 1.7rem);
   }
 
   .status-pill,
@@ -636,7 +1124,7 @@ body {
   .provider-badge,
   .save-badge,
   .queue-label {
-    font-size: 0.58rem;
+    font-size: 0.62rem;
   }
 
   .queue-panel {

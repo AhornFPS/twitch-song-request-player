@@ -322,6 +322,11 @@ select {
   appearance: none;
 }
 
+.theme-select select option {
+  color: #041017;
+  background: #f4f7fb;
+}
+
 .theme-select select:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
   outline-offset: 2px;

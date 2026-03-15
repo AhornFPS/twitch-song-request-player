@@ -90,6 +90,7 @@ export async function startAppServer({
       origin: "*"
     }
   });
+  const activeConnections = new Set();
 
   const playlistRepository = new PlaylistRepository(runtimeConfig.playlistPath);
   await playlistRepository.init();
@@ -231,6 +232,14 @@ export async function startAppServer({
 
   app.use(express.static(runtimeConfig.publicDir));
 
+  server.on("connection", (socket) => {
+    activeConnections.add(socket);
+
+    socket.on("close", () => {
+      activeConnections.delete(socket);
+    });
+  });
+
   io.on("connection", (socket) => {
     playerController.handleSocketConnection(socket);
   });
@@ -269,7 +278,10 @@ export async function startAppServer({
     },
     async close() {
       await twitchBotService.disconnect();
-      await new Promise((resolve, reject) => {
+      io.disconnectSockets(true);
+      io.close();
+
+      const closeServerPromise = new Promise((resolve, reject) => {
         server.close((error) => {
           if (error) {
             reject(error);
@@ -279,6 +291,20 @@ export async function startAppServer({
           resolve();
         });
       });
+
+      if (typeof server.closeIdleConnections === "function") {
+        server.closeIdleConnections();
+      }
+
+      if (typeof server.closeAllConnections === "function") {
+        server.closeAllConnections();
+      }
+
+      for (const socket of activeConnections) {
+        socket.destroy();
+      }
+
+      await closeServerPromise;
     }
   };
 }

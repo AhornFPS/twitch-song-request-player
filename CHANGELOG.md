@@ -4,6 +4,12 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added "Compact" overlay theme: slim ticker layout with stacked crimson/green/teal badges, inline UP NEXT queue bar, and artwork-left design from community mockup.
+- Added "Winamp Classic" overlay theme: beveled chrome borders, blue Winamp title bar, recessed LCD green track display, segmented EQ-style progress bar, and flat playlist queue rows.
+- Fixed saved OBS overlay themes and custom ports being overwritten by built-in defaults when no environment override was set.
+- Fixed the desktop app shutdown so closing the main GUI also stops the background player process even if OBS still has the overlay open.
+- Fixed the desktop GUI theme dropdown so all theme options stay visible before selection.
+- Slightly increased the OBS overlay track title and playback time text for better readability.
 - Changed the desktop GUI overlay theme picker to a dropdown that only controls the OBS player theme, not the GUI itself.
 - Fixed automatic YouTube-to-SoundCloud transitions so a finished YouTube track does not restart and overlap the next SoundCloud song.
 - Added a native desktop GUI for the main program so settings and credentials can be managed without a terminal window.
