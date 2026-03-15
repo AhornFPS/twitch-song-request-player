@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.0.3 - 2026-03-15
+
 - Fixed scrolling marquee text not working in the OBS overlay.
 
 ## 1.0.2 - 2026-03-15

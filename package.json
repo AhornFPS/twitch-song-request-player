@@ -1,6 +1,6 @@
 {
   "name": "twitch-song-request-player",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "private": true,
   "bin": "build/server.cjs",
   "type": "module",
