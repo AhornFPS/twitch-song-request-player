@@ -87,8 +87,10 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
 
 - `package.json` is the single source of truth for the app version and uses semantic versioning.
 - Add user-visible changes to `CHANGELOG.md` under `## Unreleased` while work is in progress.
+- If you want a simple Windows prompt, run `release-menu.bat` from the repo root.
 - Run `npm run release -- patch` for a patch release, or replace `patch` with `minor`, `major`, or an explicit version like `1.2.0`.
 - The release script bumps `package.json` and `package-lock.json`, moves `## Unreleased` into a dated version section, builds `dist/TwitchSongRequestPlayer.exe`, creates a versioned release asset, commits and tags the release, pushes `main`, and publishes the GitHub release notes from `CHANGELOG.md`.
+- `npm run build:exe` and the `Build EXE for testing only` menu option do not rewrite `CHANGELOG.md`.
 - Requirements: clean git working tree, `gh auth login` already completed, and the Windows build dependencies already installed.
 
 For a safe preview without changing git or GitHub:

@@ -17,15 +17,15 @@ function canModeratePlayback(tags, channelName) {
 }
 
 export class TwitchBot {
-  constructor({ config, playerController }) {
+  constructor({ config, playerController, client = null, channelInfo = null }) {
     this.config = config;
     this.playerController = playerController;
-    this.channelInfo = new TwitchChannelInfo({
+    this.channelInfo = channelInfo ?? new TwitchChannelInfo({
       channelName: config.twitch.channel,
       clientId: config.twitch.clientId,
       clientSecret: config.twitch.clientSecret
     });
-    this.client = new tmi.Client({
+    this.client = client ?? new tmi.Client({
       options: {
         debug: false
       },
@@ -36,8 +36,8 @@ export class TwitchBot {
       channels: [config.twitch.channel]
     });
 
-    this.playerController.onTrackPlayback(async (track) => {
-      await this.announceNowPlaying(track);
+    this.playerController.onTrackPlayback(async () => {
+      await this.announceNowPlaying(this.playerController.getCurrentTrack());
     });
   }
 
@@ -152,14 +152,7 @@ export class TwitchBot {
         return;
       }
 
-      const requester = track.requestedBy?.displayName || track.requestedBy?.username;
-      const requesterText = requester ? `, requested by ${requester}` : "";
-      const savedText = track.isSaved ? "saved" : "not saved";
-
-      await this.reply(
-        channel,
-        `Current song: ${track.title} (${track.url})${requesterText} [${savedText}]`
-      );
+      await this.reply(channel, this.formatCurrentSongMessage(track));
     }
   }
 
@@ -178,19 +171,25 @@ export class TwitchBot {
   }
 
   async announceNowPlaying(track) {
-    if (track.origin !== "queue" || !track.requestedBy) {
+    if (!track) {
       return;
     }
-
-    const requester = track.requestedBy.displayName || track.requestedBy.username || "unknown";
-    const message = `Now playing ${track.title} (${track.url}), requested by ${requester}`;
 
     logInfo("Announcing now playing in chat", {
       title: track.title,
       url: track.url,
-      requestedBy: requester
+      requestedBy: track.requestedBy?.displayName || track.requestedBy?.username || null,
+      origin: track.origin
     });
 
-    await this.reply(`#${this.config.twitch.channel}`, message);
+    await this.reply(`#${this.config.twitch.channel}`, this.formatCurrentSongMessage(track));
+  }
+
+  formatCurrentSongMessage(track) {
+    const requester = track.requestedBy?.displayName || track.requestedBy?.username;
+    const requesterText = requester ? `, requested by ${requester}` : "";
+    const savedText = track.isSaved ? "saved" : "not saved";
+
+    return `Current song: ${track.title} (${track.url})${requesterText} [${savedText}]`;
   }
 }
