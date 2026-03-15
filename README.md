@@ -2,6 +2,10 @@
 
 Small Node app for OBS browser source playback, driven by Twitch chat commands.
 
+## Download
+
+Grab the latest compiled Windows `.exe` directly from the [Releases](https://github.com/AhornFPS/twitch-song-request-player/releases/latest) page. You do not need to install Node or compile the app yourself if you use the pre-built release.
+
 ## Features
 
 - `!sr <url>` queues a YouTube or SoundCloud track.
@@ -10,6 +14,7 @@ Small Node app for OBS browser source playback, driven by Twitch chat commands.
 - When the queue is empty, playback falls back to a random entry from `playlist.csv`.
 - When a queued song finishes normally, it is appended to `playlist.csv`.
 - If a YouTube song errors during playback, matching entries are removed from `playlist.csv`.
+- Multiple overlay themes built-in: Default, Winamp Classic, and Compact.
 - The app serves a dashboard at `/` and the OBS Browser Source render at `/overlay`.
 
 ## Setup
