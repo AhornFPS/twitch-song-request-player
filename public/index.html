@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=20260315g" />
+    <link rel="stylesheet" href="/styles.css?v=20260315k" />
     <script>
       window.__playerLog = function(level, message, details) {
         try {
@@ -58,13 +58,17 @@
           <div class="player-card__main">
             <div class="player-card__header">
               <div class="player-card__copy">
-                <p class="eyebrow">Stream Radio</p>
                 <h1 id="current-title">Waiting for a track</h1>
-                <p id="current-meta">Queue is empty. Fallback playlist will play automatically.</p>
               </div>
-              <div class="status-pill">
-                <span class="status-pill__dot"></span>
-                <span id="queue-count">0 queued</span>
+              <div class="player-card__status">
+                <div class="status-pill">
+                  <span class="status-pill__dot"></span>
+                  <span id="queue-count">0 queued</span>
+                </div>
+                <div class="badge-row">
+                  <div id="provider-badge" class="provider-badge">Idle</div>
+                  <div id="save-badge" class="save-badge save-badge--idle">Unsaved</div>
+                </div>
               </div>
             </div>
 
@@ -76,13 +80,6 @@
               <span id="duration-time" class="timeline__time">0:00</span>
             </div>
 
-            <div class="player-card__footer">
-              <div class="badge-row">
-                <div id="provider-badge" class="provider-badge">Idle</div>
-                <div id="save-badge" class="save-badge save-badge--idle">Unsaved</div>
-              </div>
-              <p class="queue-label">Now playing</p>
-            </div>
           </div>
         </div>
 
@@ -117,6 +114,6 @@
       src="https://w.soundcloud.com/player/api.js"
       onerror="window.__playerLog('error', 'Failed to load SoundCloud widget API')"
     ></script>
-    <script src="/app.js?v=20260315k"></script>
+    <script src="/app.js?v=20260315l"></script>
   </body>
 </html>

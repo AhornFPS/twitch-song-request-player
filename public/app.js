@@ -406,7 +406,9 @@ function resolveArtwork(track) {
 }
 
 function setMetaText(message) {
-  currentMeta.textContent = message;
+  if (currentMeta) {
+    currentMeta.textContent = message;
+  }
 }
 
 function describeTrackMeta(track) {
