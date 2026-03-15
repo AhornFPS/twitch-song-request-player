@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.0.2 - 2026-03-15
+
 - Improved the OBS overlay styling with larger, higher-contrast track details for better stream readability.
 - Removed the redundant `Stream Radio` header and subtitle text from the player overlay.
 - Tweaked the overlay title to use a narrower regular-weight font and reduced the panel opacity slightly.
