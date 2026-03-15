@@ -21,6 +21,9 @@ const socket = typeof window.io === "function" ? window.io() : null;
 const youtubeContainer = document.getElementById("youtube-player");
 let soundCloudFrame = document.getElementById("soundcloud-player");
 const currentTitle = document.getElementById("current-title");
+const currentTitleMarquee = document.getElementById("current-title-marquee");
+const currentTitleText = document.getElementById("current-title-text");
+const currentTitleTextClone = document.getElementById("current-title-text-clone");
 const currentMeta = document.getElementById("current-meta");
 const queueList = document.getElementById("queue-list");
 const queueCount = document.getElementById("queue-count");
@@ -53,7 +56,47 @@ let youtubePlayerReady = false;
 let displayedTrackId = null;
 let trackExitTimer = null;
 let trackEnterTimer = null;
+let titleMarqueeFrame = null;
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
+
+function scheduleTitleMarqueeUpdate() {
+  if (titleMarqueeFrame) {
+    window.cancelAnimationFrame(titleMarqueeFrame);
+  }
+
+  titleMarqueeFrame = window.requestAnimationFrame(() => {
+    titleMarqueeFrame = null;
+    updateTitleMarquee();
+  });
+}
+
+function updateTitleMarquee() {
+  if (!currentTitle || !currentTitleText || !currentTitleTextClone || !currentTitleMarquee) {
+    return;
+  }
+
+  const titleWidth = currentTitle.clientWidth;
+  const textWidth = currentTitleText.scrollWidth;
+  const overflowAmount = Math.max(0, textWidth - titleWidth);
+
+  currentTitle.classList.remove("is-marquee");
+  currentTitle.style.removeProperty("--title-marquee-distance");
+  currentTitle.style.removeProperty("--title-marquee-duration");
+  currentTitleTextClone.textContent = currentTitleText.textContent;
+
+  if (overflowAmount <= 8) {
+    return;
+  }
+
+  const gapWidth = 180;
+  const travelDistance = overflowAmount + gapWidth;
+  const pixelsPerSecond = 26;
+  const durationSeconds = Math.max(12, travelDistance / pixelsPerSecond);
+
+  currentTitle.style.setProperty("--title-marquee-distance", `${travelDistance}px`);
+  currentTitle.style.setProperty("--title-marquee-duration", `${durationSeconds}s`);
+  currentTitle.classList.add("is-marquee");
+}
 
 function formatTime(totalSeconds) {
   const safeSeconds = Number.isFinite(totalSeconds) && totalSeconds > 0
@@ -432,7 +475,14 @@ function applyStateToUi(state) {
   const currentTrack = state.currentTrack;
   const queue = state.queue ?? [];
 
-  currentTitle.textContent = currentTrack?.title ?? "Waiting for a track";
+  const titleText = currentTrack?.title ?? "Waiting for a track";
+  if (currentTitleText) {
+    currentTitleText.textContent = titleText;
+  }
+  if (currentTitleTextClone) {
+    currentTitleTextClone.textContent = titleText;
+  }
+  scheduleTitleMarqueeUpdate();
   setMetaText(describeTrackMeta(currentTrack));
   providerBadge.textContent = currentTrack
     ? currentTrack.provider === "youtube"
@@ -883,6 +933,14 @@ window.onYouTubeIframeAPIReady = () => {
   youtubeApiReady = true;
   ensureYouTubePlayerReady();
 };
+
+window.addEventListener("resize", scheduleTitleMarqueeUpdate);
+
+if (document.fonts?.ready) {
+  document.fonts.ready.then(() => {
+    scheduleTitleMarqueeUpdate();
+  }).catch(() => {});
+}
 
 if (socket) {
   socket.on("connect", handleSocketConnect);

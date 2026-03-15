@@ -176,16 +176,48 @@ body {
 #current-title {
   margin: 0;
   font-family: "Dosis ExtraLight", "Space Grotesk", sans-serif;
-  font-size: clamp(1.28rem, 2.1vw, 1.78rem);
+  font-size: clamp(1.4rem, 2.35vw, 1.95rem);
   font-weight: 200;
-  line-height: 0.95;
+  line-height: 1;
   letter-spacing: 0.03em;
-  max-width: none;
+  width: 100%;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
   overflow: hidden;
+  white-space: nowrap;
+  --title-marquee-distance: 0px;
+  --title-marquee-duration: 18s;
+}
+
+.current-title__marquee {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 100%;
+  width: max-content;
+  white-space: nowrap;
+  will-change: transform;
+}
+
+.current-title__text,
+.current-title__gap {
+  flex: 0 0 auto;
+}
+
+.current-title__clone {
+  display: none;
+}
+
+.current-title__gap {
+  display: none;
+  width: 180px;
+}
+
+#current-title.is-marquee .current-title__clone,
+#current-title.is-marquee .current-title__gap {
+  display: inline-block;
+}
+
+#current-title.is-marquee .current-title__marquee {
+  animation: title-marquee var(--title-marquee-duration) linear infinite;
 }
 
 .status-pill {
@@ -491,6 +523,18 @@ body {
   }
 }
 
+@keyframes title-marquee {
+  0%,
+  10% {
+    transform: translateX(0);
+  }
+
+  90%,
+  100% {
+    transform: translateX(calc(-1 * var(--title-marquee-distance)));
+  }
+}
+
 @keyframes content-fade-out {
   0% {
     opacity: 1;
@@ -578,7 +622,7 @@ body {
   }
 
   #current-title {
-    font-size: clamp(1.18rem, 4.4vw, 1.5rem);
+    font-size: clamp(1.26rem, 4.8vw, 1.62rem);
   }
 
   .status-pill,

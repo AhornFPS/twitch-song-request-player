@@ -12,6 +12,9 @@ This file is maintained between releases and should be updated as work is comple
 - Switched the overlay title to the bundled local font asset so it is used in OBS and included in Windows EXE builds.
 - Compacted the overlay layout so the track title, artwork, and progress bar take priority and the badges/queue use less space.
 - Increased the now-playing title size so the current track name is easier to read on stream.
+- Increased the now-playing title again and added a slow marquee for long track names that overflow the visible title area.
+- Added a much larger blank gap in the title marquee so shorter song names do not loop back too quickly.
+- Fixed short track titles showing duplicated text by hiding the marquee clone unless scrolling is active.
 
 ## 1.0.1 - 2026-03-15
 

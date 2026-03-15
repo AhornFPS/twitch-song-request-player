@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/styles.css?v=20260315k" />
+    <link rel="stylesheet" href="/styles.css?v=20260315m" />
     <script>
       window.__playerLog = function(level, message, details) {
         try {
@@ -58,7 +58,13 @@
           <div class="player-card__main">
             <div class="player-card__header">
               <div class="player-card__copy">
-                <h1 id="current-title">Waiting for a track</h1>
+                <h1 id="current-title">
+                  <span id="current-title-marquee" class="current-title__marquee">
+                    <span id="current-title-text" class="current-title__text">Waiting for a track</span>
+                    <span class="current-title__gap" aria-hidden="true"></span>
+                    <span id="current-title-text-clone" class="current-title__text current-title__clone" aria-hidden="true">Waiting for a track</span>
+                  </span>
+                </h1>
               </div>
               <div class="player-card__status">
                 <div class="status-pill">
@@ -114,6 +120,6 @@
       src="https://w.soundcloud.com/player/api.js"
       onerror="window.__playerLog('error', 'Failed to load SoundCloud widget API')"
     ></script>
-    <script src="/app.js?v=20260315l"></script>
+    <script src="/app.js?v=20260315m"></script>
   </body>
 </html>
