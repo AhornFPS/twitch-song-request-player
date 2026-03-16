@@ -102,6 +102,11 @@ export class TwitchBot {
         }
       });
 
+      if (queueTrack.duplicateType === "playing") {
+        await this.reply(channel, `Song ${queueTrack.title} is already playing`);
+        return;
+      }
+
       if (queueTrack.alreadyQueued) {
         await this.reply(channel, `Song ${queueTrack.title} already in the queue`);
         return;

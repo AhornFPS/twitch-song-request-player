@@ -65,18 +65,20 @@ export class PlayerController {
   }
 
   async addRequest(track) {
-    const duplicateTrack = this.findDuplicateTrack(track.key);
+    const duplicateMatch = this.findDuplicateTrack(track.key);
 
-    if (duplicateTrack) {
+    if (duplicateMatch) {
       logInfo("Ignoring duplicate track request", {
         requestedTrack: formatTrack(track),
-        duplicateTrack: formatTrack(duplicateTrack),
+        duplicateTrack: formatTrack(duplicateMatch.track),
+        duplicateType: duplicateMatch.type,
         queueLength: this.queue.length
       });
 
       return {
-        ...this.serializeTrack(duplicateTrack),
-        alreadyQueued: true
+        ...this.serializeTrack(duplicateMatch.track),
+        alreadyQueued: duplicateMatch.type === "queue",
+        duplicateType: duplicateMatch.type
       };
     }
 
@@ -96,7 +98,8 @@ export class PlayerController {
 
     return {
       ...this.serializeTrack(queueTrack),
-      alreadyQueued: false
+      alreadyQueued: false,
+      duplicateType: null
     };
   }
 
@@ -106,10 +109,22 @@ export class PlayerController {
     }
 
     if (this.currentTrack?.key === trackKey) {
-      return this.currentTrack;
+      return {
+        track: this.currentTrack,
+        type: "playing"
+      };
     }
 
-    return this.queue.find((queuedTrack) => queuedTrack.key === trackKey) ?? null;
+    const queuedTrack = this.queue.find((queuedTrack) => queuedTrack.key === trackKey);
+
+    if (!queuedTrack) {
+      return null;
+    }
+
+    return {
+      track: queuedTrack,
+      type: "queue"
+    };
   }
 
   onTrackStart(listener) {

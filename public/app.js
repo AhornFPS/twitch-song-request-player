@@ -50,6 +50,8 @@ let activeTrack = null;
 let currentDurationSeconds = 0;
 let currentPositionSeconds = 0;
 let soundCloudDurationProbeTimer = null;
+let soundCloudAutoplayRetryTimer = null;
+let soundCloudLoadTimeoutTimer = null;
 let youtubeAutoplayRetryTimer = null;
 let youtubeApiReady = false;
 let youtubePlayerReady = false;
@@ -154,6 +156,24 @@ function stopYouTubeAutoplayRetry() {
   youtubeAutoplayRetryTimer = null;
 }
 
+function stopSoundCloudAutoplayRetry() {
+  if (!soundCloudAutoplayRetryTimer) {
+    return;
+  }
+
+  window.clearTimeout(soundCloudAutoplayRetryTimer);
+  soundCloudAutoplayRetryTimer = null;
+}
+
+function stopSoundCloudLoadTimeout() {
+  if (!soundCloudLoadTimeoutTimer) {
+    return;
+  }
+
+  window.clearTimeout(soundCloudLoadTimeoutTimer);
+  soundCloudLoadTimeoutTimer = null;
+}
+
 function scheduleYouTubeAutoplayRetry(videoId, attempt) {
   if (attempt >= 8) {
     stopYouTubeAutoplayRetry();
@@ -173,6 +193,46 @@ function stopSoundCloudDurationProbe() {
 
   window.clearInterval(soundCloudDurationProbeTimer);
   soundCloudDurationProbeTimer = null;
+}
+
+function scheduleSoundCloudAutoplayRetry(trackId, attempt) {
+  if (attempt >= 8) {
+    stopSoundCloudAutoplayRetry();
+    sendClientLog("warn", "Stopping SoundCloud autoplay retries", {
+      trackId,
+      attempts: attempt
+    });
+    return;
+  }
+
+  stopSoundCloudAutoplayRetry();
+  soundCloudAutoplayRetryTimer = window.setTimeout(() => {
+    forceSoundCloudPlayback(trackId, attempt + 1);
+  }, 900);
+}
+
+function scheduleSoundCloudLoadTimeout(track) {
+  stopSoundCloudLoadTimeout();
+  soundCloudLoadTimeoutTimer = window.setTimeout(() => {
+    if (
+      !track?.id ||
+      currentTrackId !== track.id ||
+      activeTrack?.provider !== "soundcloud" ||
+      activeTrack?.id !== track.id
+    ) {
+      return;
+    }
+
+    stopSoundCloudAutoplayRetry();
+    stopSoundCloudDurationProbe();
+    sendClientLog("error", "SoundCloud track load timed out", {
+      trackId: track.id,
+      title: track.title,
+      url: track.url
+    });
+    reportClientError("This SoundCloud track could not be played in the embedded player.");
+    emitStatus("error", { reason: "soundcloud_load_timeout" });
+  }, 15000);
 }
 
 function getPendingSoundCloudToYoutubeReloadTrackId() {
@@ -434,7 +494,9 @@ function hardResetYouTubePlayer() {
 }
 
 function hardResetSoundCloudPlayer() {
+  stopSoundCloudAutoplayRetry();
   stopSoundCloudDurationProbe();
+  stopSoundCloudLoadTimeout();
 
   if (soundCloudWidget?.pause) {
     try {
@@ -445,6 +507,7 @@ function hardResetSoundCloudPlayer() {
 
   if (soundCloudWidget?.unbind && window.SC?.Widget?.Events) {
     try {
+      soundCloudWidget.unbind(window.SC.Widget.Events.ERROR);
       soundCloudWidget.unbind(window.SC.Widget.Events.FINISH);
       soundCloudWidget.unbind(window.SC.Widget.Events.PLAY_PROGRESS);
       soundCloudWidget.unbind(window.SC.Widget.Events.READY);
@@ -789,7 +852,9 @@ function resetPlayers() {
   youtubeEndedTrackId = "";
   stopPlaybackTimer();
   stopYouTubeAutoplayRetry();
+  stopSoundCloudAutoplayRetry();
   stopSoundCloudDurationProbe();
+  stopSoundCloudLoadTimeout();
   soundCloudFrame.style.display = "none";
   soundCloudFrame.removeAttribute("src");
 
@@ -809,6 +874,7 @@ function resetPlayers() {
   }
 
   if (soundCloudWidget?.unbind && window.SC?.Widget?.Events) {
+    soundCloudWidget.unbind(window.SC.Widget.Events.ERROR);
     soundCloudWidget.unbind(window.SC.Widget.Events.FINISH);
     soundCloudWidget.unbind(window.SC.Widget.Events.PLAY_PROGRESS);
     soundCloudWidget.unbind(window.SC.Widget.Events.READY);
@@ -839,6 +905,7 @@ function loadSoundCloudTrack(track) {
     return;
   }
 
+  hardResetSoundCloudPlayer();
   sendClientLog("info", "Loading SoundCloud track", {
     id: track.id,
     title: track.title,
@@ -848,6 +915,7 @@ function loadSoundCloudTrack(track) {
   soundCloudFrame.style.display = "block";
   soundCloudFrame.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(track.url)}&auto_play=true&hide_related=true&show_artwork=false&visual=false`;
   soundCloudWidget = window.SC.Widget(soundCloudFrame);
+  scheduleSoundCloudLoadTimeout(track);
 
   const updateDurationFromSoundCloud = () => {
     if (!soundCloudWidget) {
@@ -886,14 +954,31 @@ function loadSoundCloudTrack(track) {
       title: track.title
     });
     if (desiredPausedState) {
+      stopSoundCloudLoadTimeout();
+      stopSoundCloudAutoplayRetry();
       soundCloudWidget.pause();
       return;
     }
 
-    soundCloudWidget.play();
+    forceSoundCloudPlayback(track.id);
+  });
+
+  soundCloudWidget.bind(window.SC.Widget.Events.ERROR, (event) => {
+    stopSoundCloudLoadTimeout();
+    stopSoundCloudAutoplayRetry();
+    stopSoundCloudDurationProbe();
+    sendClientLog("error", "SoundCloud widget error", {
+      id: track.id,
+      title: track.title,
+      event
+    });
+    reportClientError("This SoundCloud track could not be played in the embedded player.");
+    emitStatus("error", { reason: "soundcloud_widget_error" });
   });
 
   soundCloudWidget.bind(window.SC.Widget.Events.FINISH, () => {
+    stopSoundCloudLoadTimeout();
+    stopSoundCloudAutoplayRetry();
     stopSoundCloudDurationProbe();
     sendClientLog("info", "SoundCloud track finished", {
       id: track.id,
@@ -910,9 +995,43 @@ function loadSoundCloudTrack(track) {
     updateTimeline(currentSeconds, durationSeconds);
 
     if (currentSeconds > 0) {
+      stopSoundCloudLoadTimeout();
+      stopSoundCloudAutoplayRetry();
       emitStatus("playing");
     }
   });
+}
+
+function forceSoundCloudPlayback(trackId, attempt = 0) {
+  if (
+    !soundCloudWidget ||
+    !currentTrackId ||
+    activeTrack?.provider !== "soundcloud" ||
+    currentTrackId !== trackId
+  ) {
+    stopSoundCloudAutoplayRetry();
+    return;
+  }
+
+  if (desiredPausedState) {
+    stopSoundCloudAutoplayRetry();
+    return;
+  }
+
+  try {
+    soundCloudWidget.play();
+    sendClientLog("info", "Forcing SoundCloud playback", {
+      attempt,
+      trackId
+    });
+    scheduleSoundCloudAutoplayRetry(trackId, attempt);
+  } catch (error) {
+    sendClientLog("error", "Failed forcing SoundCloud playback", {
+      message: error?.message ?? String(error),
+      attempt,
+      trackId
+    });
+  }
 }
 
 function loadYoutubeTrack(track) {
@@ -975,10 +1094,11 @@ function syncPausedState() {
 
   if (activeTrack.provider === "soundcloud" && soundCloudWidget) {
     if (desiredPausedState) {
+      stopSoundCloudAutoplayRetry();
       soundCloudWidget.pause();
       stopPlaybackTimer();
     } else {
-      soundCloudWidget.play();
+      forceSoundCloudPlayback(activeTrack.id);
     }
   }
 }

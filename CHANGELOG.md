@@ -4,6 +4,11 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed YouTube-to-SoundCloud queue handoffs in OBS so SoundCloud tracks no longer stall at `0:00` until the browser source cache is refreshed.
+- Blocked requests for the song that is already playing and now send `Song <title> is already playing` to Twitch chat.
+- Fixed blocked or broken SoundCloud embeds so the OBS player skips them instead of getting stuck on the track.
+- Fixed the Windows release menu so EXE builds and release commands run from the app repo when launched from `C:\Windows` or another folder, and failed actions now report correctly.
+
 ## 1.2.1 - 2026-03-16
 
 - Fixed startup crashes when the configured local web port is already in use by automatically falling back to a free port and showing the active port in the desktop app.

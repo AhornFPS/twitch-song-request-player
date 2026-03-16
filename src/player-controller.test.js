@@ -60,11 +60,63 @@ test("duplicate requests are ignored when the same track is already active", asy
   });
 
   assert.equal(firstResult.alreadyQueued, false);
-  assert.equal(duplicateResult.alreadyQueued, true);
+  assert.equal(duplicateResult.alreadyQueued, false);
+  assert.equal(duplicateResult.duplicateType, "playing");
   assert.equal(duplicateResult.title, "Duplicate Track");
   assert.equal(controller.getPublicState().queue.length, 0);
   assert.equal(controller.getCurrentTrack()?.key, "youtube:duplicate");
   assert.equal(emittedEvents.filter(({ event }) => event === "player:load").length, 1);
+});
+
+test("duplicate requests are ignored when the same track is already queued", async () => {
+  const { controller } = createController();
+
+  const firstResult = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/queued-duplicate",
+    title: "Queued Duplicate Track",
+    key: "youtube:queued-duplicate",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  controller.currentTrack = {
+    ...controller.currentTrack,
+    key: "youtube:other-track"
+  };
+  controller.queue.push({
+    id: "track-queued",
+    provider: "youtube",
+    url: "https://youtu.be/queued-duplicate",
+    title: "Queued Duplicate Track",
+    key: "youtube:queued-duplicate",
+    artworkUrl: "",
+    origin: "queue",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  const duplicateResult = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/queued-duplicate",
+    title: "Queued Duplicate Track",
+    key: "youtube:queued-duplicate",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  assert.equal(firstResult.alreadyQueued, false);
+  assert.equal(duplicateResult.alreadyQueued, true);
+  assert.equal(duplicateResult.duplicateType, "queue");
+  assert.equal(controller.getPublicState().queue.length, 1);
 });
 
 test("pause toggle updates controller state and emits a player pause event", async () => {

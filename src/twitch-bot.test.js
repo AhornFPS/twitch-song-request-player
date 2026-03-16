@@ -119,7 +119,8 @@ test("duplicate song requests send the queue warning to Twitch chat", async () =
         displayName: "ViewerOne"
       },
       isSaved: false,
-      alreadyQueued: true
+      alreadyQueued: true,
+      duplicateType: "queue"
     }
   });
 
@@ -132,6 +133,47 @@ test("duplicate song requests send the queue warning to Twitch chat", async () =
     {
       channel: "#testchannel",
       message: "Song Duplicate Track already in the queue"
+    }
+  ]);
+});
+
+test("duplicate requests for the current song send the already playing warning", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/current-duplicate",
+      title: "Current Duplicate Track",
+      key: "youtube:current-duplicate",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://youtu.be/current-duplicate",
+      title: "Current Duplicate Track",
+      key: "youtube:current-duplicate",
+      origin: "queue",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      isSaved: false,
+      alreadyQueued: false,
+      duplicateType: "playing"
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr current duplicate");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Song Current Duplicate Track is already playing"
     }
   ]);
 });

@@ -1,7 +1,13 @@
 @echo off
 setlocal enableextensions enabledelayedexpansion
 
-cd /d "%~dp0"
+set "REPO_DIR=%~dp0"
+set "ACTION_EXIT_CODE=0"
+pushd "%REPO_DIR%" >nul
+if errorlevel 1 (
+  echo Failed to open the repo directory: "%REPO_DIR%"
+  goto end
+)
 
 :menu
 cls
@@ -38,25 +44,29 @@ goto menu
 :build_only
 echo.
 echo Building EXE for testing. This will not change the version or changelog.
-call npm run build:exe
+call :run_npm run build:exe
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :release_patch
 call :confirm_release "patch"
 if errorlevel 1 goto menu
-call npm run release -- patch
+call :run_npm run release -- patch
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :release_minor
 call :confirm_release "minor"
 if errorlevel 1 goto menu
-call npm run release -- minor
+call :run_npm run release -- minor
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :release_major
 call :confirm_release "major"
 if errorlevel 1 goto menu
-call npm run release -- major
+call :run_npm run release -- major
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :release_explicit
@@ -69,13 +79,15 @@ if "%explicit_version%"=="" (
 )
 call :confirm_release "%explicit_version%"
 if errorlevel 1 goto menu
-call npm run release -- %explicit_version%
+call :run_npm run release -- %explicit_version%
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :release_dry_run
 echo.
 echo Running a dry-run preview for the next patch release.
-call npm run release -- patch --dry-run
+call :run_npm run release -- patch --dry-run
+set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 
 :confirm_release
@@ -86,9 +98,13 @@ set /p "confirm=Continue? (y/N): "
 if /i not "%confirm%"=="y" exit /b 1
 exit /b 0
 
+:run_npm
+call npm %*
+exit /b %errorlevel%
+
 :done
 echo.
-if errorlevel 1 (
+if not "%ACTION_EXIT_CODE%"=="0" (
   echo Action failed.
 ) else (
   echo Action finished.
@@ -99,4 +115,5 @@ pause
 goto menu
 
 :end
+popd >nul 2>&1
 endlocal
