@@ -64,6 +64,7 @@ function createOverlayTestContext() {
   const sessionStorageData = new Map();
   const locationReplaceCalls = [];
   let requestAnimationFrameCalls = 0;
+  const timeoutCalls = [];
   let nextTimerId = 1;
 
   function getElement(id) {
@@ -124,6 +125,7 @@ function createOverlayTestContext() {
     cancelAnimationFrame() {
     },
     setTimeout() {
+      timeoutCalls.push(Array.from(arguments));
       return nextTimerId++;
     },
     clearTimeout() {
@@ -158,9 +160,46 @@ function createOverlayTestContext() {
     sessionStorageData,
     getRequestAnimationFrameCalls() {
       return requestAnimationFrameCalls;
+    },
+    getTimeoutCalls() {
+      return timeoutCalls;
     }
   };
 }
+
+test("title marquee retries measurement when the overlay width is not ready yet", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getTimeoutCalls } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  const title = context.document.getElementById("current-title");
+  const titleText = context.document.getElementById("current-title-text");
+  title.clientWidth = 0;
+  title.offsetWidth = 0;
+  titleText.scrollWidth = 0;
+  titleText.offsetWidth = 0;
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-not-ready",
+      provider: "youtube",
+      title: "Layout not ready yet",
+      url: "https://www.youtube.com/watch?v=notready",
+      origin: "playlist"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(getTimeoutCalls().length >= 1, true);
+  assert.equal(getTimeoutCalls()[0][1], 180);
+});
 
 test("overflowing titles still enable marquee when the text width comes from layout bounds", () => {
   const appPath = path.resolve("public/app.js");

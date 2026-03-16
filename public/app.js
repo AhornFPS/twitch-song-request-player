@@ -63,6 +63,7 @@ let displayedTrackId = null;
 let trackExitTimer = null;
 let trackEnterTimer = null;
 let titleMarqueeFrame = null;
+let titleMarqueeRetryTimer = null;
 let desiredPausedState = false;
 let handoffSourceTrack = null;
 let overlayBuildToken = typeof window.__overlayBuildToken === "string"
@@ -85,6 +86,17 @@ function scheduleTitleMarqueeUpdate() {
     titleMarqueeFrame = null;
     updateTitleMarquee();
   });
+}
+
+function scheduleDelayedTitleMarqueeUpdate(delayMs = 180) {
+  if (titleMarqueeRetryTimer) {
+    window.clearTimeout(titleMarqueeRetryTimer);
+  }
+
+  titleMarqueeRetryTimer = window.setTimeout(() => {
+    titleMarqueeRetryTimer = null;
+    scheduleTitleMarqueeUpdate();
+  }, delayMs);
 }
 
 function getElementLayoutWidth(element) {
@@ -117,15 +129,22 @@ function updateTitleMarquee() {
   const titleWidth = getElementLayoutWidth(currentTitle);
   const textWidth = getElementContentWidth(currentTitleText);
   if (titleWidth <= 0 || textWidth <= 0) {
+    scheduleDelayedTitleMarqueeUpdate();
     return;
   }
 
   const overflowAmount = Math.max(0, textWidth - titleWidth);
+  currentTitleMarquee.style.animation = "none";
   currentTitle.classList.remove("is-marquee");
   currentTitle.style.removeProperty("--title-marquee-distance");
   currentTitle.style.removeProperty("--title-marquee-duration");
+  void currentTitleMarquee.offsetWidth;
+  currentTitleMarquee.style.removeProperty("animation");
 
   if (overflowAmount <= 8) {
+    if (currentTitleText.textContent && textWidth <= titleWidth) {
+      scheduleDelayedTitleMarqueeUpdate(320);
+    }
     return;
   }
 
@@ -842,6 +861,7 @@ function applyStateToUi(state) {
   }
   if (titleChanged) {
     scheduleTitleMarqueeUpdate();
+    scheduleDelayedTitleMarqueeUpdate(320);
   }
   setMetaText(describeTrackMeta(currentTrack));
   providerBadge.textContent = currentTrack
