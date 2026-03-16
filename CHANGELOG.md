@@ -3,7 +3,7 @@
 This file is maintained between releases and should be updated as work is completed.
 
 ## Unreleased
-
+- hardening the fix on long scrolling titles
 ## 1.3.1 - 2026-03-16
 
 - Fixed OBS overlay title marquees so long track names scroll again reliably during polling reconnects and Chromium width-measurement edge cases.
