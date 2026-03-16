@@ -140,7 +140,9 @@ export async function startAppServer({
   });
   const activeConnections = new Set();
 
-  const playlistRepository = new PlaylistRepository(runtimeConfig.playlistPath);
+  const playlistRepository = new PlaylistRepository(runtimeConfig.playlistPath, {
+    youtubeApiKey: currentSettings.youtubeApiKey
+  });
   await playlistRepository.init();
 
   const playerController = new PlayerController({
@@ -204,6 +206,7 @@ export async function startAppServer({
       });
 
       currentSettings = nextSettings;
+      playlistRepository.setYoutubeApiKey(nextSettings.youtubeApiKey);
 
       const botSettingsChanged = settingsChanged(previousSettings, nextSettings, [
         "twitchChannel",

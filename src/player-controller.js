@@ -381,7 +381,7 @@ export class PlayerController {
     this.isAdvancing = true;
 
     try {
-      const nextTrack = this.queue.shift() ?? this.playlistRepository.getRandomTrack();
+      const nextTrack = this.queue.shift() ?? await this.playlistRepository.getRandomTrack();
 
       if (!nextTrack) {
         logWarn("No track available for playback", {

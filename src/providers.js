@@ -101,6 +101,16 @@ export function getTrackKey(provider, rawUrl) {
   return rawUrl.trim();
 }
 
+function normalizeTrackTitle(value, fallback) {
+  const title = typeof value === "string" ? value.trim() : "";
+
+  if (title && title.toLowerCase() !== "undefined" && title.toLowerCase() !== "null") {
+    return title;
+  }
+
+  return fallback;
+}
+
 async function fetchJson(url) {
   const response = await fetch(url);
 
@@ -109,6 +119,54 @@ async function fetchJson(url) {
   }
 
   return response.json();
+}
+
+export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
+  if (!youtubeApiKey) {
+    throw new Error("YouTube API key is required to refresh YouTube metadata.");
+  }
+
+  const provider = detectProvider(rawUrl);
+
+  if (provider !== "youtube") {
+    throw new Error("Only YouTube URLs can be refreshed via the YouTube API.");
+  }
+
+  const url = normalizeUrl(rawUrl).toString();
+  const videoId = extractYouTubeVideoId(url);
+
+  if (!videoId) {
+    throw new Error("Could not extract the YouTube video ID.");
+  }
+
+  const apiUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+  apiUrl.searchParams.set("part", "snippet");
+  apiUrl.searchParams.set("id", videoId);
+  apiUrl.searchParams.set("key", youtubeApiKey);
+
+  const response = await fetchJson(apiUrl);
+  const item = response.items?.[0];
+
+  if (!item?.id) {
+    throw new Error(`No YouTube video metadata found for ${videoId}.`);
+  }
+
+  const snippet = item.snippet ?? {};
+  const thumbnails = snippet.thumbnails ?? {};
+
+  return {
+    provider: "youtube",
+    url,
+    title: normalizeTrackTitle(snippet.title, `YouTube video ${videoId}`),
+    key: `youtube:${videoId}`,
+    artworkUrl:
+      thumbnails.maxres?.url ??
+      thumbnails.standard?.url ??
+      thumbnails.high?.url ??
+      thumbnails.medium?.url ??
+      thumbnails.default?.url ??
+      ""
+  };
 }
 
 export async function resolveTrackFromUrl(rawUrl) {
@@ -137,7 +195,7 @@ export async function resolveTrackFromUrl(rawUrl) {
     return {
       provider,
       url,
-      title: metadata.title?.trim() || `YouTube video ${videoId}`,
+      title: normalizeTrackTitle(metadata.title, `YouTube video ${videoId}`),
       key: `youtube:${videoId}`,
       artworkUrl: metadata.thumbnail_url ?? ""
     };
@@ -149,7 +207,7 @@ export async function resolveTrackFromUrl(rawUrl) {
   return {
     provider,
     url,
-    title: metadata.title?.trim() || "SoundCloud track",
+    title: normalizeTrackTitle(metadata.title, "SoundCloud track"),
     key: getTrackKey(provider, url),
     artworkUrl: metadata.thumbnail_url ?? ""
   };
@@ -188,7 +246,7 @@ export async function searchYouTubeMusic(query, youtubeApiKey) {
   return {
     provider: "youtube",
     url: videoUrl,
-    title: item.snippet?.title?.trim() || trimmedQuery,
+    title: normalizeTrackTitle(item.snippet?.title, trimmedQuery),
     key: `youtube:${videoId}`,
     artworkUrl: item.snippet?.thumbnails?.high?.url ?? item.snippet?.thumbnails?.default?.url ?? ""
   };

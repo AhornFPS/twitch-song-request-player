@@ -14,7 +14,7 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
 - When the queue is empty, playback falls back to a random entry from `playlist.csv`.
 - When a queued song finishes normally, it is appended to `playlist.csv`.
 - If a YouTube song errors during playback, matching entries are removed from `playlist.csv`.
-- Multiple overlay themes built-in: Default, Winamp Classic, and Compact.
+- Ten overlay themes built-in: Aurora, Sunset, Winamp Classic, Compact, Terminal, Synthwave, Broadcast, Mixtape Deck, Noir, and Arcade.
 - The app serves a dashboard at `/` and the OBS Browser Source render at `/overlay`.
 
 ## Setup
@@ -32,7 +32,7 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
    - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow. Otherwise set the OAuth token in the form `oauth:...`.
    - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression. `npm run build:exe` bundles this value from your root `.env` into the packaged app as the default client ID.
    - `TWITCH_CLIENT_SECRET`: Optional advanced setting. Not needed for the normal in-app login and category-aware suppression flow.
-   - `YOUTUBE_API_KEY`: Required only for `!sr <search terms>`.
+- `YOUTUBE_API_KEY`: Required for `!sr <search terms>` and for repairing saved YouTube playlist titles when `playlist.csv` contains `undefined`.
 
 3. Start the app:
 

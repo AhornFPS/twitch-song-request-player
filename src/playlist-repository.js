@@ -2,12 +2,28 @@ import fs from "node:fs/promises";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { logInfo, logWarn } from "./logger.js";
-import { detectProvider, getTrackKey } from "./providers.js";
+import { detectProvider, getTrackKey, resolveYouTubeTrackFromApi } from "./providers.js";
+
+function normalizePlaylistTitle(value) {
+  const title = typeof value === "string" ? value.trim() : "";
+
+  if (title && title.toLowerCase() !== "undefined" && title.toLowerCase() !== "null") {
+    return title;
+  }
+
+  return "";
+}
 
 export class PlaylistRepository {
-  constructor(filePath) {
+  constructor(filePath, { youtubeApiKey = "", youtubeMetadataResolver = resolveYouTubeTrackFromApi } = {}) {
     this.filePath = filePath;
+    this.youtubeApiKey = youtubeApiKey;
+    this.youtubeMetadataResolver = youtubeMetadataResolver;
     this.rows = [];
+  }
+
+  setYoutubeApiKey(youtubeApiKey) {
+    this.youtubeApiKey = typeof youtubeApiKey === "string" ? youtubeApiKey.trim() : "";
   }
 
   async init() {
@@ -21,7 +37,7 @@ export class PlaylistRepository {
 
       const filteredRows = parsedRows.map((row) => {
         const link = row.Link?.trim() ?? "";
-        const title = row.Title?.trim() ?? "";
+        const title = normalizePlaylistTitle(row.Title);
         const provider = detectProvider(link);
 
         return {
@@ -52,13 +68,15 @@ export class PlaylistRepository {
     }
   }
 
-  getRandomTrack() {
+  async getRandomTrack() {
     if (this.rows.length === 0) {
       logWarn("Playlist fallback requested but there are no usable tracks");
       return null;
     }
 
     const row = this.rows[Math.floor(Math.random() * this.rows.length)];
+    await this.refreshMissingYoutubeTitle(row);
+
     logInfo("Selected fallback playlist track", {
       provider: row.Provider,
       title: row.Title || row.Link,
@@ -76,6 +94,40 @@ export class PlaylistRepository {
     };
   }
 
+  async refreshMissingYoutubeTitle(row) {
+    if (row.Provider !== "youtube" || row.Title) {
+      return;
+    }
+
+    if (!this.youtubeApiKey) {
+      logWarn("Playlist track is missing a title and cannot be refreshed without a YouTube API key", {
+        url: row.Link
+      });
+      return;
+    }
+
+    try {
+      const refreshedTrack = await this.youtubeMetadataResolver(row.Link, this.youtubeApiKey);
+      const refreshedTitle = normalizePlaylistTitle(refreshedTrack.title);
+
+      if (!refreshedTitle) {
+        return;
+      }
+
+      row.Title = refreshedTitle;
+      await this.persist();
+      logInfo("Refreshed missing YouTube playlist title", {
+        title: row.Title,
+        url: row.Link
+      });
+    } catch (error) {
+      logWarn("Failed to refresh missing YouTube playlist title", {
+        url: row.Link,
+        message: error?.message ?? String(error)
+      });
+    }
+  }
+
   hasTrack(track) {
     return this.rows.some((row) => row.Key === track.key);
   }
@@ -87,7 +139,7 @@ export class PlaylistRepository {
 
     this.rows.push({
       Link: track.url,
-      Title: track.title,
+      Title: normalizePlaylistTitle(track.title),
       Provider: track.provider,
       Key: track.key
     });

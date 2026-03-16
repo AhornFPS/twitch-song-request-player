@@ -36,6 +36,36 @@ const themeOptions = [
     id: "compact",
     label: "Compact",
     description: "Slim ticker bar: stacked coloured badges, inline UP NEXT queue."
+  },
+  {
+    id: "terminal",
+    label: "Terminal",
+    description: "Monochrome CRT readout with only the essentials."
+  },
+  {
+    id: "synthwave",
+    label: "Synthwave",
+    description: "Neon magenta-and-cyan panel with loud arcade-night energy."
+  },
+  {
+    id: "broadcast",
+    label: "Broadcast",
+    description: "Info-dense live lower-third with a dedicated rundown column."
+  },
+  {
+    id: "mixtape",
+    label: "Mixtape Deck",
+    description: "Cassette-era plastic shell with paper-label track display."
+  },
+  {
+    id: "noir",
+    label: "Noir",
+    description: "Minimal black-and-ivory hi-fi card with circular artwork."
+  },
+  {
+    id: "arcade",
+    label: "Arcade",
+    description: "Chunky retro cabinet styling with bright pixel-block accents."
   }
 ];
 const validThemeIds = new Set(themeOptions.map((theme) => theme.id));

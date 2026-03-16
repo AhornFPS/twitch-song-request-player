@@ -1144,3 +1144,962 @@ body {
     flex-basis: 100%;
   }
 }
+
+/* =====================================================
+   Terminal – essential-info CRT readout
+   ===================================================== */
+
+[data-theme="terminal"] .player-card {
+  width: min(520px, calc(100vw - 16px));
+  padding: 14px 14px 10px;
+  border-radius: 0;
+  gap: 6px;
+  background:
+    linear-gradient(180deg, rgba(8, 18, 8, 0.98), rgba(1, 4, 2, 0.99)),
+    var(--panel);
+  border: 1px solid #2dd881;
+  box-shadow:
+    0 0 0 1px rgba(45, 216, 129, 0.14),
+    0 0 28px rgba(20, 110, 58, 0.26);
+  backdrop-filter: none;
+}
+
+[data-theme="terminal"] .player-card::before {
+  content: "NOW PLAYING";
+  inset: 8px 12px auto auto;
+  width: auto;
+  height: auto;
+  background: none;
+  color: #2dd881;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.54rem;
+  font-weight: 500;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+[data-theme="terminal"] .player-card__glow,
+[data-theme="terminal"] .player-card__media,
+[data-theme="terminal"] .badge-row {
+  display: none;
+}
+
+[data-theme="terminal"] .player-card__top {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+}
+
+[data-theme="terminal"] .player-card__main {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+[data-theme="terminal"] .player-card__header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+
+[data-theme="terminal"] .player-card__copy {
+  min-height: 0;
+  padding: 0;
+}
+
+[data-theme="terminal"] #current-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(0.94rem, 2vw, 1.16rem);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(45, 216, 129, 0.32);
+}
+
+[data-theme="terminal"] .player-card__status {
+  display: flex;
+  justify-items: stretch;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+[data-theme="terminal"] .status-pill {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 6px;
+}
+
+[data-theme="terminal"] .status-pill__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 0;
+  background: #2dd881;
+  box-shadow:
+    0 0 0 1px rgba(45, 216, 129, 0.44),
+    0 0 10px rgba(45, 216, 129, 0.44);
+}
+
+[data-theme="terminal"] #queue-count {
+  color: var(--text);
+  font-size: 0.62rem;
+}
+
+[data-theme="terminal"] .timeline {
+  gap: 10px;
+}
+
+[data-theme="terminal"] .timeline__track {
+  height: 6px;
+  border-radius: 0;
+  background: #081208;
+  border: 1px solid #1c4d30;
+  box-shadow: none;
+}
+
+[data-theme="terminal"] .timeline__fill {
+  border-radius: 0;
+  background: linear-gradient(90deg, #2dd881, #d7ff70);
+  box-shadow: 0 0 12px rgba(45, 216, 129, 0.36);
+}
+
+[data-theme="terminal"] .queue-panel {
+  padding-top: 6px;
+  border-top: 1px dashed rgba(45, 216, 129, 0.26);
+}
+
+[data-theme="terminal"] .queue-panel__header {
+  display: none;
+}
+
+[data-theme="terminal"] .queue-list {
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+[data-theme="terminal"] .queue-list::before {
+  content: "QUEUE>";
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  color: #5ba375;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+[data-theme="terminal"] .queue-item {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-theme="terminal"] .queue-item + .queue-item,
+[data-theme="terminal"] .queue-meta {
+  display: none;
+}
+
+[data-theme="terminal"] .queue-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* =====================================================
+   Synthwave – bold neon club card
+   ===================================================== */
+
+[data-theme="synthwave"] .player-card {
+  width: min(700px, calc(100vw - 16px));
+  padding: 14px 16px 14px;
+  border-radius: 28px;
+  border: 1px solid rgba(55, 232, 255, 0.28);
+  background:
+    linear-gradient(140deg, rgba(73, 25, 109, 0.95), rgba(14, 11, 38, 0.97)),
+    var(--panel);
+  box-shadow:
+    0 0 0 1px rgba(255, 67, 165, 0.14),
+    0 22px 60px rgba(11, 3, 27, 0.74);
+}
+
+[data-theme="synthwave"] .player-card::before {
+  content: "";
+  inset: auto 24px 14px auto;
+  width: 180px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, #37e8ff 40%, #ff43a5 100%);
+  opacity: 0.9;
+}
+
+[data-theme="synthwave"] .player-card__glow {
+  right: -8px;
+  bottom: -10px;
+  width: 180px;
+  height: 180px;
+}
+
+[data-theme="synthwave"] .player-card__top {
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 14px;
+  align-items: center;
+}
+
+[data-theme="synthwave"] .player-card__media {
+  order: 2;
+  width: 96px;
+  height: 96px;
+}
+
+[data-theme="synthwave"] .player-card__main {
+  order: 1;
+}
+
+[data-theme="synthwave"] .artwork-image,
+[data-theme="synthwave"] .artwork-fallback {
+  border-radius: 24px;
+  border: 1px solid rgba(55, 232, 255, 0.34);
+  box-shadow:
+    0 0 0 1px rgba(255, 67, 165, 0.16),
+    0 0 28px rgba(55, 232, 255, 0.22);
+}
+
+[data-theme="synthwave"] .player-card__header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+[data-theme="synthwave"] .player-card__copy {
+  min-height: 0;
+}
+
+[data-theme="synthwave"] #current-title {
+  font-size: clamp(1.45rem, 2.7vw, 2.3rem);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  text-shadow:
+    0 0 10px rgba(255, 67, 165, 0.38),
+    0 0 20px rgba(55, 232, 255, 0.24);
+}
+
+[data-theme="synthwave"] .player-card__status {
+  display: flex;
+  justify-items: start;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+[data-theme="synthwave"] .status-pill {
+  background: rgba(255, 67, 165, 0.16);
+  border-color: rgba(255, 67, 165, 0.28);
+  box-shadow: 0 0 18px rgba(255, 67, 165, 0.12);
+}
+
+[data-theme="synthwave"] .status-pill__dot {
+  background: #37e8ff;
+  box-shadow: 0 0 0 6px rgba(55, 232, 255, 0.18);
+}
+
+[data-theme="synthwave"] .badge-row {
+  max-width: none;
+}
+
+[data-theme="synthwave"] .provider-badge {
+  background: rgba(55, 232, 255, 0.16);
+  color: #8ff7ff;
+  border-color: rgba(55, 232, 255, 0.22);
+}
+
+[data-theme="synthwave"] .save-badge--saved {
+  background: rgba(255, 219, 77, 0.18);
+  color: #fff2a8;
+  border-color: rgba(255, 219, 77, 0.2);
+}
+
+[data-theme="synthwave"] .save-badge--idle {
+  background: rgba(255, 255, 255, 0.08);
+  color: #c29fd7;
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="synthwave"] .timeline {
+  gap: 10px;
+}
+
+[data-theme="synthwave"] .timeline__track {
+  height: 10px;
+  background: rgba(12, 7, 32, 0.74);
+  box-shadow:
+    inset 0 0 0 1px rgba(55, 232, 255, 0.18),
+    0 0 18px rgba(55, 232, 255, 0.12);
+}
+
+[data-theme="synthwave"] .timeline__fill {
+  box-shadow: 0 0 22px rgba(55, 232, 255, 0.35);
+}
+
+[data-theme="synthwave"] .queue-panel {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="synthwave"] .queue-list {
+  gap: 8px;
+}
+
+[data-theme="synthwave"] .queue-item {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(135deg, rgba(255, 67, 165, 0.16), rgba(55, 232, 255, 0.08));
+}
+
+/* =====================================================
+   Broadcast – info-dense live lower-third
+   ===================================================== */
+
+[data-theme="broadcast"] .player-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  grid-template-areas: "top queue";
+  align-items: stretch;
+  width: min(880px, calc(100vw - 16px));
+  padding: 12px 14px;
+  border-radius: 20px;
+  gap: 14px;
+}
+
+[data-theme="broadcast"] .player-card::before {
+  content: "LIVE MUSIC FEED";
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: 36px;
+  border-radius: 20px 20px 0 0;
+  background: linear-gradient(90deg, #9c1a1a 0 18%, #102a49 18% 100%);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: #fff4eb;
+  z-index: 2;
+}
+
+[data-theme="broadcast"] .player-card__glow {
+  display: none;
+}
+
+[data-theme="broadcast"] .player-card__top {
+  grid-area: top;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 14px;
+  padding-top: 30px;
+}
+
+[data-theme="broadcast"] .player-card__media {
+  width: 86px;
+  height: 86px;
+}
+
+[data-theme="broadcast"] .artwork-image,
+[data-theme="broadcast"] .artwork-fallback {
+  border-radius: 12px;
+}
+
+[data-theme="broadcast"] .player-card__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 170px;
+  gap: 10px;
+  align-items: start;
+}
+
+[data-theme="broadcast"] .player-card__copy {
+  min-height: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="broadcast"] #current-title {
+  font-size: clamp(1.3rem, 2.4vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+[data-theme="broadcast"] .player-card__status {
+  justify-items: stretch;
+  align-content: stretch;
+  gap: 8px;
+}
+
+[data-theme="broadcast"] .status-pill,
+[data-theme="broadcast"] .provider-badge,
+[data-theme="broadcast"] .save-badge {
+  justify-content: center;
+}
+
+[data-theme="broadcast"] .status-pill {
+  padding: 8px 10px;
+  background: rgba(156, 26, 26, 0.2);
+  border-color: rgba(255, 122, 87, 0.24);
+}
+
+[data-theme="broadcast"] .badge-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  max-width: none;
+  gap: 8px;
+}
+
+[data-theme="broadcast"] .provider-badge {
+  width: 100%;
+  background: rgba(84, 157, 255, 0.16);
+  color: #bcd8ff;
+  border-color: rgba(84, 157, 255, 0.22);
+}
+
+[data-theme="broadcast"] .save-badge {
+  width: 100%;
+}
+
+[data-theme="broadcast"] .save-badge--saved {
+  background: rgba(255, 226, 125, 0.18);
+  color: #ffefb3;
+  border-color: rgba(255, 226, 125, 0.18);
+}
+
+[data-theme="broadcast"] .timeline {
+  margin-top: 10px;
+}
+
+[data-theme="broadcast"] .timeline__track {
+  height: 12px;
+  background: rgba(7, 17, 30, 0.65);
+}
+
+[data-theme="broadcast"] .queue-panel {
+  grid-area: queue;
+  padding: 30px 0 0 14px;
+  border-top: none;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="broadcast"] .queue-panel__header {
+  margin-bottom: 8px;
+}
+
+[data-theme="broadcast"] .queue-label {
+  font-size: 0.64rem;
+  letter-spacing: 0.18em;
+}
+
+[data-theme="broadcast"] .queue-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+
+[data-theme="broadcast"] .queue-item {
+  flex: 1 1 auto;
+  border-radius: 12px;
+  padding: 8px 10px;
+}
+
+[data-theme="broadcast"] .queue-title {
+  font-size: 0.78rem;
+}
+
+[data-theme="broadcast"] .queue-meta {
+  font-size: 0.56rem;
+}
+
+/* =====================================================
+   Mixtape Deck – cassette-era warm plastic shell
+   ===================================================== */
+
+[data-theme="mixtape"] .player-card {
+  padding: 28px 14px 12px;
+  border-radius: 16px;
+  border: 2px solid #d1b08c;
+  background:
+    linear-gradient(180deg, rgba(112, 78, 56, 0.97), rgba(41, 24, 17, 0.98)),
+    var(--panel);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 40px rgba(18, 8, 5, 0.54);
+  backdrop-filter: none;
+}
+
+[data-theme="mixtape"] .player-card::before {
+  content: "SIDE A / REQUEST DECK";
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: 24px;
+  border-radius: 14px 14px 0 0;
+  background: linear-gradient(90deg, #f3d7b1, #d6a46c);
+  color: #55341f;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+[data-theme="mixtape"] .player-card__glow {
+  display: none;
+}
+
+[data-theme="mixtape"] .player-card__top {
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+}
+
+[data-theme="mixtape"] .player-card__media {
+  width: 76px;
+  height: 76px;
+}
+
+[data-theme="mixtape"] .artwork-image,
+[data-theme="mixtape"] .artwork-fallback {
+  border-radius: 8px;
+  border: 3px solid #f0d2ab;
+  box-shadow: 0 0 0 2px #6a4a31;
+}
+
+[data-theme="mixtape"] .player-card__copy {
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 2px solid #b89068;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #f3e7d2, #dbc8ad);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+[data-theme="mixtape"] #current-title {
+  color: #2b211c;
+  font-size: clamp(1.15rem, 2.4vw, 1.6rem);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-shadow: none;
+}
+
+[data-theme="mixtape"] .status-pill,
+[data-theme="mixtape"] .provider-badge,
+[data-theme="mixtape"] .save-badge {
+  background: #3b281f;
+  color: #f0d2ab;
+  border-color: rgba(241, 210, 171, 0.3);
+  box-shadow: none;
+}
+
+[data-theme="mixtape"] .status-pill__dot {
+  background: #f26a3d;
+  box-shadow: none;
+}
+
+[data-theme="mixtape"] .save-badge--saved {
+  background: #1d5a53;
+  color: #bff7ea;
+  border-color: #2d7d73;
+}
+
+[data-theme="mixtape"] .save-badge--idle {
+  background: #4f3b31;
+  color: #d6b298;
+  border-color: #725949;
+}
+
+[data-theme="mixtape"] .timeline__track {
+  height: 10px;
+  background: #2c1a15;
+  border: 1px solid rgba(240, 210, 171, 0.18);
+}
+
+[data-theme="mixtape"] .timeline__fill {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.18) 0 2px,
+      transparent 2px 8px
+    ),
+    linear-gradient(90deg, #f26a3d, #ffb35a);
+}
+
+[data-theme="mixtape"] .queue-panel {
+  padding-top: 8px;
+  border-top: 1px dashed rgba(240, 210, 171, 0.3);
+}
+
+[data-theme="mixtape"] .queue-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+[data-theme="mixtape"] .queue-item {
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(240, 210, 171, 0.14);
+  background: rgba(17, 10, 8, 0.25);
+}
+
+/* =====================================================
+   Noir – minimal hi-fi card
+   ===================================================== */
+
+[data-theme="noir"] .player-card {
+  width: min(560px, calc(100vw - 16px));
+  padding: 14px 16px 12px;
+  border-radius: 30px;
+}
+
+[data-theme="noir"] .player-card::before {
+  content: "";
+  inset: 18px 18px auto auto;
+  width: 80px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 245, 220, 0.82));
+}
+
+[data-theme="noir"] .player-card__top {
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+}
+
+[data-theme="noir"] .player-card__media {
+  width: 88px;
+  height: 88px;
+}
+
+[data-theme="noir"] .artwork-image,
+[data-theme="noir"] .artwork-fallback {
+  border-radius: 999px;
+  border: 1px solid rgba(247, 240, 223, 0.18);
+  box-shadow:
+    inset 0 0 0 6px rgba(255, 255, 255, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="noir"] .artwork-fallback {
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: 0.18em;
+}
+
+[data-theme="noir"] .player-card__header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+[data-theme="noir"] .player-card__copy {
+  min-height: 0;
+}
+
+[data-theme="noir"] #current-title {
+  font-size: clamp(1.6rem, 2.7vw, 2.2rem);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #f7f0df;
+}
+
+[data-theme="noir"] .player-card__status {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+[data-theme="noir"] .status-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(247, 240, 223, 0.16);
+}
+
+[data-theme="noir"] .status-pill__dot {
+  background: #e0c48b;
+  box-shadow: 0 0 0 6px rgba(224, 196, 139, 0.12);
+}
+
+[data-theme="noir"] .provider-badge {
+  background: transparent;
+  color: #f7f0df;
+  border-color: rgba(247, 240, 223, 0.14);
+}
+
+[data-theme="noir"] .save-badge--saved {
+  background: rgba(224, 196, 139, 0.15);
+  color: #f2d9a6;
+  border-color: rgba(224, 196, 139, 0.16);
+}
+
+[data-theme="noir"] .save-badge--idle {
+  background: transparent;
+  border-color: rgba(247, 240, 223, 0.08);
+}
+
+[data-theme="noir"] .timeline {
+  gap: 12px;
+}
+
+[data-theme="noir"] .timeline__track {
+  height: 4px;
+  background: rgba(255, 245, 220, 0.14);
+  box-shadow: none;
+}
+
+[data-theme="noir"] .timeline__fill {
+  box-shadow: none;
+}
+
+[data-theme="noir"] .queue-panel {
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+[data-theme="noir"] .queue-panel__header {
+  display: none;
+}
+
+[data-theme="noir"] .queue-list {
+  gap: 0;
+}
+
+[data-theme="noir"] .queue-list::before {
+  content: "Next";
+  align-self: center;
+  margin-right: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+}
+
+[data-theme="noir"] .queue-item {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+[data-theme="noir"] .queue-item + .queue-item,
+[data-theme="noir"] .queue-meta {
+  display: none;
+}
+
+/* =====================================================
+   Arcade – chunky cabinet styling
+   ===================================================== */
+
+[data-theme="arcade"] .player-card {
+  padding: 12px;
+  border-radius: 8px;
+  border: 3px solid #f4d84a;
+  background:
+    linear-gradient(180deg, rgba(25, 37, 56, 0.98), rgba(11, 17, 28, 0.99)),
+    var(--panel);
+  box-shadow:
+    0 0 0 3px #0d2230,
+    12px 12px 0 rgba(0, 0, 0, 0.35);
+}
+
+[data-theme="arcade"] .player-card::before {
+  content: "1UP MUSIC";
+  inset: -3px auto auto -3px;
+  width: 180px;
+  height: 28px;
+  border-radius: 0 0 8px 0;
+  background: #f4d84a;
+  color: #0b1320;
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+[data-theme="arcade"] .player-card__glow {
+  display: none;
+}
+
+[data-theme="arcade"] .player-card__top {
+  grid-template-columns: 70px minmax(0, 1fr);
+  gap: 12px;
+  padding-top: 18px;
+}
+
+[data-theme="arcade"] .player-card__media {
+  width: 70px;
+  height: 70px;
+}
+
+[data-theme="arcade"] .artwork-image,
+[data-theme="arcade"] .artwork-fallback {
+  border-radius: 6px;
+  border: 3px solid #f4d84a;
+  box-shadow: 0 0 0 3px #142637;
+}
+
+[data-theme="arcade"] .player-card__header {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+[data-theme="arcade"] .player-card__copy {
+  min-height: 0;
+  padding: 8px 10px;
+  border: 2px solid #2de2e6;
+  border-radius: 6px;
+  background: #142637;
+}
+
+[data-theme="arcade"] #current-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(1rem, 2.1vw, 1.3rem);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-shadow: none;
+}
+
+[data-theme="arcade"] .status-pill,
+[data-theme="arcade"] .provider-badge,
+[data-theme="arcade"] .save-badge {
+  border-radius: 6px;
+  border-width: 2px;
+  box-shadow: none;
+  font-weight: 700;
+}
+
+[data-theme="arcade"] .status-pill {
+  background: #102233;
+  border-color: #2de2e6;
+}
+
+[data-theme="arcade"] .status-pill__dot {
+  background: #ff4d6d;
+  box-shadow: none;
+}
+
+[data-theme="arcade"] .provider-badge {
+  background: #1a1730;
+  color: #ff9be1;
+  border-color: #ff4d6d;
+}
+
+[data-theme="arcade"] .save-badge--saved {
+  background: #173621;
+  color: #a5ff91;
+  border-color: #8cff66;
+}
+
+[data-theme="arcade"] .save-badge--idle {
+  background: #30221a;
+  color: #ffd57a;
+  border-color: #f4d84a;
+}
+
+[data-theme="arcade"] .timeline__track {
+  height: 14px;
+  border-radius: 6px;
+  border: 2px solid #2de2e6;
+  background: #0f1c2b;
+  box-shadow: none;
+}
+
+[data-theme="arcade"] .timeline__fill {
+  border-radius: 2px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.18) 0 4px,
+      transparent 4px 10px
+    ),
+    linear-gradient(90deg, #ff4d6d, #f4d84a);
+  box-shadow: none;
+}
+
+[data-theme="arcade"] .queue-panel {
+  padding-top: 8px;
+  border-top: 2px solid #2de2e6;
+}
+
+[data-theme="arcade"] .queue-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 2px solid #16384f;
+  background: #101a24;
+}
+
+[data-theme="arcade"] .queue-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+}
+
+[data-theme="arcade"] .queue-meta {
+  font-size: 0.52rem;
+  color: #ffd57a;
+}
+
+@media (max-width: 760px) {
+  [data-theme="broadcast"] .player-card {
+    display: flex;
+    width: min(100vw - 16px, 540px);
+  }
+
+  [data-theme="broadcast"] .player-card::before {
+    height: 30px;
+    font-size: 0.54rem;
+    letter-spacing: 0.18em;
+  }
+
+  [data-theme="broadcast"] .player-card__top {
+    padding-top: 24px;
+  }
+
+  [data-theme="broadcast"] .player-card__header {
+    grid-template-columns: 1fr;
+  }
+
+  [data-theme="broadcast"] .queue-panel {
+    padding: 8px 0 0;
+    border-left: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+  }
+
+  [data-theme="synthwave"] .player-card {
+    width: min(100vw - 16px, 520px);
+  }
+
+  [data-theme="synthwave"] .player-card__top {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  [data-theme="synthwave"] .player-card__media {
+    order: 0;
+    width: 72px;
+    height: 72px;
+  }
+
+  [data-theme="mixtape"] .queue-list {
+    grid-template-columns: 1fr;
+  }
+}

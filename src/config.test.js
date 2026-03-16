@@ -144,3 +144,42 @@ test("stored category suppression lists are normalized and preserved", async (t)
   assert.deepEqual(settings.chatSuppressedCategories, ["Music", "DJs"]);
   assert.deepEqual(settings.playbackSuppressedCategories, ["Just Chatting", "Music"]);
 });
+
+test("new overlay themes are exposed and accepted as valid saved settings", async (t) => {
+  const restoreEnv = captureEnv(["THEME"]);
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    restoreEnv();
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  delete process.env.THEME;
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ theme: "arcade" }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+  const themeIds = configStore.getThemeOptions().map((theme) => theme.id);
+
+  assert.equal(settings.theme, "arcade");
+  assert.deepEqual(themeIds, [
+    "aurora",
+    "sunset",
+    "winamp",
+    "compact",
+    "terminal",
+    "synthwave",
+    "broadcast",
+    "mixtape",
+    "noir",
+    "arcade"
+  ]);
+});

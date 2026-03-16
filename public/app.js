@@ -53,18 +53,24 @@ let soundCloudDurationProbeTimer = null;
 let soundCloudAutoplayRetryTimer = null;
 let soundCloudLoadTimeoutTimer = null;
 let youtubeAutoplayRetryTimer = null;
+let youtubeStartupWatchdogTimer = null;
 let youtubeApiReady = false;
 let youtubePlayerReady = false;
 let youtubeEndedTrackId = "";
+let youtubeStartupRecoveryTrackId = "";
+let youtubeStartupHardResetAttempts = 0;
 let displayedTrackId = null;
 let trackExitTimer = null;
 let trackEnterTimer = null;
 let titleMarqueeFrame = null;
 let desiredPausedState = false;
+let handoffSourceTrack = null;
 let overlayBuildToken = typeof window.__overlayBuildToken === "string"
   ? window.__overlayBuildToken
   : "";
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
+const youtubeStartupRecoveryStorageKey = "youtube-startup-recovery";
+const youtubeStartupTimeoutMs = 15000;
 
 function applyOverlayTheme(themeId) {
   document.documentElement.dataset.theme = themeId || "aurora";
@@ -100,7 +106,7 @@ function updateTitleMarquee() {
   }
 
   const gapWidth = 180;
-  const travelDistance = overflowAmount + gapWidth;
+  const travelDistance = textWidth + gapWidth;
   const pixelsPerSecond = 26;
   const durationSeconds = Math.max(12, travelDistance / pixelsPerSecond);
 
@@ -154,6 +160,15 @@ function stopYouTubeAutoplayRetry() {
 
   window.clearTimeout(youtubeAutoplayRetryTimer);
   youtubeAutoplayRetryTimer = null;
+}
+
+function stopYouTubeStartupWatchdog() {
+  if (!youtubeStartupWatchdogTimer) {
+    return;
+  }
+
+  window.clearInterval(youtubeStartupWatchdogTimer);
+  youtubeStartupWatchdogTimer = null;
 }
 
 function stopSoundCloudAutoplayRetry() {
@@ -276,6 +291,195 @@ function reloadPageForSoundCloudToYoutubeHandoff(track) {
   window.location.replace(reloadUrl.toString());
 }
 
+function getYouTubeStartupRecoveryAttempts(trackId) {
+  if (!trackId) {
+    return 0;
+  }
+
+  try {
+    const rawValue = window.sessionStorage.getItem(youtubeStartupRecoveryStorageKey);
+    if (!rawValue) {
+      return 0;
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    if (parsedValue?.trackId !== trackId) {
+      return 0;
+    }
+
+    return Number.isInteger(parsedValue.attempts) && parsedValue.attempts > 0
+      ? parsedValue.attempts
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function setYouTubeStartupRecoveryAttempts(trackId, attempts) {
+  if (!trackId) {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(
+      youtubeStartupRecoveryStorageKey,
+      JSON.stringify({
+        trackId,
+        attempts
+      })
+    );
+  } catch {
+  }
+}
+
+function clearYouTubeStartupRecoveryAttempts(trackId = "") {
+  try {
+    const rawValue = window.sessionStorage.getItem(youtubeStartupRecoveryStorageKey);
+    if (!rawValue) {
+      return;
+    }
+
+    const parsedValue = JSON.parse(rawValue);
+    if (!trackId || parsedValue?.trackId === trackId) {
+      window.sessionStorage.removeItem(youtubeStartupRecoveryStorageKey);
+    }
+  } catch {
+  }
+}
+
+function resetYouTubeStartupRecoveryState(trackId = "") {
+  if (youtubeStartupRecoveryTrackId === trackId) {
+    return;
+  }
+
+  youtubeStartupRecoveryTrackId = trackId;
+  youtubeStartupHardResetAttempts = 0;
+}
+
+function reloadPageForYouTubeStartupRecovery(track, details = {}) {
+  const nextAttempts = getYouTubeStartupRecoveryAttempts(track.id) + 1;
+  setYouTubeStartupRecoveryAttempts(track.id, nextAttempts);
+  sendClientLog("warn", "Reloading page for stuck YouTube startup", {
+    trackId: track.id,
+    title: track.title,
+    attempts: nextAttempts,
+    ...details
+  });
+
+  const reloadUrl = new URL(window.location.href);
+  reloadUrl.searchParams.set("youtubeRecoveryReload", String(Date.now()));
+  window.location.replace(reloadUrl.toString());
+}
+
+function handleYouTubeStartupTimeout(track, videoId) {
+  if (
+    !track?.id ||
+    desiredPausedState ||
+    currentTrackId !== track.id ||
+    activeTrack?.provider !== "youtube" ||
+    activeTrack?.id !== track.id
+  ) {
+    return;
+  }
+
+  let playerState = null;
+  let currentTimeSeconds = 0;
+
+  try {
+    playerState = youtubePlayer?.getPlayerState?.() ?? null;
+    currentTimeSeconds = Number(youtubePlayer?.getCurrentTime?.() ?? 0) || 0;
+  } catch {
+  }
+
+  if (currentTimeSeconds > 0.5) {
+    clearYouTubeStartupRecoveryAttempts(track.id);
+    return;
+  }
+
+  stopYouTubeAutoplayRetry();
+  stopPlaybackTimer();
+
+  if (youtubeStartupRecoveryTrackId !== track.id) {
+    resetYouTubeStartupRecoveryState(track.id);
+  }
+
+  if (youtubeStartupHardResetAttempts < 1) {
+    youtubeStartupHardResetAttempts += 1;
+    sendClientLog("warn", "YouTube startup stalled; rebuilding player", {
+      trackId: track.id,
+      title: track.title,
+      currentTimeSeconds,
+      playerState,
+      videoId,
+      hardResetAttempts: youtubeStartupHardResetAttempts
+    });
+    hardResetYouTubePlayer();
+    loadYoutubeTrack(track);
+    return;
+  }
+
+  if (getYouTubeStartupRecoveryAttempts(track.id) < 1) {
+    reloadPageForYouTubeStartupRecovery(track, {
+      currentTimeSeconds,
+      playerState,
+      videoId
+    });
+    return;
+  }
+
+  sendClientLog("error", "YouTube startup timed out after recovery attempts", {
+    trackId: track.id,
+    title: track.title,
+    currentTimeSeconds,
+    playerState,
+    videoId
+  });
+  clearYouTubeStartupRecoveryAttempts(track.id);
+  reportClientError("This YouTube track could not be started in the embedded player.");
+  emitStatus("error", { reason: "youtube_startup_timeout" });
+}
+
+function startYouTubeStartupWatchdog(track, videoId) {
+  stopYouTubeStartupWatchdog();
+
+  if (!track?.id || desiredPausedState) {
+    return;
+  }
+
+  resetYouTubeStartupRecoveryState(track.id);
+  const startedAt = Date.now();
+  youtubeStartupWatchdogTimer = window.setInterval(() => {
+    if (
+      currentTrackId !== track.id ||
+      activeTrack?.provider !== "youtube" ||
+      activeTrack?.id !== track.id
+    ) {
+      stopYouTubeStartupWatchdog();
+      return;
+    }
+
+    let currentTimeSeconds = 0;
+
+    try {
+      currentTimeSeconds = Number(youtubePlayer?.getCurrentTime?.() ?? 0) || 0;
+    } catch {
+    }
+
+    if (currentTimeSeconds > 0.5) {
+      clearYouTubeStartupRecoveryAttempts(track.id);
+      stopYouTubeStartupWatchdog();
+      return;
+    }
+
+    if (Date.now() - startedAt < youtubeStartupTimeoutMs) {
+      return;
+    }
+
+    stopYouTubeStartupWatchdog();
+    handleYouTubeStartupTimeout(track, videoId);
+  }, 1000);
+}
+
 function startYouTubePlaybackTimer() {
   stopPlaybackTimer();
   playbackTimer = window.setInterval(() => {
@@ -283,7 +487,13 @@ function startYouTubePlaybackTimer() {
       return;
     }
 
-    updateTimeline(youtubePlayer.getCurrentTime(), youtubePlayer.getDuration());
+    const currentTimeSeconds = youtubePlayer.getCurrentTime();
+    updateTimeline(currentTimeSeconds, youtubePlayer.getDuration());
+
+    if (currentTrackId && currentTimeSeconds > 0.5) {
+      clearYouTubeStartupRecoveryAttempts(currentTrackId);
+      stopYouTubeStartupWatchdog();
+    }
   }, 500);
 }
 
@@ -372,7 +582,9 @@ function createYouTubePlayer() {
         if (event.data === window.YT.PlayerState.ENDED) {
           youtubeEndedTrackId = currentTrackId ?? "";
           stopYouTubeAutoplayRetry();
+          stopYouTubeStartupWatchdog();
           stopPlaybackTimer();
+          clearYouTubeStartupRecoveryAttempts(currentTrackId ?? "");
           emitStatus("ended");
         }
       },
@@ -391,6 +603,8 @@ function createYouTubePlayer() {
           code: event.data,
           currentTrackId
         });
+        stopYouTubeStartupWatchdog();
+        clearYouTubeStartupRecoveryAttempts(currentTrackId ?? "");
         emitStatus("error", { reason: `youtube_${event.data}` });
       }
     }
@@ -449,6 +663,7 @@ function forceYoutubePlayback(videoId, attempt = 0) {
 
 function hardResetYouTubePlayer() {
   stopYouTubeAutoplayRetry();
+  stopYouTubeStartupWatchdog();
   stopPlaybackTimer();
   pendingYoutubeTrack = null;
   youtubePlayerReady = false;
@@ -715,6 +930,8 @@ function updateState(state) {
     loadTrack(currentTrack);
     syncPausedState();
   } else if (currentTrackId) {
+    clearYouTubeStartupRecoveryAttempts(currentTrackId);
+    rememberTrackForHandoff();
     activeTrack = null;
     currentTrackId = null;
     lastReportedStatus = "";
@@ -795,6 +1012,17 @@ function reportClientError(message) {
   setMetaText(message);
 }
 
+function rememberTrackForHandoff(track = activeTrack) {
+  if (!track?.provider) {
+    return;
+  }
+
+  handoffSourceTrack = {
+    id: track.id ?? null,
+    provider: track.provider
+  };
+}
+
 function handleSocketDisconnect() {
   socketConnected = false;
   sendClientLog("warn", "Socket disconnected");
@@ -852,6 +1080,7 @@ function resetPlayers() {
   youtubeEndedTrackId = "";
   stopPlaybackTimer();
   stopYouTubeAutoplayRetry();
+  stopYouTubeStartupWatchdog();
   stopSoundCloudAutoplayRetry();
   stopSoundCloudDurationProbe();
   stopSoundCloudLoadTimeout();
@@ -1049,6 +1278,10 @@ function loadYoutubeTrack(track) {
     url: track.url
   });
 
+  if (!desiredPausedState) {
+    startYouTubeStartupWatchdog(track, videoId);
+  }
+
   if (!youtubePlayer || !youtubePlayerReady) {
     pendingYoutubeTrack = { track, videoId };
     if (!ensureYouTubePlayerReady()) {
@@ -1065,6 +1298,7 @@ function loadYoutubeTrack(track) {
 
   youtubePlayer.loadVideoById(videoId);
   if (desiredPausedState) {
+    stopYouTubeStartupWatchdog();
     window.setTimeout(() => {
       if (currentTrackId === track.id) {
         youtubePlayer.pauseVideo?.();
@@ -1083,10 +1317,12 @@ function syncPausedState() {
 
   if (activeTrack.provider === "youtube" && youtubePlayer) {
     if (desiredPausedState) {
+      stopYouTubeStartupWatchdog();
       youtubePlayer.pauseVideo?.();
       stopPlaybackTimer();
     } else {
       const videoId = extractYouTubeVideoId(activeTrack.url);
+      startYouTubeStartupWatchdog(activeTrack, videoId);
       forceYoutubePlayback(videoId);
     }
     return;
@@ -1115,7 +1351,7 @@ function loadTrack(track) {
     origin: track.origin
   });
 
-  const previousTrack = activeTrack;
+  const previousTrack = activeTrack ?? handoffSourceTrack;
   const pendingReloadTrackId = getPendingSoundCloudToYoutubeReloadTrackId();
 
   if (
@@ -1128,6 +1364,7 @@ function loadTrack(track) {
   }
 
   clearPendingSoundCloudToYoutubeReloadTrackId(track.id);
+  resetYouTubeStartupRecoveryState(track.id);
   activeTrack = null;
   currentTrackId = null;
   lastReportedStatus = "";
@@ -1149,6 +1386,7 @@ function loadTrack(track) {
   }
   activeTrack = track;
   currentTrackId = track.id;
+  handoffSourceTrack = null;
   resetTimeline();
 
   if (track.provider === "soundcloud") {
@@ -1191,6 +1429,9 @@ if (socket) {
   });
   socket.on("player:stop", () => {
     sendClientLog("info", "Received player:stop event");
+    clearYouTubeStartupRecoveryAttempts(currentTrackId ?? "");
+    rememberTrackForHandoff();
+    activeTrack = null;
     currentTrackId = null;
     lastReportedStatus = "";
     desiredPausedState = false;

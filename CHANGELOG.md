@@ -4,10 +4,15 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed overflowing OBS overlay track titles so marquee scrolling now loops continuously instead of stopping after one pass.
+- Added six more OBS overlay themes: Terminal, Synthwave, Broadcast, Mixtape Deck, Noir, and Arcade, spanning minimal CRT, neon club, info-dense lower-third, cassette-deck, monochrome hi-fi, and retro cabinet styles.
+- Fixed fallback playlist entries with `undefined` YouTube titles so the app retries their metadata through the YouTube API when those tracks are selected.
 - Changed the desktop app theme dropdown to save and apply OBS overlay theme switches immediately without needing `Save settings`.
 - Fixed YouTube-to-SoundCloud queue handoffs in OBS so SoundCloud tracks no longer stall at `0:00` until the browser source cache is refreshed.
+- Fixed SoundCloud-to-YouTube OBS handoffs so stuck YouTube embeds at `0:00` now rebuild and self-reload before the track is skipped.
 - Blocked requests for the song that is already playing and now send `Song <title> is already playing` to Twitch chat.
 - Fixed blocked or broken SoundCloud embeds so the OBS player skips them instead of getting stuck on the track.
+- Fixed finished SoundCloud tracks handing off to YouTube so the next YouTube track starts instead of only updating the overlay visuals.
 - Fixed the Windows release menu so EXE builds and release commands run from the app repo when launched from `C:\Windows` or another folder, and failed actions now report correctly.
 
 ## 1.2.1 - 2026-03-16
