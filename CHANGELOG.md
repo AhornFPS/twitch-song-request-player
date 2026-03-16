@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed the OBS overlay track-title marquee so it scrolls through the loop point smoothly instead of pausing and snapping at the end.
+
 ## 1.3.2 - 2026-03-16
 
 - hardening the fix on long scrolling titles

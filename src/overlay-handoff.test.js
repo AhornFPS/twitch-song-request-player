@@ -239,6 +239,24 @@ test("overflowing titles still enable marquee when the text width comes from lay
   assert.equal(title.style.getPropertyValue("--title-marquee-duration"), `${500 / 26}s`);
 });
 
+test("overlay marquee keyframes stay continuous through the loop point", () => {
+  const stylesPath = path.resolve("public/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+  const keyframesStart = styles.indexOf("@keyframes title-marquee");
+  const nextKeyframesStart = styles.indexOf("@keyframes ", keyframesStart + 1);
+  const marqueeKeyframes = keyframesStart >= 0
+    ? styles.slice(keyframesStart, nextKeyframesStart >= 0 ? nextKeyframesStart : undefined)
+    : "";
+
+  assert.notEqual(keyframesStart, -1, "expected title marquee keyframes to exist");
+  assert.match(marqueeKeyframes, /0%\s*\{\s*transform:\s*translateX\(0\);/);
+  assert.match(
+    marqueeKeyframes,
+    /100%\s*\{\s*transform:\s*translateX\(calc\(-1 \* var\(--title-marquee-distance\)\)\);/
+  );
+  assert.doesNotMatch(marqueeKeyframes, /10%|90%/);
+});
+
 test("unchanged overlay state does not reschedule the title marquee", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
