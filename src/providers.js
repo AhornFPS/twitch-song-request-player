@@ -47,6 +47,16 @@ export function detectProvider(value) {
   return null;
 }
 
+function isPlayableSoundCloudUrl(rawUrl) {
+  const url = normalizeUrl(rawUrl);
+
+  if (url.hostname.toLowerCase() === "on.soundcloud.com") {
+    return true;
+  }
+
+  return url.pathname.split("/").filter(Boolean).length >= 2;
+}
+
 export function extractYouTubeVideoId(rawUrl) {
   let url;
 
@@ -106,6 +116,10 @@ export async function resolveTrackFromUrl(rawUrl) {
 
   if (!provider) {
     throw new Error("Only YouTube and SoundCloud URLs are supported.");
+  }
+
+  if (provider === "soundcloud" && !isPlayableSoundCloudUrl(rawUrl)) {
+    throw new Error("SoundCloud channel URLs are not playable. Request a specific track URL instead.");
   }
 
   const url = normalizeUrl(rawUrl).toString();

@@ -264,6 +264,16 @@ function createYouTubePlayer() {
           currentTrackId
         });
 
+        if (activeTrack?.provider !== "youtube" || currentTrackId !== activeTrack?.id) {
+          sendClientLog("info", "Ignoring stale YouTube state change", {
+            state: event.data,
+            currentTrackId,
+            activeProvider: activeTrack?.provider ?? null,
+            activeTrackId: activeTrack?.id ?? null
+          });
+          return;
+        }
+
         if (event.data === window.YT.PlayerState.PLAYING) {
           stopYouTubeAutoplayRetry();
           startYouTubePlaybackTimer();
@@ -303,6 +313,16 @@ function createYouTubePlayer() {
         }
       },
       onError: (event) => {
+        if (activeTrack?.provider !== "youtube" || currentTrackId !== activeTrack?.id) {
+          sendClientLog("warn", "Ignoring stale YouTube error", {
+            code: event.data,
+            currentTrackId,
+            activeProvider: activeTrack?.provider ?? null,
+            activeTrackId: activeTrack?.id ?? null
+          });
+          return;
+        }
+
         sendClientLog("error", "YouTube player error", {
           code: event.data,
           currentTrackId
@@ -370,12 +390,26 @@ function hardResetYouTubePlayer() {
   youtubePlayerReady = false;
 
   if (youtubePlayer) {
+    let youtubeIframe = null;
+
+    try {
+      youtubeIframe = youtubePlayer.getIframe?.() ?? null;
+    } catch {
+    }
+
     try {
       youtubePlayer.mute?.();
       youtubePlayer.pauseVideo?.();
       youtubePlayer.stopVideo?.();
       youtubePlayer.clearVideo?.();
     } catch {
+    }
+
+    if (youtubeIframe) {
+      try {
+        youtubeIframe.src = "about:blank";
+      } catch {
+      }
     }
 
     try {
@@ -913,8 +947,8 @@ function loadTrack(track) {
   }
 
   clearPendingSoundCloudToYoutubeReloadTrackId(track.id);
-  activeTrack = track;
-  currentTrackId = track.id;
+  activeTrack = null;
+  currentTrackId = null;
   lastReportedStatus = "";
   resetPlayers();
   if (previousTrack?.provider === "youtube" && track.provider === "soundcloud") {
@@ -932,6 +966,8 @@ function loadTrack(track) {
     hardResetSoundCloudPlayer();
     hardResetYouTubePlayer();
   }
+  activeTrack = track;
+  currentTrackId = track.id;
   resetTimeline();
 
   if (track.provider === "soundcloud") {

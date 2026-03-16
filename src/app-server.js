@@ -16,17 +16,27 @@ function buildRuntimeUrls(activePort) {
   };
 }
 
+function toClientSettings(settings) {
+  const {
+    twitchRefreshToken,
+    ...clientSettings
+  } = settings;
+
+  return clientSettings;
+}
+
 function settingsChanged(previousSettings, nextSettings, keys) {
   return keys.some((key) => previousSettings[key] !== nextSettings[key]);
 }
 
-function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus }) {
+function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus, twitchAuthStatus }) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
-    settings,
+    settings: toClientSettings(settings),
     themeOptions,
     twitchStatus,
+    twitchAuthStatus,
     runtime: {
       activePort,
       pendingRestart: settings.port !== activePort,
@@ -36,11 +46,12 @@ function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus
   };
 }
 
-function buildRuntimeStatusPayload({ settings, activePort, twitchStatus }) {
+function buildRuntimeStatusPayload({ settings, activePort, twitchStatus, twitchAuthStatus }) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
     twitchStatus,
+    twitchAuthStatus,
     runtime: {
       activePort,
       pendingRestart: settings.port !== activePort,
@@ -100,7 +111,15 @@ export async function startAppServer({
     playlistRepository
   });
   const twitchBotService = new TwitchBotService({
-    playerController
+    playerController,
+    persistSettings: async (partialSettings) => {
+      const nextSettings = await configStore.saveSettings({
+        ...currentSettings,
+        ...partialSettings
+      });
+      currentSettings = nextSettings;
+      return nextSettings;
+    }
   });
 
   app.use(express.json());
@@ -118,7 +137,8 @@ export async function startAppServer({
         settings: currentSettings,
         activePort: runtimeConfig.port,
         themeOptions: configStore.getThemeOptions(),
-        twitchStatus: twitchBotService.getStatus()
+        twitchStatus: twitchBotService.getStatus(),
+        twitchAuthStatus: twitchBotService.getAuthStatus()
       })
     );
   });
@@ -128,7 +148,8 @@ export async function startAppServer({
       buildRuntimeStatusPayload({
         settings: currentSettings,
         activePort: runtimeConfig.port,
-        twitchStatus: twitchBotService.getStatus()
+        twitchStatus: twitchBotService.getStatus(),
+        twitchAuthStatus: twitchBotService.getAuthStatus()
       })
     );
   });
@@ -148,6 +169,7 @@ export async function startAppServer({
         "twitchChannel",
         "twitchUsername",
         "twitchOauthToken",
+        "twitchRefreshToken",
         "twitchClientId",
         "twitchClientSecret",
         "youtubeApiKey"
@@ -173,7 +195,8 @@ export async function startAppServer({
           settings: currentSettings,
           activePort: runtimeConfig.port,
           themeOptions: configStore.getThemeOptions(),
-          twitchStatus
+          twitchStatus,
+          twitchAuthStatus: twitchBotService.getAuthStatus()
         }),
         saveSummary: {
           themeChanged,
@@ -190,6 +213,43 @@ export async function startAppServer({
         error: error?.message ?? "Failed to save settings."
       });
     }
+  });
+
+  app.post("/api/twitch-auth/device/start", async (request, response) => {
+    try {
+      currentSettings = await configStore.saveSettings({
+        ...currentSettings,
+        twitchChannel: request.body?.twitchChannel ?? currentSettings.twitchChannel,
+        twitchClientId: request.body?.twitchClientId ?? currentSettings.twitchClientId,
+        twitchClientSecret: request.body?.twitchClientSecret ?? currentSettings.twitchClientSecret
+      });
+
+      await twitchBotService.startDeviceAuth(currentSettings);
+
+      response.json(
+        buildSettingsPayload({
+          settings: currentSettings,
+          activePort: runtimeConfig.port,
+          themeOptions: configStore.getThemeOptions(),
+          twitchStatus: twitchBotService.getStatus(),
+          twitchAuthStatus: twitchBotService.getAuthStatus()
+        })
+      );
+    } catch (error) {
+      logError("Failed to start Twitch device auth", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to start Twitch login."
+      });
+    }
+  });
+
+  app.post("/api/twitch-auth/device/cancel", (_request, response) => {
+    response.json({
+      twitchAuthStatus: twitchBotService.cancelDeviceAuth()
+    });
   });
 
   app.post("/api/player-event", async (request, response) => {

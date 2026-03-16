@@ -17,9 +17,10 @@ function canModeratePlayback(tags, channelName) {
 }
 
 export class TwitchBot {
-  constructor({ config, playerController, client = null, channelInfo = null }) {
+  constructor({ config, playerController, client = null, channelInfo = null, songRequestResolver = resolveSongRequest }) {
     this.config = config;
     this.playerController = playerController;
+    this.songRequestResolver = songRequestResolver;
     this.channelInfo = channelInfo ?? new TwitchChannelInfo({
       channelName: config.twitch.channel,
       clientId: config.twitch.clientId,
@@ -90,7 +91,7 @@ export class TwitchBot {
         return;
       }
 
-      const resolvedTrack = await resolveSongRequest(query, this.config.youtubeApiKey);
+      const resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey);
       const queueTrack = await this.playerController.addRequest({
         ...resolvedTrack,
         requestedBy: {
@@ -98,6 +99,11 @@ export class TwitchBot {
           displayName: tags["display-name"] ?? tags.username ?? ""
         }
       });
+
+      if (queueTrack.alreadyQueued) {
+        await this.reply(channel, `Song ${queueTrack.title} already in the queue`);
+        return;
+      }
 
       await this.reply(
         channel,

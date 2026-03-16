@@ -202,6 +202,8 @@ select {
 }
 
 .primary-button,
+.secondary-button,
+.ghost-button,
 .copy-row__button {
   border: 0;
   border-radius: 14px;
@@ -219,7 +221,25 @@ select {
   font-weight: 700;
 }
 
+.secondary-button,
+.ghost-button {
+  padding: 12px 16px;
+  color: var(--text);
+}
+
+.secondary-button {
+  background: rgba(120, 229, 201, 0.12);
+  border: 1px solid rgba(120, 229, 201, 0.24);
+}
+
+.ghost-button {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
 .primary-button:hover,
+.secondary-button:hover,
+.ghost-button:hover,
 .copy-row__button:hover {
   transform: translateY(-1px);
 }
@@ -272,6 +292,22 @@ select {
   color: var(--muted);
 }
 
+.field__hint {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.field__link {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.field__link:hover {
+  color: color-mix(in srgb, var(--accent) 72%, white);
+}
+
 .field input,
 .copy-row__input {
   width: 100%;
@@ -293,6 +329,53 @@ select {
   margin-top: 28px;
   padding-top: 22px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.credentials-guide {
+  margin-top: 28px;
+  padding-top: 22px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.credentials-guide__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.credentials-guide__header h3 {
+  margin: 8px 0 0;
+  font-size: 1.2rem;
+}
+
+.credentials-guide__grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.credentials-guide__card {
+  border-radius: 18px;
+  padding: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(120, 229, 201, 0.1), transparent 36%),
+    linear-gradient(160deg, rgba(5, 9, 17, 0.92), rgba(12, 24, 44, 0.8));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.credentials-guide__title {
+  margin: 0;
+  font-size: 0.96rem;
+  font-weight: 700;
+}
+
+.credentials-guide__body {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .theme-section__note {
@@ -360,6 +443,10 @@ select {
   gap: 10px;
 }
 
+.copy-row--triple {
+  grid-template-columns: 1fr auto auto;
+}
+
 .copy-row__button {
   padding: 0 14px;
   background: var(--surface);
@@ -385,6 +472,47 @@ select {
   margin: 10px 0 0;
   color: var(--muted);
   line-height: 1.6;
+}
+
+.bot-auth-card {
+  margin-top: 28px;
+  padding: 20px;
+  border-radius: 22px;
+  background:
+    radial-gradient(circle at top left, rgba(120, 229, 201, 0.1), transparent 36%),
+    linear-gradient(160deg, rgba(5, 9, 17, 0.92), rgba(12, 24, 44, 0.8));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.bot-auth-card__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.bot-auth-card__header h3 {
+  margin: 8px 0 0;
+  font-size: 1.2rem;
+}
+
+.bot-auth-card__actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.bot-auth-card__status {
+  margin: 14px 0 0;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.bot-auth-card__details {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
 }
 
 .playback-card {
@@ -445,6 +573,10 @@ select {
   .hero-panel__status {
     grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   }
+
+  .credentials-guide__grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 720px) {
@@ -471,12 +603,19 @@ select {
 
   .panel__header,
   .theme-section__header,
+  .bot-auth-card__header,
   .copy-row {
     grid-template-columns: 1fr;
     display: grid;
   }
 
+  .copy-row--triple {
+    grid-template-columns: 1fr;
+  }
+
   .primary-button,
+  .secondary-button,
+  .ghost-button,
   .copy-row__button {
     min-height: 46px;
   }

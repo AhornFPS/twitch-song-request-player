@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { TwitchBot } from "./twitch-bot.js";
 
-function createBotHarness({ currentTrack, suppressChatMessages = false }) {
+function createBotHarness({
+  currentTrack,
+  suppressChatMessages = false,
+  addRequestResult = null,
+  resolvedTrack = null
+}) {
   let playbackListener = null;
   const sentMessages = [];
   const playerController = {
@@ -11,6 +16,9 @@ function createBotHarness({ currentTrack, suppressChatMessages = false }) {
       return () => {
         playbackListener = null;
       };
+    },
+    async addRequest() {
+      return addRequestResult;
     },
     getCurrentTrack() {
       return currentTrack;
@@ -41,7 +49,8 @@ function createBotHarness({ currentTrack, suppressChatMessages = false }) {
     },
     playerController,
     client,
-    channelInfo
+    channelInfo,
+    songRequestResolver: async () => resolvedTrack
   });
 
   return {
@@ -85,4 +94,44 @@ test("automatic playback announcement uses the currentsong format for playlist t
     }),
     "Current song: Queued Track (https://soundcloud.com/example/track), requested by ViewerOne [not saved]"
   );
+});
+
+test("duplicate song requests send the queue warning to Twitch chat", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/duplicate",
+      title: "Duplicate Track",
+      key: "youtube:duplicate",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://youtu.be/duplicate",
+      title: "Duplicate Track",
+      key: "youtube:duplicate",
+      origin: "queue",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      isSaved: false,
+      alreadyQueued: true
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr duplicate");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Song Duplicate Track already in the queue"
+    }
+  ]);
 });

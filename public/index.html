@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/dashboard.css?v=20260315o" />
+    <link rel="stylesheet" href="/dashboard.css?v=20260316c" />
   </head>
   <body>
     <main class="dashboard-shell">
@@ -50,38 +50,117 @@
             <label class="field">
               <span class="field__label">Twitch channel</span>
               <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
+              <span class="field__hint">The Twitch channel the bot should join. Usually the streamer name, without `#`.</span>
             </label>
 
             <label class="field">
               <span class="field__label">Bot username</span>
               <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
+              <span class="field__hint">The Twitch account that connects to chat. This can be different from the channel owner if you use a bot account.</span>
             </label>
 
             <label class="field field--full">
               <span class="field__label">Bot OAuth token</span>
               <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
+              <span class="field__hint">
+                Required for Twitch chat connection. You can paste a token manually, or use the in-app Twitch login below. Manual tokens should keep the `oauth:` prefix
+                and include `chat:read` and `chat:write`.
+                <a
+                  class="field__link"
+                  href="https://dev.twitch.tv/docs/irc/authenticate-bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >How to get this token</a>
+              </span>
             </label>
 
             <label class="field">
               <span class="field__label">Twitch Client ID</span>
               <input id="twitchClientId" name="twitchClientId" type="password" autocomplete="off" />
+              <span class="field__hint">Optional. Get this from your Twitch Developer application if you want category-aware chat suppression.</span>
             </label>
 
             <label class="field">
               <span class="field__label">Twitch Client Secret</span>
               <input id="twitchClientSecret" name="twitchClientSecret" type="password" autocomplete="off" />
+              <span class="field__hint">Optional. Paired with the Client ID for category-aware chat suppression only.</span>
             </label>
 
             <label class="field field--full">
               <span class="field__label">YouTube API key</span>
               <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
+              <span class="field__hint">Optional unless viewers use `!sr <search terms>`. Create it in Google Cloud for the YouTube Data API. Direct YouTube and SoundCloud links do not need this.</span>
             </label>
 
             <label class="field field--narrow">
               <span class="field__label">Local port</span>
               <input id="port" name="port" type="number" min="1" max="65535" />
+              <span class="field__hint">Only changes the local app URL used on this PC.</span>
             </label>
           </div>
+
+          <section class="bot-auth-card">
+            <div class="bot-auth-card__header">
+              <div>
+                <p class="panel__eyebrow">Twitch Login</p>
+                <h3>Connect the bot account in-app</h3>
+              </div>
+              <div class="bot-auth-card__actions">
+                <button id="twitch-auth-start" class="secondary-button" type="button">Connect bot with Twitch</button>
+                <button id="twitch-auth-cancel" class="ghost-button" type="button">Cancel</button>
+              </div>
+            </div>
+            <p id="twitch-auth-status-text" class="bot-auth-card__status">
+              Enter a Twitch Client ID to start the in-app bot login flow.
+            </p>
+            <div id="twitch-auth-details" class="bot-auth-card__details" hidden>
+              <div class="runtime-item">
+                <span class="runtime-item__label">Activation code</span>
+                <div class="copy-row">
+                  <input id="twitch-auth-code" class="copy-row__input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-code">Copy</button>
+                </div>
+              </div>
+              <div class="runtime-item">
+                <span class="runtime-item__label">Verification page</span>
+                <div class="copy-row copy-row--triple">
+                  <input id="twitch-auth-url" class="copy-row__input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-open-url-target="twitch-auth-url">Open</button>
+                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-url">Copy</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="credentials-guide">
+            <div class="credentials-guide__header">
+              <div>
+                <p class="panel__eyebrow">Credential Guide</p>
+                <h3>What you actually need</h3>
+              </div>
+            </div>
+            <div class="credentials-guide__grid">
+              <article class="credentials-guide__card">
+                <p class="credentials-guide__title">Required for Twitch chat requests</p>
+                <p class="credentials-guide__body">
+                  Fill in <strong>Twitch channel</strong>, <strong>Bot username</strong>, and <strong>Bot OAuth token</strong>.
+                  This is enough for `!sr`, `!skip`, `!delete`, `!save`, and `!currentsong`.
+                </p>
+              </article>
+              <article class="credentials-guide__card">
+                <p class="credentials-guide__title">Optional Twitch developer credentials</p>
+                <p class="credentials-guide__body">
+                  <strong>Twitch Client ID</strong> is required if you want the app to open Twitch login inside the GUI. <strong>Twitch Client Secret</strong> stays optional unless you also want category-aware chat suppression.
+                </p>
+              </article>
+              <article class="credentials-guide__card">
+                <p class="credentials-guide__title">Optional YouTube search key</p>
+                <p class="credentials-guide__body">
+                  <strong>YouTube API key</strong> is only needed for `!sr artist song name`. If viewers request direct links, you can leave it empty.
+                </p>
+              </article>
+            </div>
+          </section>
 
           <section class="theme-section">
             <div class="theme-section__header">
@@ -160,6 +239,6 @@
       </section>
     </main>
 
-    <script src="/dashboard.js?v=20260315o"></script>
+    <script src="/dashboard.js?v=20260316a"></script>
   </body>
 </html>

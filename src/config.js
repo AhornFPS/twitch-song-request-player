@@ -63,6 +63,7 @@ function normalizeSettings(raw) {
     twitchChannel: trimValue(raw.twitchChannel ?? raw.TWITCH_CHANNEL).replace(/^#/, ""),
     twitchUsername: trimValue(raw.twitchUsername ?? raw.TWITCH_USERNAME),
     twitchOauthToken: trimValue(raw.twitchOauthToken ?? raw.TWITCH_OAUTH_TOKEN),
+    twitchRefreshToken: trimValue(raw.twitchRefreshToken ?? raw.TWITCH_REFRESH_TOKEN),
     twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
     twitchClientSecret: trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET),
     youtubeApiKey: trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY),
@@ -103,6 +104,10 @@ function normalizeOverrideSettings(raw) {
     overrides.twitchOauthToken = trimValue(raw.twitchOauthToken ?? raw.TWITCH_OAUTH_TOKEN);
   }
 
+  if (hasOwnSetting(raw, ["twitchRefreshToken", "TWITCH_REFRESH_TOKEN"])) {
+    overrides.twitchRefreshToken = trimValue(raw.twitchRefreshToken ?? raw.TWITCH_REFRESH_TOKEN);
+  }
+
   if (hasOwnSetting(raw, ["twitchClientId", "TWITCH_CLIENT_ID"])) {
     overrides.twitchClientId = trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID);
   }
@@ -131,6 +136,7 @@ function mergeSettings(baseSettings, overridingSettings) {
     twitchChannel: overridingSettings.twitchChannel || baseSettings.twitchChannel,
     twitchUsername: overridingSettings.twitchUsername || baseSettings.twitchUsername,
     twitchOauthToken: overridingSettings.twitchOauthToken || baseSettings.twitchOauthToken,
+    twitchRefreshToken: overridingSettings.twitchRefreshToken || baseSettings.twitchRefreshToken,
     twitchClientId: overridingSettings.twitchClientId || baseSettings.twitchClientId,
     twitchClientSecret: overridingSettings.twitchClientSecret || baseSettings.twitchClientSecret,
     youtubeApiKey: overridingSettings.youtubeApiKey || baseSettings.youtubeApiKey,
@@ -242,6 +248,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
       channel: runtimeConfig.settings.twitchChannel,
       username: runtimeConfig.settings.twitchUsername,
       oauthToken: runtimeConfig.settings.twitchOauthToken,
+      refreshToken: runtimeConfig.settings.twitchRefreshToken,
       clientId: runtimeConfig.settings.twitchClientId,
       clientSecret: runtimeConfig.settings.twitchClientSecret
     },

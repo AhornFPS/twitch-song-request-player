@@ -4,6 +4,12 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Blocked non-playable SoundCloud channel URLs so chat requests must target a specific track.
+- Prevented duplicate song requests from being added twice and now send `Song <title> already in the queue` back to Twitch chat.
+- Fixed YouTube-to-SoundCloud handoffs so the old YouTube player cannot keep playing in the background after the next SoundCloud track starts.
+- Clarified the desktop settings screen with inline notes explaining which Twitch and YouTube credentials are required and which features use them.
+- Added a direct link in the desktop GUI to Twitch's bot authentication guide for generating the bot OAuth token.
+
 ## 1.1.0 - 2026-03-15
 
 - Added "Compact" overlay theme: slim ticker layout with stacked crimson/green/teal badges, inline UP NEXT queue bar, and artwork-left design from community mockup.
