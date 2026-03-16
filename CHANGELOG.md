@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.3.0 - 2026-03-16
+
 - Fixed overflowing OBS overlay track titles so marquee scrolling now loops continuously instead of stopping after one pass.
 - Added six more OBS overlay themes: Terminal, Synthwave, Broadcast, Mixtape Deck, Noir, and Arcade, spanning minimal CRT, neon club, info-dense lower-third, cassette-deck, monochrome hi-fi, and retro cabinet styles.
 - Fixed fallback playlist entries with `undefined` YouTube titles so the app retries their metadata through the YouTube API when those tracks are selected.
