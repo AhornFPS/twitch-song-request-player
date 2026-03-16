@@ -17,17 +17,25 @@ const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
 const twitchAuthDetails = document.getElementById("twitch-auth-details");
 const twitchAuthCodeInput = document.getElementById("twitch-auth-code");
 const twitchAuthUrlInput = document.getElementById("twitch-auth-url");
+const chatCategoryInput = document.getElementById("chat-category-input");
+const chatCategoryAddButton = document.getElementById("chat-category-add");
+const chatCategoryDeleteButton = document.getElementById("chat-category-delete");
+const chatCategorySelect = document.getElementById("chat-category-select");
+const playbackCategoryInput = document.getElementById("playback-category-input");
+const playbackCategoryAddButton = document.getElementById("playback-category-add");
+const playbackCategoryDeleteButton = document.getElementById("playback-category-delete");
+const playbackCategorySelect = document.getElementById("playback-category-select");
 let isSavingSettings = false;
 let isHydratingForm = false;
 let availableThemes = [];
 let lastTwitchAuthState = "";
+let chatSuppressedCategories = [];
+let playbackSuppressedCategories = [];
 
 const fields = {
   twitchChannel: document.getElementById("twitchChannel"),
   twitchUsername: document.getElementById("twitchUsername"),
   twitchOauthToken: document.getElementById("twitchOauthToken"),
-  twitchClientId: document.getElementById("twitchClientId"),
-  twitchClientSecret: document.getElementById("twitchClientSecret"),
   youtubeApiKey: document.getElementById("youtubeApiKey"),
   port: document.getElementById("port")
 };
@@ -45,10 +53,16 @@ function fillSettingsForm(settings) {
   fields.twitchChannel.value = settings.twitchChannel || "";
   fields.twitchUsername.value = settings.twitchUsername || "";
   fields.twitchOauthToken.value = settings.twitchOauthToken || "";
-  fields.twitchClientId.value = settings.twitchClientId || "";
-  fields.twitchClientSecret.value = settings.twitchClientSecret || "";
   fields.youtubeApiKey.value = settings.youtubeApiKey || "";
   fields.port.value = settings.port || 3000;
+  chatSuppressedCategories = Array.isArray(settings.chatSuppressedCategories)
+    ? [...settings.chatSuppressedCategories]
+    : [];
+  playbackSuppressedCategories = Array.isArray(settings.playbackSuppressedCategories)
+    ? [...settings.playbackSuppressedCategories]
+    : [];
+  renderCategorySelect(chatCategorySelect, chatSuppressedCategories);
+  renderCategorySelect(playbackCategorySelect, playbackSuppressedCategories);
 }
 
 function syncThemeSelection(selectedTheme) {
@@ -160,12 +174,85 @@ function collectSettingsPayload() {
     twitchChannel: fields.twitchChannel.value.trim(),
     twitchUsername: fields.twitchUsername.value.trim(),
     twitchOauthToken: fields.twitchOauthToken.value.trim(),
-    twitchClientId: fields.twitchClientId.value.trim(),
-    twitchClientSecret: fields.twitchClientSecret.value.trim(),
+    chatSuppressedCategories,
+    playbackSuppressedCategories,
     youtubeApiKey: fields.youtubeApiKey.value.trim(),
     port: Number.parseInt(fields.port.value, 10) || 3000,
     theme: getSelectedTheme()
   };
+}
+
+function normalizeCategoryName(value) {
+  return String(value || "").trim();
+}
+
+function renderCategorySelect(select, items) {
+  select.innerHTML = "";
+
+  if (!items.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No categories configured";
+    select.appendChild(option);
+    select.disabled = true;
+    return;
+  }
+
+  select.disabled = false;
+  items.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item;
+    option.textContent = item;
+    select.appendChild(option);
+  });
+}
+
+function addCategory(listName, input, select) {
+  const normalized = normalizeCategoryName(input.value);
+
+  if (!normalized) {
+    return;
+  }
+
+  const currentList = listName === "chat"
+    ? chatSuppressedCategories
+    : playbackSuppressedCategories;
+  const alreadyExists = currentList.some((item) => item.toLowerCase() === normalized.toLowerCase());
+
+  if (alreadyExists) {
+    input.value = "";
+    setFeedback(`Category ${normalized} is already configured.`, "warning");
+    return;
+  }
+
+  const nextList = [...currentList, normalized];
+
+  if (listName === "chat") {
+    chatSuppressedCategories = nextList;
+  } else {
+    playbackSuppressedCategories = nextList;
+  }
+
+  renderCategorySelect(select, nextList);
+  select.value = normalized;
+  input.value = "";
+}
+
+function deleteSelectedCategory(listName, select) {
+  const selectedValue = select.value;
+
+  if (!selectedValue) {
+    return;
+  }
+
+  if (listName === "chat") {
+    chatSuppressedCategories = chatSuppressedCategories.filter((item) => item !== selectedValue);
+    renderCategorySelect(chatCategorySelect, chatSuppressedCategories);
+    return;
+  }
+
+  playbackSuppressedCategories = playbackSuppressedCategories.filter((item) => item !== selectedValue);
+  renderCategorySelect(playbackCategorySelect, playbackSuppressedCategories);
 }
 
 function updateTwitchAuthPanel(authStatus) {
@@ -173,7 +260,9 @@ function updateTwitchAuthPanel(authStatus) {
   const verificationUrl = authStatus?.verificationUriComplete || authStatus?.verificationUri || "";
   const userCode = authStatus?.userCode || "";
 
-  twitchAuthStatusText.textContent = authStatus?.message || "Enter a Twitch Client ID to start the in-app bot login flow.";
+  twitchAuthStatusText.textContent =
+    authStatus?.message ||
+    "Use the bundled Twitch Client ID to start the in-app bot login flow.";
   twitchAuthCodeInput.value = userCode;
   twitchAuthUrlInput.value = verificationUrl;
   twitchAuthDetails.hidden = !(verificationUrl || userCode);
@@ -301,9 +390,7 @@ async function startTwitchAuth() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        twitchChannel: fields.twitchChannel.value.trim(),
-        twitchClientId: fields.twitchClientId.value.trim(),
-        twitchClientSecret: fields.twitchClientSecret.value.trim()
+        twitchChannel: fields.twitchChannel.value.trim()
       })
     });
 
@@ -358,25 +445,56 @@ twitchAuthCancelButton.addEventListener("click", () => {
   void cancelTwitchAuth();
 });
 
+chatCategoryAddButton.addEventListener("click", () => {
+  addCategory("chat", chatCategoryInput, chatCategorySelect);
+});
+
+chatCategoryDeleteButton.addEventListener("click", () => {
+  deleteSelectedCategory("chat", chatCategorySelect);
+});
+
+playbackCategoryAddButton.addEventListener("click", () => {
+  addCategory("playback", playbackCategoryInput, playbackCategorySelect);
+});
+
+playbackCategoryDeleteButton.addEventListener("click", () => {
+  deleteSelectedCategory("playback", playbackCategorySelect);
+});
+
+chatCategoryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addCategory("chat", chatCategoryInput, chatCategorySelect);
+  }
+});
+
+playbackCategoryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    addCategory("playback", playbackCategoryInput, playbackCategorySelect);
+  }
+});
+
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
   }
 
   const button = event.target.closest("[data-copy-target]");
-  if (!button) {
-    return;
+  if (button) {
+    const targetId = button.getAttribute("data-copy-target");
+    if (targetId) {
+      void copyFieldValue(targetId);
+      return;
+    }
   }
 
-  const targetId = button.getAttribute("data-copy-target");
-  if (targetId) {
-    void copyFieldValue(targetId);
-    return;
-  }
-
-  const openTargetId = button.getAttribute("data-open-url-target");
-  if (openTargetId) {
-    openFieldValue(openTargetId);
+  const openButton = event.target.closest("[data-open-url-target]");
+  if (openButton) {
+    const openTargetId = openButton.getAttribute("data-open-url-target");
+    if (openTargetId) {
+      openFieldValue(openTargetId);
+    }
   }
 });
 

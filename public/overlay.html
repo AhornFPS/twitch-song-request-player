@@ -10,9 +10,11 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/themes.css?v=20260315f" />
-    <link rel="stylesheet" href="/styles.css?v=20260315f" />
+    <link rel="stylesheet" href="/themes.css?v=__OVERLAY_BUILD_TOKEN__" />
+    <link rel="stylesheet" href="/styles.css?v=__OVERLAY_BUILD_TOKEN__" />
     <script>
+      window.__overlayBuildToken = "__OVERLAY_BUILD_TOKEN__";
+
       window.__playerLog = function(level, message, details) {
         try {
           fetch("/api/client-log", {
@@ -121,6 +123,6 @@
       src="https://w.soundcloud.com/player/api.js"
       onerror="window.__playerLog('error', 'Failed to load SoundCloud widget API')"
     ></script>
-    <script src="/app.js?v=20260316a"></script>
+    <script src="/app.js?v=__OVERLAY_BUILD_TOKEN__"></script>
   </body>
 </html>

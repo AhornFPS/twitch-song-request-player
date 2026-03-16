@@ -8,6 +8,9 @@ export class PlayerController {
     this.queue = [];
     this.currentTrack = null;
     this.isAdvancing = false;
+    this.isPlaybackPaused = false;
+    this.playbackSuppressed = false;
+    this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
     this.trackPlaybackListeners = new Set();
   }
@@ -26,7 +29,8 @@ export class PlayerController {
       origin: track.origin,
       artworkUrl: track.artworkUrl ?? "",
       requestedBy: track.requestedBy,
-      isSaved: this.playlistRepository.hasTrack(track)
+      isSaved: this.playlistRepository.hasTrack(track),
+      isPaused: track.id === this.currentTrack?.id ? this.isPlaybackPaused : false
     };
   }
 
@@ -214,6 +218,55 @@ export class PlayerController {
     return this.serializeTrack(this.currentTrack);
   }
 
+  async setPlaybackSuppressed(isSuppressed, { category = "" } = {}) {
+    const nextSuppressed = Boolean(isSuppressed);
+    const nextCategory = nextSuppressed ? category : "";
+
+    if (
+      this.playbackSuppressed === nextSuppressed &&
+      this.playbackSuppressedCategory === nextCategory
+    ) {
+      return;
+    }
+
+    this.playbackSuppressed = nextSuppressed;
+    this.playbackSuppressedCategory = nextCategory;
+
+    if (nextSuppressed) {
+      logInfo("Playback suppressed by Twitch category", {
+        category: nextCategory || null,
+        currentTrack: formatTrack(this.currentTrack)
+      });
+
+      if (this.currentTrack) {
+        const interruptedTrack = {
+          ...this.currentTrack
+        };
+
+        if (interruptedTrack.origin === "queue") {
+          delete interruptedTrack.playbackConfirmed;
+          this.queue.unshift(interruptedTrack);
+        }
+
+        this.io.emit("player:stop", {
+          reason: "category_suppressed",
+          category: nextCategory || null
+        });
+
+        this.isPlaybackPaused = false;
+        this.currentTrack = null;
+        this.broadcastState();
+      }
+
+      return;
+    }
+
+    logInfo("Playback suppression cleared", {
+      category: this.playbackSuppressedCategory || null
+    });
+    await this.ensurePlayback();
+  }
+
   async handlePlayerEvent(payload) {
     if (!payload?.trackId || payload.trackId !== this.currentTrack?.id) {
       logWarn("Ignoring player event for unknown track", payload ?? {});
@@ -274,6 +327,7 @@ export class PlayerController {
     });
 
     this.currentTrack = null;
+    this.isPlaybackPaused = false;
     this.broadcastState();
 
     if (payload.status === "ended" && finishedTrack.origin === "queue") {
@@ -301,6 +355,14 @@ export class PlayerController {
       return;
     }
 
+    if (this.playbackSuppressed) {
+      logInfo("Playback suppressed; not starting a track", {
+        category: this.playbackSuppressedCategory || null,
+        queueLength: this.queue.length
+      });
+      return;
+    }
+
     this.isAdvancing = true;
 
     try {
@@ -319,6 +381,7 @@ export class PlayerController {
         id: nextTrack.id ?? crypto.randomUUID(),
         playbackConfirmed: false
       };
+      this.isPlaybackPaused = false;
 
       logInfo("Starting playback", {
         track: formatTrack(this.currentTrack),
@@ -350,5 +413,34 @@ export class PlayerController {
       queueLength: this.queue.length
     });
     this.io.emit("state", this.getPublicState());
+  }
+
+  async togglePauseCurrentTrack(triggeredBy) {
+    if (!this.currentTrack) {
+      logWarn("Pause toggle requested but nothing is currently playing", {
+        triggeredBy
+      });
+      return null;
+    }
+
+    this.isPlaybackPaused = !this.isPlaybackPaused;
+
+    logInfo("Toggling playback pause state", {
+      triggeredBy,
+      paused: this.isPlaybackPaused,
+      track: formatTrack(this.currentTrack)
+    });
+
+    this.io.emit("player:toggle-pause", {
+      trackId: this.currentTrack.id,
+      paused: this.isPlaybackPaused,
+      triggeredBy
+    });
+    this.broadcastState();
+
+    return {
+      track: this.serializeTrack(this.currentTrack),
+      paused: this.isPlaybackPaused
+    };
   }
 }

@@ -24,7 +24,9 @@ export class TwitchBot {
     this.channelInfo = channelInfo ?? new TwitchChannelInfo({
       channelName: config.twitch.channel,
       clientId: config.twitch.clientId,
-      clientSecret: config.twitch.clientSecret
+      oauthToken: config.twitch.oauthToken,
+      chatSuppressedCategories: config.twitch.chatSuppressedCategories,
+      playbackSuppressedCategories: config.twitch.playbackSuppressedCategories
     });
     this.client = client ?? new tmi.Client({
       options: {
@@ -214,8 +216,7 @@ export class TwitchBot {
   formatCurrentSongMessage(track) {
     const requester = track.requestedBy?.displayName || track.requestedBy?.username;
     const requesterText = requester ? `, requested by ${requester}` : "";
-    const savedText = track.isSaved ? "saved" : "not saved";
 
-    return `Current song: ${track.title} (${track.url})${requesterText} [${savedText}]`;
+    return `Current song: ${track.title} ${track.url}${requesterText}`;
   }
 }

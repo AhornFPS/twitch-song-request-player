@@ -1,8 +1,9 @@
 import { logInfo, logWarn } from "./logger.js";
+import { stripOauthPrefix } from "./twitch-auth.js";
 
-const TWITCH_TOKEN_URL = "https://id.twitch.tv/oauth2/token";
 const TWITCH_HELIX_URL = "https://api.twitch.tv/helix";
-const DEFAULT_SUPPRESSED_CATEGORIES = new Set(["music", "djs"]);
+const DEFAULT_CHAT_SUPPRESSED_CATEGORIES = new Set(["music", "djs"]);
+const DEFAULT_PLAYBACK_SUPPRESSED_CATEGORIES = new Set();
 
 async function parseJsonResponse(response) {
   const text = await response.text();
@@ -22,29 +23,32 @@ export class TwitchChannelInfo {
   constructor({
     channelName,
     clientId,
-    clientSecret,
+    oauthToken,
     cacheTtlMs = 120000,
-    suppressedCategories = DEFAULT_SUPPRESSED_CATEGORIES
+    chatSuppressedCategories = DEFAULT_CHAT_SUPPRESSED_CATEGORIES,
+    playbackSuppressedCategories = DEFAULT_PLAYBACK_SUPPRESSED_CATEGORIES
   }) {
     this.channelName = channelName;
     this.clientId = clientId;
-    this.clientSecret = clientSecret;
+    this.oauthToken = oauthToken;
     this.cacheTtlMs = cacheTtlMs;
-    this.suppressedCategories = new Set(
-      Array.from(suppressedCategories, (value) => value.trim().toLowerCase())
+    this.chatSuppressedCategories = new Set(
+      Array.from(chatSuppressedCategories, (value) => value.trim().toLowerCase())
     );
-    this.accessToken = "";
-    this.accessTokenExpiresAt = 0;
+    this.playbackSuppressedCategories = new Set(
+      Array.from(playbackSuppressedCategories, (value) => value.trim().toLowerCase())
+    );
     this.broadcasterId = "";
     this.lastCategoryName = "";
-    this.lastSuppressedValue = false;
+    this.lastChatSuppressedValue = false;
+    this.lastPlaybackSuppressedValue = false;
     this.lastRefreshAt = 0;
     this.refreshPromise = null;
     this.supportLogged = false;
   }
 
   isConfigured() {
-    return Boolean(this.channelName && this.clientId && this.clientSecret);
+    return Boolean(this.channelName && this.clientId && this.oauthToken);
   }
 
   logConfigurationState() {
@@ -57,26 +61,45 @@ export class TwitchChannelInfo {
     if (this.isConfigured()) {
       logInfo("Twitch category-aware chat suppression enabled", {
         channel: this.channelName,
-        suppressedCategories: Array.from(this.suppressedCategories)
+        chatSuppressedCategories: Array.from(this.chatSuppressedCategories),
+        playbackSuppressedCategories: Array.from(this.playbackSuppressedCategories)
       });
       return;
     }
 
     logWarn("Twitch category-aware chat suppression disabled", {
-      reason: "Missing TWITCH_CLIENT_ID or TWITCH_CLIENT_SECRET"
+      reason: "Missing TWITCH_CLIENT_ID or Twitch bot OAuth token"
     });
   }
 
   async shouldSuppressChatMessages() {
+    const state = await this.getCategorySuppressionState();
+    return state.suppressChatMessages;
+  }
+
+  async shouldSuppressMusicPlayback() {
+    const state = await this.getCategorySuppressionState();
+    return state.suppressMusicPlayback;
+  }
+
+  async getCategorySuppressionState() {
     this.logConfigurationState();
 
-    if (!this.isConfigured()) {
-      return false;
+    if (!this.isConfigured() || !this.hasSuppressionCategories()) {
+      return {
+        categoryName: this.lastCategoryName,
+        suppressChatMessages: false,
+        suppressMusicPlayback: false
+      };
     }
 
     const now = Date.now();
     if (this.lastRefreshAt && now - this.lastRefreshAt < this.cacheTtlMs) {
-      return this.lastSuppressedValue;
+      return {
+        categoryName: this.lastCategoryName,
+        suppressChatMessages: this.lastChatSuppressedValue,
+        suppressMusicPlayback: this.lastPlaybackSuppressedValue
+      };
     }
 
     if (!this.refreshPromise) {
@@ -92,26 +115,41 @@ export class TwitchChannelInfo {
     try {
       const categoryName = await this.fetchChannelCategoryName();
       const normalizedCategory = categoryName.trim().toLowerCase();
-      const shouldSuppress = this.suppressedCategories.has(normalizedCategory);
+      const shouldSuppressChatMessages = this.chatSuppressedCategories.has(normalizedCategory);
+      const shouldSuppressMusicPlayback = this.playbackSuppressedCategories.has(normalizedCategory);
 
       this.lastCategoryName = categoryName;
-      this.lastSuppressedValue = shouldSuppress;
+      this.lastChatSuppressedValue = shouldSuppressChatMessages;
+      this.lastPlaybackSuppressedValue = shouldSuppressMusicPlayback;
       this.lastRefreshAt = Date.now();
 
       logInfo("Resolved Twitch channel category", {
         channel: this.channelName,
         category: categoryName || null,
-        suppressChatMessages: shouldSuppress
+        suppressChatMessages: shouldSuppressChatMessages,
+        suppressMusicPlayback: shouldSuppressMusicPlayback
       });
 
-      return shouldSuppress;
+      return {
+        categoryName,
+        suppressChatMessages: shouldSuppressChatMessages,
+        suppressMusicPlayback: shouldSuppressMusicPlayback
+      };
     } catch (error) {
       logWarn("Could not resolve Twitch channel category", {
         channel: this.channelName,
         message: error?.message ?? String(error)
       });
-      return false;
+      return {
+        categoryName: this.lastCategoryName,
+        suppressChatMessages: false,
+        suppressMusicPlayback: false
+      };
     }
+  }
+
+  hasSuppressionCategories() {
+    return this.chatSuppressedCategories.size > 0 || this.playbackSuppressedCategories.size > 0;
   }
 
   async fetchChannelCategoryName() {
@@ -146,7 +184,7 @@ export class TwitchChannelInfo {
   }
 
   async fetchHelix(url, { allowRetry = true } = {}) {
-    const token = await this.ensureAccessToken();
+    const token = this.getAccessToken();
     const response = await fetch(url, {
       headers: {
         Authorization: `Bearer ${token}`,
@@ -155,9 +193,7 @@ export class TwitchChannelInfo {
     });
 
     if (response.status === 401 && allowRetry) {
-      this.accessToken = "";
-      this.accessTokenExpiresAt = 0;
-      return this.fetchHelix(url, { allowRetry: false });
+      throw new Error("The Twitch bot OAuth token is invalid or expired.");
     }
 
     if (!response.ok) {
@@ -168,33 +204,13 @@ export class TwitchChannelInfo {
     return parseJsonResponse(response);
   }
 
-  async ensureAccessToken() {
-    const refreshBufferMs = 60_000;
-    if (this.accessToken && Date.now() < this.accessTokenExpiresAt - refreshBufferMs) {
-      return this.accessToken;
+  getAccessToken() {
+    const accessToken = stripOauthPrefix(this.oauthToken);
+
+    if (!accessToken) {
+      throw new Error("Missing Twitch bot OAuth token.");
     }
 
-    const body = new URLSearchParams({
-      client_id: this.clientId,
-      client_secret: this.clientSecret,
-      grant_type: "client_credentials"
-    });
-
-    const response = await fetch(TWITCH_TOKEN_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      },
-      body
-    });
-
-    const payload = await parseJsonResponse(response);
-    if (!response.ok || !payload.access_token) {
-      throw new Error(`Token request failed: ${payload.message ?? response.statusText}`);
-    }
-
-    this.accessToken = payload.access_token;
-    this.accessTokenExpiresAt = Date.now() + Number(payload.expires_in ?? 0) * 1000;
-    return this.accessToken;
+    return accessToken;
   }
 }

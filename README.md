@@ -28,10 +28,10 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
 2. Create `.env` from `.env.example` and fill in:
 
    - `TWITCH_CHANNEL`: Your channel name.
-   - `TWITCH_USERNAME`: The Twitch account that will connect to chat.
-   - `TWITCH_OAUTH_TOKEN`: OAuth token for that account in the form `oauth:...`.
-   - `TWITCH_CLIENT_ID`: Optional Twitch app Client ID for category-aware chat suppression.
-   - `TWITCH_CLIENT_SECRET`: Optional Twitch app Client Secret for category-aware chat suppression.
+   - `TWITCH_USERNAME`: Optional if you use the in-app Twitch login flow. Otherwise set the Twitch account that will connect to chat.
+   - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow. Otherwise set the OAuth token in the form `oauth:...`.
+   - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression. `npm run build:exe` bundles this value from your root `.env` into the packaged app as the default client ID.
+   - `TWITCH_CLIENT_SECRET`: Optional advanced setting. Not needed for the normal in-app login and category-aware suppression flow.
    - `YOUTUBE_API_KEY`: Required only for `!sr <search terms>`.
 
 3. Start the app:
@@ -42,7 +42,9 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
 
 4. The desktop app opens its own GUI window automatically.
 
-5. In OBS, add a Browser Source pointing to:
+5. If `TWITCH_CLIENT_ID` is configured, you can connect the bot account from inside the GUI with Twitch's device login flow instead of pasting the OAuth token manually.
+
+6. In OBS, add a Browser Source pointing to:
 
    ```text
    http://localhost:3000/overlay
@@ -77,10 +79,10 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
 4. Set or update:
 
    - Twitch channel
-   - Twitch bot username
-   - Twitch bot OAuth token
-   - Twitch app Client ID (optional)
-   - Twitch app Client Secret (optional)
+   - Twitch bot username (optional when using in-app Twitch login)
+   - Twitch bot OAuth token (optional when using in-app Twitch login)
+   - Twitch app Client ID
+   - Twitch app Client Secret (optional advanced setting)
    - YouTube API key
    - Local port
    - Dashboard theme
@@ -125,6 +127,9 @@ npm run release -- patch --dry-run
 
 - The app expects `playlist.csv` to have `Link,Title` columns.
 - YouTube search uses the official YouTube Data API `search` endpoint with `videoCategoryId=10`.
-- If `TWITCH_CLIENT_ID` and `TWITCH_CLIENT_SECRET` are configured, outgoing chat messages are automatically suppressed while the Twitch category is `Music` or `DJs`.
+- If `TWITCH_CLIENT_ID` is configured, the desktop GUI can connect the bot account using Twitch's device code flow and store the returned tokens automatically.
+- Windows EXE builds bundle the root `.env` `TWITCH_CLIENT_ID` into the app as a packaged default, but do not bundle your full `.env` file or the Twitch client secret.
+- The desktop GUI lets you maintain separate category lists for suppressing chat messages and suppressing playback entirely.
+- If `TWITCH_CLIENT_ID` is configured, category-aware chat suppression and playback suppression use the authenticated bot user token rather than app client-secret auth.
 - This project keeps queue state in memory. Restarting the process clears the live queue but keeps `playlist.csv`.
 - The packaged `.exe` reads the bundled app assets internally and reads/writes `playlist.csv` and `settings.json` beside the executable.

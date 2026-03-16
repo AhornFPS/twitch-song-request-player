@@ -23,7 +23,9 @@ function toBotConfig(settings) {
       oauthToken: settings.twitchOauthToken,
       refreshToken: settings.twitchRefreshToken,
       clientId: settings.twitchClientId,
-      clientSecret: settings.twitchClientSecret
+      clientSecret: settings.twitchClientSecret,
+      chatSuppressedCategories: settings.chatSuppressedCategories,
+      playbackSuppressedCategories: settings.playbackSuppressedCategories
     },
     youtubeApiKey: settings.youtubeApiKey
   };
@@ -50,6 +52,7 @@ export class TwitchBotService {
     this.tokenValidationTimer = null;
     this.revalidatePromise = null;
     this.deviceAuthRunId = 0;
+    this.categoryPolicyTimer = null;
     this.status = {
       state: "needs_configuration",
       message: "Set Twitch channel, bot username, and OAuth token to connect chat."
@@ -91,6 +94,8 @@ export class TwitchBotService {
 
     const nextSignature = buildConfigSignature(hydratedSettings);
     if (this.bot && this.configSignature === nextSignature) {
+      await this.refreshCategoryPolicy();
+      this.startCategoryPolicyLoop();
       this.startTokenValidationLoop();
       return this.getStatus();
     }
@@ -119,6 +124,8 @@ export class TwitchBotService {
         channel: hydratedSettings.twitchChannel,
         username: hydratedSettings.twitchUsername
       });
+      await this.refreshCategoryPolicy();
+      this.startCategoryPolicyLoop();
       this.startTokenValidationLoop();
     } catch (error) {
       await bot.disconnect().catch(() => {});
@@ -139,6 +146,7 @@ export class TwitchBotService {
   }
 
   async disconnect({ nextStatus = null } = {}) {
+    this.stopCategoryPolicyLoop();
     this.stopTokenValidationLoop();
 
     if (this.bot) {
@@ -270,6 +278,39 @@ export class TwitchBotService {
 
     clearInterval(this.tokenValidationTimer);
     this.tokenValidationTimer = null;
+  }
+
+  startCategoryPolicyLoop() {
+    this.stopCategoryPolicyLoop();
+
+    if (!this.bot?.channelInfo) {
+      return;
+    }
+
+    this.categoryPolicyTimer = setInterval(() => {
+      void this.refreshCategoryPolicy();
+    }, 30_000);
+  }
+
+  stopCategoryPolicyLoop() {
+    if (!this.categoryPolicyTimer) {
+      return;
+    }
+
+    clearInterval(this.categoryPolicyTimer);
+    this.categoryPolicyTimer = null;
+  }
+
+  async refreshCategoryPolicy() {
+    if (!this.bot?.channelInfo) {
+      await this.playerController.setPlaybackSuppressed(false);
+      return;
+    }
+
+    const suppressionState = await this.bot.channelInfo.getCategorySuppressionState();
+    await this.playerController.setPlaybackSuppressed(suppressionState.suppressMusicPlayback, {
+      category: suppressionState.categoryName || ""
+    });
   }
 
   async revalidateCurrentToken() {

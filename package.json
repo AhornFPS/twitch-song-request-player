@@ -11,8 +11,9 @@
     "dev": "electron .",
     "dev:server": "node --watch server.js",
     "test": "node --test",
+    "build:bundle-config": "node scripts/write-bundled-config.js",
     "bundle": "esbuild server.js --bundle --platform=node --format=cjs --outfile=build/server.cjs",
-    "build:exe": "electron-builder --win portable",
+    "build:exe": "npm run build:bundle-config && electron-builder --win portable",
     "release": "node scripts/release.js",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
@@ -44,6 +45,7 @@
       "electron/**/*",
       "public/**/*",
       "src/**/*",
+      "build/bundled-config.json",
       "server.js",
       "playlist.csv",
       "package.json"

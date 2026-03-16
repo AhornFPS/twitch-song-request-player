@@ -10,7 +10,7 @@
       href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/dashboard.css?v=20260316c" />
+    <link rel="stylesheet" href="/dashboard.css?v=20260316e" />
   </head>
   <body>
     <main class="dashboard-shell">
@@ -46,59 +46,6 @@
 
           <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
 
-          <div class="form-grid">
-            <label class="field">
-              <span class="field__label">Twitch channel</span>
-              <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
-              <span class="field__hint">The Twitch channel the bot should join. Usually the streamer name, without `#`.</span>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Bot username</span>
-              <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
-              <span class="field__hint">The Twitch account that connects to chat. This can be different from the channel owner if you use a bot account.</span>
-            </label>
-
-            <label class="field field--full">
-              <span class="field__label">Bot OAuth token</span>
-              <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
-              <span class="field__hint">
-                Required for Twitch chat connection. You can paste a token manually, or use the in-app Twitch login below. Manual tokens should keep the `oauth:` prefix
-                and include `chat:read` and `chat:write`.
-                <a
-                  class="field__link"
-                  href="https://dev.twitch.tv/docs/irc/authenticate-bot"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >How to get this token</a>
-              </span>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Twitch Client ID</span>
-              <input id="twitchClientId" name="twitchClientId" type="password" autocomplete="off" />
-              <span class="field__hint">Optional. Get this from your Twitch Developer application if you want category-aware chat suppression.</span>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Twitch Client Secret</span>
-              <input id="twitchClientSecret" name="twitchClientSecret" type="password" autocomplete="off" />
-              <span class="field__hint">Optional. Paired with the Client ID for category-aware chat suppression only.</span>
-            </label>
-
-            <label class="field field--full">
-              <span class="field__label">YouTube API key</span>
-              <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
-              <span class="field__hint">Optional unless viewers use `!sr <search terms>`. Create it in Google Cloud for the YouTube Data API. Direct YouTube and SoundCloud links do not need this.</span>
-            </label>
-
-            <label class="field field--narrow">
-              <span class="field__label">Local port</span>
-              <input id="port" name="port" type="number" min="1" max="65535" />
-              <span class="field__hint">Only changes the local app URL used on this PC.</span>
-            </label>
-          </div>
-
           <section class="bot-auth-card">
             <div class="bot-auth-card__header">
               <div>
@@ -111,7 +58,7 @@
               </div>
             </div>
             <p id="twitch-auth-status-text" class="bot-auth-card__status">
-              Enter a Twitch Client ID to start the in-app bot login flow.
+              Use the bundled Twitch Client ID to start the in-app bot login flow.
             </p>
             <div id="twitch-auth-details" class="bot-auth-card__details" hidden>
               <div class="runtime-item">
@@ -132,6 +79,57 @@
             </div>
           </section>
 
+          <div class="manual-fields">
+            <div class="theme-section__header">
+              <div>
+                <p class="panel__eyebrow">Manual Entry</p>
+                <h3>Paste credentials yourself</h3>
+              </div>
+              <p class="theme-section__note">Use this only if you do not want to connect the bot account through Twitch inside the app.</p>
+            </div>
+          </div>
+
+          <div class="form-grid">
+            <label class="field">
+              <span class="field__label">Twitch channel</span>
+              <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
+              <span class="field__hint">The Twitch channel the bot should join. Usually the streamer name, without `#`.</span>
+            </label>
+
+            <label class="field">
+              <span class="field__label">Bot username</span>
+              <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
+              <span class="field__hint">The Twitch account that connects to chat. This can be different from the channel owner if you use a bot account.</span>
+            </label>
+
+            <label class="field field--full">
+              <span class="field__label">Bot OAuth token</span>
+              <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
+              <span class="field__hint">
+                Required for Twitch chat connection. You can paste a token manually, or use the in-app Twitch login below. Manual tokens should keep the `oauth:` prefix
+                and include `chat:read` and `chat:edit`.
+                <a
+                  class="field__link"
+                  href="https://dev.twitch.tv/docs/irc/authenticate-bot"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >How to get this token</a>
+              </span>
+            </label>
+
+            <label class="field field--full">
+              <span class="field__label">YouTube API key</span>
+              <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
+              <span class="field__hint">Optional unless viewers use `!sr <search terms>`. Create it in Google Cloud for the YouTube Data API. Direct YouTube and SoundCloud links do not need this.</span>
+            </label>
+
+            <label class="field field--narrow">
+              <span class="field__label">Local port</span>
+              <input id="port" name="port" type="number" min="1" max="65535" />
+              <span class="field__hint">Only changes the local app URL used on this PC.</span>
+            </label>
+          </div>
+
           <section class="credentials-guide">
             <div class="credentials-guide__header">
               <div>
@@ -148,9 +146,9 @@
                 </p>
               </article>
               <article class="credentials-guide__card">
-                <p class="credentials-guide__title">Optional Twitch developer credentials</p>
+                <p class="credentials-guide__title">Built-in Twitch login path</p>
                 <p class="credentials-guide__body">
-                  <strong>Twitch Client ID</strong> is required if you want the app to open Twitch login inside the GUI. <strong>Twitch Client Secret</strong> stays optional unless you also want category-aware chat suppression.
+                  The desktop app uses the bundled public Twitch Client ID for in-app bot login. End users do not need to type a Twitch Client ID or Client Secret into the GUI.
                 </p>
               </article>
               <article class="credentials-guide__card">
@@ -158,6 +156,45 @@
                 <p class="credentials-guide__body">
                   <strong>YouTube API key</strong> is only needed for `!sr artist song name`. If viewers request direct links, you can leave it empty.
                 </p>
+              </article>
+            </div>
+          </section>
+
+          <section class="suppression-section">
+            <div class="theme-section__header">
+              <div>
+                <p class="panel__eyebrow">Category Rules</p>
+                <h3>Suppress by Twitch category</h3>
+              </div>
+              <p class="theme-section__note">Add categories that should mute chat announcements or stop music playback entirely while your stream is in that category.</p>
+            </div>
+            <div class="suppression-grid">
+              <article class="suppression-card">
+                <p class="suppression-card__title">Suppress chat messages</p>
+                <p class="suppression-card__body">The bot will stop sending chat replies and now-playing messages while the current Twitch category matches one of these entries.</p>
+                <div class="copy-row copy-row--triple suppression-card__controls">
+                  <input id="chat-category-input" class="copy-row__input" type="text" placeholder="Add category" />
+                  <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
+                  <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
+                </div>
+                <label class="field suppression-card__select">
+                  <span class="field__label">Configured categories</span>
+                  <select id="chat-category-select"></select>
+                </label>
+              </article>
+
+              <article class="suppression-card">
+                <p class="suppression-card__title">Suppress music entirely</p>
+                <p class="suppression-card__body">The player will stop the active track and hold queued playback until the stream leaves one of these categories.</p>
+                <div class="copy-row copy-row--triple suppression-card__controls">
+                  <input id="playback-category-input" class="copy-row__input" type="text" placeholder="Add category" />
+                  <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
+                  <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
+                </div>
+                <label class="field suppression-card__select">
+                  <span class="field__label">Configured categories</span>
+                  <select id="playback-category-select"></select>
+                </label>
               </article>
             </div>
           </section>
@@ -239,6 +276,6 @@
       </section>
     </main>
 
-    <script src="/dashboard.js?v=20260316a"></script>
+    <script src="/dashboard.js?v=20260316e"></script>
   </body>
 </html>

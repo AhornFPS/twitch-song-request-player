@@ -58,6 +58,10 @@ let displayedTrackId = null;
 let trackExitTimer = null;
 let trackEnterTimer = null;
 let titleMarqueeFrame = null;
+let desiredPausedState = false;
+let overlayBuildToken = typeof window.__overlayBuildToken === "string"
+  ? window.__overlayBuildToken
+  : "";
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
 
 function applyOverlayTheme(themeId) {
@@ -593,11 +597,27 @@ function animateUiToState(state) {
 }
 
 function updateState(state) {
+  if (
+    typeof state.overlayBuildToken === "string" &&
+    state.overlayBuildToken &&
+    overlayBuildToken &&
+    state.overlayBuildToken !== overlayBuildToken
+  ) {
+    sendClientLog("warn", "Overlay build token changed, reloading browser source", {
+      clientOverlayBuildToken: overlayBuildToken,
+      serverOverlayBuildToken: state.overlayBuildToken
+    });
+    window.location.reload();
+    return;
+  }
+
   const currentTrack = state.currentTrack;
   const queue = state.queue ?? [];
+  desiredPausedState = Boolean(currentTrack?.isPaused);
   const stateSignature = JSON.stringify({
     currentTrackId: currentTrack?.id ?? null,
-    queueLength: queue.length
+    queueLength: queue.length,
+    isPaused: Boolean(currentTrack?.isPaused)
   });
 
   if (stateSignature !== lastLoggedStateSignature) {
@@ -630,10 +650,12 @@ function updateState(state) {
 
   if (currentTrack) {
     loadTrack(currentTrack);
+    syncPausedState();
   } else if (currentTrackId) {
     activeTrack = null;
     currentTrackId = null;
     lastReportedStatus = "";
+    desiredPausedState = false;
     resetPlayers();
     resetTimeline();
   }
@@ -666,8 +688,7 @@ function renderQueue(queue) {
     item.style.animationDelay = `${index * 70}ms`;
     const requester =
       track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
-    const savedMarker = track.isSaved ? " • saved" : "";
-    item.innerHTML = `<span class="queue-title">${track.title}</span><span class="queue-meta">${requester}${savedMarker}</span>`;
+    item.innerHTML = `<span class="queue-title">${track.title}</span><span class="queue-meta">${requester}</span>`;
     queueList.appendChild(item);
   });
 }
@@ -864,6 +885,11 @@ function loadSoundCloudTrack(track) {
       id: track.id,
       title: track.title
     });
+    if (desiredPausedState) {
+      soundCloudWidget.pause();
+      return;
+    }
+
     soundCloudWidget.play();
   });
 
@@ -919,7 +945,42 @@ function loadYoutubeTrack(track) {
   }
 
   youtubePlayer.loadVideoById(videoId);
+  if (desiredPausedState) {
+    window.setTimeout(() => {
+      if (currentTrackId === track.id) {
+        youtubePlayer.pauseVideo?.();
+      }
+    }, 250);
+    return;
+  }
+
   forceYoutubePlayback(videoId);
+}
+
+function syncPausedState() {
+  if (!currentTrackId || !activeTrack) {
+    return;
+  }
+
+  if (activeTrack.provider === "youtube" && youtubePlayer) {
+    if (desiredPausedState) {
+      youtubePlayer.pauseVideo?.();
+      stopPlaybackTimer();
+    } else {
+      const videoId = extractYouTubeVideoId(activeTrack.url);
+      forceYoutubePlayback(videoId);
+    }
+    return;
+  }
+
+  if (activeTrack.provider === "soundcloud" && soundCloudWidget) {
+    if (desiredPausedState) {
+      soundCloudWidget.pause();
+      stopPlaybackTimer();
+    } else {
+      soundCloudWidget.play();
+    }
+  }
 }
 
 function loadTrack(track) {
@@ -1012,7 +1073,16 @@ if (socket) {
     sendClientLog("info", "Received player:stop event");
     currentTrackId = null;
     lastReportedStatus = "";
+    desiredPausedState = false;
     resetPlayers();
+  });
+  socket.on("player:toggle-pause", ({ trackId, paused }) => {
+    if (!trackId || trackId !== currentTrackId) {
+      return;
+    }
+
+    desiredPausedState = Boolean(paused);
+    syncPausedState();
   });
   socket.on("connect_error", () => {
     sendClientLog("error", "Socket connection error");

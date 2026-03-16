@@ -1,13 +1,18 @@
 import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
 import path from "node:path";
 import express from "express";
 import http from "node:http";
 import { Server as SocketServer } from "socket.io";
+import { createRequire } from "node:module";
 import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
+
+const require = createRequire(import.meta.url);
+const packageJson = require("../package.json");
 
 function buildRuntimeUrls(activePort) {
   return {
@@ -92,6 +97,7 @@ export async function startAppServer({
   configStore = createConfigStore()
 } = {}) {
   const runtimeConfig = await configStore.loadRuntimeConfig();
+  const overlayBuildToken = `${packageJson.version}-${Date.now().toString(36)}`;
   let currentSettings = runtimeConfig.settings;
 
   const app = express();
@@ -127,7 +133,8 @@ export async function startAppServer({
   app.get("/api/state", (_request, response) => {
     response.json({
       ...playerController.getPublicState(),
-      theme: currentSettings.theme
+      theme: currentSettings.theme,
+      overlayBuildToken
     });
   });
 
@@ -172,6 +179,8 @@ export async function startAppServer({
         "twitchRefreshToken",
         "twitchClientId",
         "twitchClientSecret",
+        "chatSuppressedCategories",
+        "playbackSuppressedCategories",
         "youtubeApiKey"
       ]);
 
@@ -286,8 +295,21 @@ export async function startAppServer({
     response.sendFile(path.join(runtimeConfig.publicDir, "index.html"));
   });
 
-  app.get("/overlay", (_request, response) => {
-    response.sendFile(path.join(runtimeConfig.publicDir, "overlay.html"));
+  app.get("/overlay", async (_request, response) => {
+    try {
+      const overlayTemplate = await fs.readFile(path.join(runtimeConfig.publicDir, "overlay.html"), "utf8");
+      const overlayHtml = overlayTemplate.split("__OVERLAY_BUILD_TOKEN__").join(overlayBuildToken);
+      response.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      response.set("Pragma", "no-cache");
+      response.set("Expires", "0");
+      response.type("html").send(overlayHtml);
+    } catch (error) {
+      logError("Failed to serve overlay HTML", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).send("Could not load overlay.");
+    }
   });
 
   app.use(express.static(runtimeConfig.publicDir));
@@ -335,6 +357,18 @@ export async function startAppServer({
     runtimeConfig,
     getCurrentSettings() {
       return { ...currentSettings };
+    },
+    async togglePauseCurrentTrack(triggeredBy = "desktop_media_key") {
+      return playerController.togglePauseCurrentTrack(triggeredBy);
+    },
+    async skipCurrentTrack(triggeredBy = "desktop_media_key") {
+      const skippedTrack = await playerController.skipCurrentTrack(triggeredBy);
+
+      if (skippedTrack) {
+        await playerController.ensurePlayback();
+      }
+
+      return skippedTrack;
     },
     async close() {
       await twitchBotService.disconnect();

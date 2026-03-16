@@ -8,7 +8,7 @@ const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const appRootDir = path.resolve(moduleDir, "..");
 
 export async function bootstrapDesktopApp(electron) {
-  const { app, BrowserWindow, dialog, shell } = electron;
+  const { app, BrowserWindow, dialog, shell, globalShortcut } = electron;
 
   let mainWindow = null;
   let appServer = null;
@@ -120,12 +120,47 @@ export async function bootstrapDesktopApp(electron) {
     await serverToClose.close();
   }
 
+  function registerMediaShortcuts() {
+    const registrations = [
+      {
+        accelerator: "MediaPlayPause",
+        handler: async () => {
+          if (!appServer) {
+            return;
+          }
+
+          await appServer.togglePauseCurrentTrack("desktop_media_play_pause");
+        }
+      },
+      {
+        accelerator: "MediaNextTrack",
+        handler: async () => {
+          if (!appServer) {
+            return;
+          }
+
+          await appServer.skipCurrentTrack("desktop_media_next_track");
+        }
+      }
+    ];
+
+    for (const registration of registrations) {
+      try {
+        globalShortcut.register(registration.accelerator, () => {
+          void registration.handler().catch(() => {});
+        });
+      } catch {
+      }
+    }
+  }
+
   async function shutdownAndExit(exitCode = 0) {
     if (isShuttingDown) {
       return;
     }
 
     isShuttingDown = true;
+    globalShortcut.unregisterAll();
 
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.removeAllListeners("closed");
@@ -173,5 +208,6 @@ export async function bootstrapDesktopApp(electron) {
   });
 
   await app.whenReady();
+  registerMediaShortcuts();
   await bootstrap();
 }

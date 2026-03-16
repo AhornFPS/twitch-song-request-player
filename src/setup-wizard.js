@@ -69,12 +69,12 @@ async function promptForSettings(existingSettings) {
     });
     const twitchClientId = await askQuestion(
       readline,
-      "Twitch app Client ID (optional, enables category-aware chat suppression)",
+      "Twitch app Client ID (optional, enables in-app bot login and category-aware suppression)",
       existingSettings.twitchClientId
     );
     const twitchClientSecret = await askQuestion(
       readline,
-      "Twitch app Client Secret (optional, enables category-aware chat suppression)",
+      "Twitch app Client Secret (optional advanced setting)",
       existingSettings.twitchClientSecret
     );
     const youtubeApiKey = await askQuestion(

@@ -58,6 +58,22 @@ function normalizePort(value) {
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 3000;
 }
 
+function normalizeCategoryList(value, fallback = []) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : fallback;
+
+  return Array.from(
+    new Set(
+      list
+        .map((item) => trimValue(item))
+        .filter(Boolean)
+    )
+  );
+}
+
 function normalizeSettings(raw) {
   return {
     twitchChannel: trimValue(raw.twitchChannel ?? raw.TWITCH_CHANNEL).replace(/^#/, ""),
@@ -66,6 +82,13 @@ function normalizeSettings(raw) {
     twitchRefreshToken: trimValue(raw.twitchRefreshToken ?? raw.TWITCH_REFRESH_TOKEN),
     twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
     twitchClientSecret: trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET),
+    chatSuppressedCategories: normalizeCategoryList(
+      raw.chatSuppressedCategories ?? raw.CHAT_SUPPRESSED_CATEGORIES,
+      ["Music", "DJs"]
+    ),
+    playbackSuppressedCategories: normalizeCategoryList(
+      raw.playbackSuppressedCategories ?? raw.PLAYBACK_SUPPRESSED_CATEGORIES
+    ),
     youtubeApiKey: trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY),
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
     theme: normalizeTheme(raw.theme ?? raw.THEME)
@@ -116,6 +139,18 @@ function normalizeOverrideSettings(raw) {
     overrides.twitchClientSecret = trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET);
   }
 
+  if (hasOwnSetting(raw, ["chatSuppressedCategories", "CHAT_SUPPRESSED_CATEGORIES"])) {
+    overrides.chatSuppressedCategories = normalizeCategoryList(
+      raw.chatSuppressedCategories ?? raw.CHAT_SUPPRESSED_CATEGORIES
+    );
+  }
+
+  if (hasOwnSetting(raw, ["playbackSuppressedCategories", "PLAYBACK_SUPPRESSED_CATEGORIES"])) {
+    overrides.playbackSuppressedCategories = normalizeCategoryList(
+      raw.playbackSuppressedCategories ?? raw.PLAYBACK_SUPPRESSED_CATEGORIES
+    );
+  }
+
   if (hasOwnSetting(raw, ["youtubeApiKey", "YOUTUBE_API_KEY"])) {
     overrides.youtubeApiKey = trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY);
   }
@@ -139,6 +174,10 @@ function mergeSettings(baseSettings, overridingSettings) {
     twitchRefreshToken: overridingSettings.twitchRefreshToken || baseSettings.twitchRefreshToken,
     twitchClientId: overridingSettings.twitchClientId || baseSettings.twitchClientId,
     twitchClientSecret: overridingSettings.twitchClientSecret || baseSettings.twitchClientSecret,
+    chatSuppressedCategories:
+      overridingSettings.chatSuppressedCategories || baseSettings.chatSuppressedCategories || [],
+    playbackSuppressedCategories:
+      overridingSettings.playbackSuppressedCategories || baseSettings.playbackSuppressedCategories || [],
     youtubeApiKey: overridingSettings.youtubeApiKey || baseSettings.youtubeApiKey,
     port: overridingSettings.port || baseSettings.port || 3000,
     theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id
@@ -156,6 +195,22 @@ async function readJsonFile(filePath) {
 
     throw error;
   }
+}
+
+function normalizeBundledSettings(raw) {
+  return {
+    twitchChannel: "",
+    twitchUsername: "",
+    twitchOauthToken: "",
+    twitchRefreshToken: "",
+    twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
+    twitchClientSecret: "",
+    chatSuppressedCategories: ["Music", "DJs"],
+    playbackSuppressedCategories: [],
+    youtubeApiKey: "",
+    port: 3000,
+    theme: themeOptions[0].id
+  };
 }
 
 export function hasRequiredSettings(settings) {
@@ -176,10 +231,15 @@ export class ConfigStore {
     this.settingsPath = path.join(this.runtimeDir, "settings.json");
     this.runtimeEnvPath = path.join(this.runtimeDir, ".env");
     this.playlistPath = path.join(this.runtimeDir, "playlist.csv");
+    this.bundledConfigPath = path.join(this.rootDir, "build", "bundled-config.json");
   }
 
   async loadStoredSettings() {
     return normalizeSettings(await readJsonFile(this.settingsPath));
+  }
+
+  async loadBundledSettings() {
+    return normalizeBundledSettings(await readJsonFile(this.bundledConfigPath));
   }
 
   loadEnvSettings() {
@@ -189,9 +249,10 @@ export class ConfigStore {
   }
 
   async loadEffectiveSettings() {
+    const bundledSettings = await this.loadBundledSettings();
     const storedSettings = await this.loadStoredSettings();
     const envSettings = this.loadEnvSettings();
-    return mergeSettings(storedSettings, envSettings);
+    return mergeSettings(mergeSettings(bundledSettings, storedSettings), envSettings);
   }
 
   async saveSettings(nextSettings) {
@@ -250,7 +311,9 @@ export function toRuntimeAppConfig(runtimeConfig) {
       oauthToken: runtimeConfig.settings.twitchOauthToken,
       refreshToken: runtimeConfig.settings.twitchRefreshToken,
       clientId: runtimeConfig.settings.twitchClientId,
-      clientSecret: runtimeConfig.settings.twitchClientSecret
+      clientSecret: runtimeConfig.settings.twitchClientSecret,
+      chatSuppressedCategories: runtimeConfig.settings.chatSuppressedCategories,
+      playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },
     youtubeApiKey: runtimeConfig.settings.youtubeApiKey,
     theme: runtimeConfig.settings.theme

@@ -22,6 +22,8 @@ test("applySettings uses the validated Twitch login as the bot username", async 
       },
       getCurrentTrack() {
         return null;
+      },
+      async setPlaybackSuppressed() {
       }
     },
     persistSettings: async (patch) => {

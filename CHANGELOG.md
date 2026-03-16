@@ -9,6 +9,15 @@ This file is maintained between releases and should be updated as work is comple
 - Fixed YouTube-to-SoundCloud handoffs so the old YouTube player cannot keep playing in the background after the next SoundCloud track starts.
 - Clarified the desktop settings screen with inline notes explaining which Twitch and YouTube credentials are required and which features use them.
 - Added a direct link in the desktop GUI to Twitch's bot authentication guide for generating the bot OAuth token.
+- Added in-app Twitch bot login using Twitch's device code flow, with automatic token validation and bot username fill-in from the authenticated account.
+- Bundled the root `.env` Twitch Client ID into Windows EXE builds so in-app Twitch login works without asking end users to enter the client ID manually.
+- Fixed in-app Twitch bot login to request the accepted IRC scope `chat:edit` instead of the rejected `chat:write` scope.
+- Moved the in-app Twitch bot login above manual credential entry and removed the Twitch Client ID and Client Secret inputs from the desktop GUI.
+- Switched Twitch category-aware chat suppression to use the authenticated bot user token, so it no longer depends on Twitch client-secret app auth.
+- Added GUI editors for category-based chat suppression and full playback suppression, with add-on-enter, add button, dropdown selection, and delete button controls.
+- Added desktop media-key support so keyboard `Play/Pause` toggles the current track and `Next Track` skips to the next song.
+- Added automatic OBS overlay self-refresh and asset cache-busting when the running app instance changes, so browser-source updates no longer require a manual OBS cache refresh after app updates.
+- Simplified Twitch now-playing messages to use a bare clickable URL and removed saved-status labels from current-song and queued-track display text.
 
 ## 1.1.0 - 2026-03-15
 

@@ -27,7 +27,7 @@ test("ensureValidUserToken refreshes an expired token and returns the validated 
           client_id: "client-123",
           login: "bot_account",
           user_id: "user-123",
-          scopes: ["chat:read", "chat:write"],
+          scopes: ["chat:read", "chat:edit"],
           expires_in: 3600
         }), {
           status: 200,
@@ -42,7 +42,7 @@ test("ensureValidUserToken refreshes an expired token and returns the validated 
       return new Response(JSON.stringify({
         access_token: "fresh-token",
         refresh_token: "fresh-refresh-token",
-        scope: ["chat:read", "chat:write"],
+        scope: ["chat:read", "chat:edit"],
         expires_in: 3600,
         token_type: "bearer"
       }), {
@@ -72,7 +72,7 @@ test("ensureValidUserToken refreshes an expired token and returns the validated 
     clientId: "client-123",
     login: "bot_account",
     userId: "user-123",
-    scopes: ["chat:read", "chat:write"],
+    scopes: ["chat:read", "chat:edit"],
     expiresIn: 3600
   });
 });

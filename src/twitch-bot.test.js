@@ -79,7 +79,7 @@ test("automatic playback announcement uses the currentsong format for playlist t
   assert.deepEqual(harness.sentMessages, [
     {
       channel: "#testchannel",
-      message: "Current song: Playlist Track (https://youtu.be/example) [saved]"
+      message: "Current song: Playlist Track https://youtu.be/example"
     }
   ]);
   assert.equal(
@@ -92,7 +92,7 @@ test("automatic playback announcement uses the currentsong format for playlist t
       },
       isSaved: false
     }),
-    "Current song: Queued Track (https://soundcloud.com/example/track), requested by ViewerOne [not saved]"
+    "Current song: Queued Track https://soundcloud.com/example/track, requested by ViewerOne"
   );
 });
 
