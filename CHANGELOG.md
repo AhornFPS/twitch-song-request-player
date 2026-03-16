@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.2.0 - 2026-03-16
+
 - Blocked non-playable SoundCloud channel URLs so chat requests must target a specific track.
 - Prevented duplicate song requests from being added twice and now send `Song <title> already in the queue` back to Twitch chat.
 - Fixed YouTube-to-SoundCloud handoffs so the old YouTube player cannot keep playing in the background after the next SoundCloud track starts.
