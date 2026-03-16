@@ -4,6 +4,7 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Changed the desktop app theme dropdown to save and apply OBS overlay theme switches immediately without needing `Save settings`.
 - Fixed YouTube-to-SoundCloud queue handoffs in OBS so SoundCloud tracks no longer stall at `0:00` until the browser source cache is refreshed.
 - Blocked requests for the song that is already playing and now send `Song <title> is already playing` to Twitch chat.
 - Fixed blocked or broken SoundCloud embeds so the OBS player skips them instead of getting stuck on the track.

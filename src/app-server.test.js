@@ -10,6 +10,41 @@ import { createConfigStore } from "./config.js";
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const appRootDir = path.resolve(moduleDir, "..");
+const isolatedEnvKeys = [
+  "TWITCH_CHANNEL",
+  "TWITCH_USERNAME",
+  "TWITCH_OAUTH_TOKEN",
+  "TWITCH_REFRESH_TOKEN",
+  "TWITCH_CLIENT_ID",
+  "TWITCH_CLIENT_SECRET",
+  "CHAT_SUPPRESSED_CATEGORIES",
+  "PLAYBACK_SUPPRESSED_CATEGORIES",
+  "YOUTUBE_API_KEY",
+  "PORT",
+  "THEME"
+];
+
+function snapshotEnv(keys) {
+  return Object.fromEntries(
+    keys.map((key) => [key, process.env[key]])
+  );
+}
+
+function restoreEnv(snapshot) {
+  Object.entries(snapshot).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      process.env[key] = value;
+    } else {
+      delete process.env[key];
+    }
+  });
+}
+
+function clearEnv(keys) {
+  keys.forEach((key) => {
+    delete process.env[key];
+  });
+}
 
 async function getAvailablePort() {
   const probe = net.createServer();
@@ -34,7 +69,8 @@ async function getAvailablePort() {
 
 test("app server closes even when a client keeps a connection open", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
-  const originalPort = process.env.PORT;
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
   let appServer = null;
   let closeStarted = false;
   let lingeringSocket = null;
@@ -46,18 +82,17 @@ test("app server closes even when a client keeps a connection open", async (t) =
       await appServer.close().catch(() => {});
     }
 
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
     await fs.rm(runtimeDir, {
       recursive: true,
       force: true
     });
-
-    if (typeof originalPort === "string") {
-      process.env.PORT = originalPort;
-    } else {
-      delete process.env.PORT;
-    }
   });
 
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
   const port = await getAvailablePort();
   process.env.PORT = String(port);
   await fs.writeFile(
@@ -117,4 +152,83 @@ test("app server closes even when a client keeps a connection open", async (t) =
   ]);
 
   assert.equal(lingeringSocket.destroyed, true);
+});
+
+test("partial settings save updates only the theme", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  const initialSettings = {
+    twitchChannel: "demo-channel",
+    twitchUsername: "demo-bot",
+    youtubeApiKey: "youtube-key",
+    port,
+    theme: "aurora"
+  };
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify(initialSettings, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  const configStore = createConfigStore({
+    rootDir: appRootDir,
+    runtimeDir,
+    publicDir: path.join(appRootDir, "public")
+  });
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore
+  });
+
+  const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      theme: "winamp"
+    })
+  });
+
+  assert.equal(response.ok, true);
+
+  const payload = await response.json();
+  assert.equal(payload.settings.theme, "winamp");
+  assert.equal(payload.settings.port, port);
+  assert.equal(payload.settings.youtubeApiKey, initialSettings.youtubeApiKey);
+
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
+  );
+  assert.equal(persistedSettings.theme, "winamp");
+  assert.equal(persistedSettings.port, port);
+  assert.equal(persistedSettings.youtubeApiKey, initialSettings.youtubeApiKey);
 });

@@ -28,6 +28,7 @@ const playbackCategorySelect = document.getElementById("playback-category-select
 let isSavingSettings = false;
 let isHydratingForm = false;
 let availableThemes = [];
+let lastSavedTheme = "aurora";
 let lastTwitchAuthState = "";
 let chatSuppressedCategories = [];
 let playbackSuppressedCategories = [];
@@ -169,6 +170,7 @@ function renderSettingsPayload(payload) {
   isHydratingForm = true;
   fillSettingsForm(payload.settings);
   renderThemeOptions(payload.themeOptions, payload.settings.theme);
+  lastSavedTheme = payload.settings.theme || "aurora";
   updateRuntimePanel(payload);
   isHydratingForm = false;
 }
@@ -324,20 +326,25 @@ async function loadPlaybackState() {
   updatePlaybackState(state);
 }
 
+async function persistSettings(payload) {
+  return fetchJson("/api/settings", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(payload)
+  });
+}
+
 async function saveSettings(event) {
   event.preventDefault();
   isSavingSettings = true;
   saveButton.disabled = true;
+  themeSelect.disabled = true;
   setFeedback("Saving settings...");
 
   try {
-    const payload = await fetchJson("/api/settings", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(collectSettingsPayload())
-    });
+    const payload = await persistSettings(collectSettingsPayload());
 
     renderSettingsPayload(payload);
 
@@ -353,6 +360,38 @@ async function saveSettings(event) {
   } finally {
     isSavingSettings = false;
     saveButton.disabled = false;
+    themeSelect.disabled = false;
+  }
+}
+
+async function saveThemeSelection(selectedTheme) {
+  const previousSavedTheme = lastSavedTheme;
+
+  if (!selectedTheme || selectedTheme === previousSavedTheme) {
+    return;
+  }
+
+  isSavingSettings = true;
+  saveButton.disabled = true;
+  themeSelect.disabled = true;
+  setFeedback("Saving player theme...");
+
+  try {
+    const payload = await persistSettings({
+      theme: selectedTheme
+    });
+
+    renderThemeOptions(payload.themeOptions, payload.settings.theme);
+    lastSavedTheme = payload.settings.theme || selectedTheme;
+    updateRuntimePanel(payload);
+    setFeedback("Player theme saved.", "success");
+  } catch (error) {
+    syncThemeSelection(previousSavedTheme);
+    setFeedback(error?.message || "Could not save player theme.", "error");
+  } finally {
+    isSavingSettings = false;
+    saveButton.disabled = false;
+    themeSelect.disabled = false;
   }
 }
 
@@ -436,7 +475,7 @@ themeSelect.addEventListener("change", (event) => {
     syncThemeSelection(event.target.value);
 
     if (!isHydratingForm) {
-      setFeedback("Player theme updated. Save settings to apply it to the OBS overlay.");
+      void saveThemeSelection(event.target.value);
     }
   }
 });
