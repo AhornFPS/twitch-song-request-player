@@ -153,7 +153,11 @@ function updateRuntimePanel(payload) {
   }
 
   if (runtime.pendingRestart) {
-    restartNote.textContent = `Saved port ${fields.port.value || runtime.activePort} will be used after restart. The current server is still running on port ${runtime.activePort}.`;
+    if (runtime.usingFallbackPort) {
+      restartNote.textContent = `Configured port ${runtime.configuredPort} was unavailable at startup, so the app is currently running on fallback port ${runtime.activePort}. Free that port or save a different one if you want to keep it stable across restarts.`;
+    } else {
+      restartNote.textContent = `Saved port ${fields.port.value || runtime.activePort} will be used after restart. The current server is still running on port ${runtime.activePort}.`;
+    }
   } else {
     restartNote.textContent = "Port changes are applied immediately when you restart the app.";
   }

@@ -34,7 +34,7 @@ function settingsChanged(previousSettings, nextSettings, keys) {
   return keys.some((key) => previousSettings[key] !== nextSettings[key]);
 }
 
-function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus, twitchAuthStatus }) {
+function buildSettingsPayload({ settings, activePort, usingFallbackPort, themeOptions, twitchStatus, twitchAuthStatus }) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
@@ -44,6 +44,8 @@ function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus
     twitchAuthStatus,
     runtime: {
       activePort,
+      configuredPort: settings.port,
+      usingFallbackPort,
       pendingRestart: settings.port !== activePort,
       configured: hasRequiredSettings(settings),
       ...urls
@@ -51,7 +53,7 @@ function buildSettingsPayload({ settings, activePort, themeOptions, twitchStatus
   };
 }
 
-function buildRuntimeStatusPayload({ settings, activePort, twitchStatus, twitchAuthStatus }) {
+function buildRuntimeStatusPayload({ settings, activePort, usingFallbackPort, twitchStatus, twitchAuthStatus }) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
@@ -59,6 +61,8 @@ function buildRuntimeStatusPayload({ settings, activePort, twitchStatus, twitchA
     twitchAuthStatus,
     runtime: {
       activePort,
+      configuredPort: settings.port,
+      usingFallbackPort,
       pendingRestart: settings.port !== activePort,
       configured: hasRequiredSettings(settings),
       ...urls
@@ -91,6 +95,31 @@ function openBrowser(url) {
   }
 }
 
+function getListeningPort(server, fallbackPort) {
+  const address = server.address();
+  return typeof address === "object" && address
+    ? address.port
+    : fallbackPort;
+}
+
+async function listenOnPort(server, port) {
+  return await new Promise((resolve, reject) => {
+    const handleError = (error) => {
+      server.off("listening", handleListening);
+      reject(error);
+    };
+
+    const handleListening = () => {
+      server.off("error", handleError);
+      resolve(getListeningPort(server, port));
+    };
+
+    server.once("error", handleError);
+    server.once("listening", handleListening);
+    server.listen(port);
+  });
+}
+
 export async function startAppServer({
   forceSetup = false,
   noBrowser = false,
@@ -99,6 +128,8 @@ export async function startAppServer({
   const runtimeConfig = await configStore.loadRuntimeConfig();
   const overlayBuildToken = `${packageJson.version}-${Date.now().toString(36)}`;
   let currentSettings = runtimeConfig.settings;
+  let activePort = currentSettings.port;
+  let usingFallbackPort = false;
 
   const app = express();
   const server = http.createServer(app);
@@ -142,7 +173,8 @@ export async function startAppServer({
     response.json(
       buildSettingsPayload({
         settings: currentSettings,
-        activePort: runtimeConfig.port,
+        activePort,
+        usingFallbackPort,
         themeOptions: configStore.getThemeOptions(),
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus()
@@ -154,7 +186,8 @@ export async function startAppServer({
     response.json(
       buildRuntimeStatusPayload({
         settings: currentSettings,
-        activePort: runtimeConfig.port,
+        activePort,
+        usingFallbackPort,
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus()
       })
@@ -202,7 +235,8 @@ export async function startAppServer({
       response.json({
         ...buildSettingsPayload({
           settings: currentSettings,
-          activePort: runtimeConfig.port,
+          activePort,
+          usingFallbackPort,
           themeOptions: configStore.getThemeOptions(),
           twitchStatus,
           twitchAuthStatus: twitchBotService.getAuthStatus()
@@ -238,7 +272,8 @@ export async function startAppServer({
       response.json(
         buildSettingsPayload({
           settings: currentSettings,
-          activePort: runtimeConfig.port,
+          activePort,
+          usingFallbackPort,
           themeOptions: configStore.getThemeOptions(),
           twitchStatus: twitchBotService.getStatus(),
           twitchAuthStatus: twitchBotService.getAuthStatus()
@@ -326,11 +361,21 @@ export async function startAppServer({
     playerController.handleSocketConnection(socket);
   });
 
-  await new Promise((resolve) => {
-    server.listen(runtimeConfig.port, resolve);
-  });
+  try {
+    activePort = await listenOnPort(server, currentSettings.port);
+  } catch (error) {
+    if (error?.code !== "EADDRINUSE") {
+      throw error;
+    }
 
-  const urls = buildRuntimeUrls(runtimeConfig.port);
+    logWarn("Configured port is already in use, falling back to a free port", {
+      configuredPort: currentSettings.port
+    });
+    usingFallbackPort = true;
+    activePort = await listenOnPort(server, 0);
+  }
+
+  const urls = buildRuntimeUrls(activePort);
   logInfo("Server listening", urls);
 
   if ((forceSetup || !hasRequiredSettings(currentSettings)) && !noBrowser) {

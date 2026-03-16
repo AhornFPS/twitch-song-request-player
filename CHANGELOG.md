@@ -20,6 +20,7 @@ This file is maintained between releases and should be updated as work is comple
 - Added desktop media-key support so keyboard `Play/Pause` toggles the current track and `Next Track` skips to the next song.
 - Added automatic OBS overlay self-refresh and asset cache-busting when the running app instance changes, so browser-source updates no longer require a manual OBS cache refresh after app updates.
 - Simplified Twitch now-playing messages to use a bare clickable URL and removed saved-status labels from current-song and queued-track display text.
+- Fixed startup crashes when the configured local web port is already in use by automatically falling back to a free port and showing the active port in the desktop app.
 
 ## 1.1.0 - 2026-03-15
 
