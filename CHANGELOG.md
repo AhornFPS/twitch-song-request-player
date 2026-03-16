@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed OBS overlay title marquees so long track names scroll again reliably during polling reconnects and Chromium width-measurement edge cases.
+
 ## 1.3.0 - 2026-03-16
 
 - Fixed overflowing OBS overlay track titles so marquee scrolling now loops continuously instead of stopping after one pass.

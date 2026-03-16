@@ -5,15 +5,22 @@ import test from "node:test";
 import vm from "node:vm";
 
 function createClassList() {
+  const values = new Set();
   return {
-    add() {
+    add(...tokens) {
+      tokens.forEach((token) => values.add(token));
     },
-    remove() {
+    remove(...tokens) {
+      tokens.forEach((token) => values.delete(token));
+    },
+    contains(token) {
+      return values.has(token);
     }
   };
 }
 
 function createElement(id = "") {
+  const styleValues = new Map();
   return {
     id,
     className: "",
@@ -21,16 +28,26 @@ function createElement(id = "") {
     style: {
       display: "",
       width: "",
-      setProperty() {
+      setProperty(name, value) {
+        styleValues.set(name, value);
       },
-      removeProperty() {
-      }
+      getPropertyValue(name) {
+        return styleValues.get(name) ?? "";
+      },
+      removeProperty(name) {
+        styleValues.delete(name);
+      },
     },
     textContent: "",
     innerHTML: "",
     offsetWidth: 0,
     clientWidth: 0,
     scrollWidth: 0,
+    getBoundingClientRect() {
+      return {
+        width: this.offsetWidth || this.clientWidth || 0
+      };
+    },
     parentNode: {
       replaceChild() {
       }
@@ -46,6 +63,7 @@ function createOverlayTestContext() {
   const elements = new Map();
   const sessionStorageData = new Map();
   const locationReplaceCalls = [];
+  let requestAnimationFrameCalls = 0;
   let nextTimerId = 1;
 
   function getElement(id) {
@@ -99,6 +117,7 @@ function createOverlayTestContext() {
     addEventListener() {
     },
     requestAnimationFrame(callback) {
+      requestAnimationFrameCalls += 1;
       callback();
       return nextTimerId++;
     },
@@ -136,9 +155,85 @@ function createOverlayTestContext() {
   return {
     context,
     locationReplaceCalls,
-    sessionStorageData
+    sessionStorageData,
+    getRequestAnimationFrameCalls() {
+      return requestAnimationFrameCalls;
+    }
   };
 }
+
+test("overflowing titles still enable marquee when the text width comes from layout bounds", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  const title = context.document.getElementById("current-title");
+  const titleText = context.document.getElementById("current-title-text");
+  const titleClone = context.document.getElementById("current-title-text-clone");
+  title.clientWidth = 140;
+  title.offsetWidth = 140;
+  titleText.textContent = "A very long track title that should scroll";
+  titleText.scrollWidth = 0;
+  titleText.offsetWidth = 320;
+  titleClone.offsetWidth = 320;
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-long",
+      provider: "youtube",
+      title: titleText.textContent,
+      url: "https://www.youtube.com/watch?v=abc123",
+      origin: "playlist"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(title.classList.contains("is-marquee"), true);
+  assert.equal(title.style.getPropertyValue("--title-marquee-distance"), "500px");
+  assert.equal(title.style.getPropertyValue("--title-marquee-duration"), `${500 / 26}s`);
+});
+
+test("unchanged overlay state does not reschedule the title marquee", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getRequestAnimationFrameCalls } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  const title = context.document.getElementById("current-title");
+  const titleText = context.document.getElementById("current-title-text");
+  title.clientWidth = 140;
+  title.offsetWidth = 140;
+  titleText.scrollWidth = 320;
+  titleText.offsetWidth = 320;
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-repeat",
+      provider: "youtube",
+      title: "A repeating long title",
+      url: "https://www.youtube.com/watch?v=repeat123",
+      origin: "playlist"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+  assert.equal(getRequestAnimationFrameCalls(), 1);
+
+  vm.runInContext("updateState(__state);", context);
+  assert.equal(getRequestAnimationFrameCalls(), 1);
+});
 
 test("finished soundcloud playback preserves the handoff path for the next youtube track", () => {
   const appPath = path.resolve("public/app.js");

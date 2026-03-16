@@ -87,19 +87,43 @@ function scheduleTitleMarqueeUpdate() {
   });
 }
 
+function getElementLayoutWidth(element) {
+  if (!element) {
+    return 0;
+  }
+
+  const rectWidth = element.getBoundingClientRect?.().width ?? 0;
+  return Math.max(rectWidth, element.clientWidth || 0, element.offsetWidth || 0);
+}
+
+function getElementContentWidth(element) {
+  if (!element) {
+    return 0;
+  }
+
+  return Math.max(
+    getElementLayoutWidth(element),
+    element.scrollWidth || 0
+  );
+}
+
 function updateTitleMarquee() {
   if (!currentTitle || !currentTitleText || !currentTitleTextClone || !currentTitleMarquee) {
     return;
   }
 
-  const titleWidth = currentTitle.clientWidth;
-  const textWidth = currentTitleText.scrollWidth;
-  const overflowAmount = Math.max(0, textWidth - titleWidth);
+  currentTitleTextClone.textContent = currentTitleText.textContent;
 
+  const titleWidth = getElementLayoutWidth(currentTitle);
+  const textWidth = getElementContentWidth(currentTitleText);
+  if (titleWidth <= 0 || textWidth <= 0) {
+    return;
+  }
+
+  const overflowAmount = Math.max(0, textWidth - titleWidth);
   currentTitle.classList.remove("is-marquee");
   currentTitle.style.removeProperty("--title-marquee-distance");
   currentTitle.style.removeProperty("--title-marquee-duration");
-  currentTitleTextClone.textContent = currentTitleText.textContent;
 
   if (overflowAmount <= 8) {
     return;
@@ -806,13 +830,19 @@ function applyStateToUi(state) {
   const queue = state.queue ?? [];
 
   const titleText = currentTrack?.title ?? "Waiting for a track";
+  const titleChanged =
+    (currentTitleText?.textContent ?? "") !== titleText ||
+    (currentTitleTextClone?.textContent ?? "") !== titleText;
+
   if (currentTitleText) {
     currentTitleText.textContent = titleText;
   }
   if (currentTitleTextClone) {
     currentTitleTextClone.textContent = titleText;
   }
-  scheduleTitleMarqueeUpdate();
+  if (titleChanged) {
+    scheduleTitleMarqueeUpdate();
+  }
   setMetaText(describeTrackMeta(currentTrack));
   providerBadge.textContent = currentTrack
     ? currentTrack.provider === "youtube"
@@ -915,7 +945,11 @@ function updateState(state) {
   }
 
   if (typeof state.theme === "string" && state.theme) {
+    const previousTheme = document.documentElement.dataset.theme;
     applyOverlayTheme(state.theme);
+    if (state.theme !== previousTheme) {
+      scheduleTitleMarqueeUpdate();
+    }
   }
 
   if (displayedTrackId !== null && currentTrack?.id !== displayedTrackId) {
