@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.4.1 - 2026-03-17
+
 - Added an interactive update flow with a prompt showing GitHub release notes.
 - Users can now manually download updates with a progress bar and choose when to restart and install.
 - Added an application version badge to the dashboard header.
