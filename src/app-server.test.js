@@ -68,6 +68,15 @@ async function getAvailablePort() {
   });
 }
 
+function createJsonResponse(payload, status = 200) {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+}
+
 test("app server closes even when a client keeps a connection open", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
@@ -311,4 +320,134 @@ test("playlist API supports listing, delete, import, and export", async (t) => {
   const exportResponse = await fetch(new URL("/api/playlist/export", appServer.urls.dashboardUrl));
   const exportText = await exportResponse.text();
   assert.doesNotMatch(exportText, /Club Mix/);
+});
+
+test("dashboard queue and playback APIs add tracks and expose transport controls", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  const originalFetch = global.fetch;
+  let appServer = null;
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  global.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+    if (url.startsWith("https://www.youtube.com/oembed")) {
+      const parsed = new URL(url);
+      const requestedUrl = parsed.searchParams.get("url") || "";
+
+      if (requestedUrl.includes("dashboard-one")) {
+        return createJsonResponse({
+          title: "Dashboard One",
+          thumbnail_url: ""
+        });
+      }
+
+      if (requestedUrl.includes("dashboard-two")) {
+        return createJsonResponse({
+          title: "Dashboard Two",
+          thumbnail_url: ""
+        });
+      }
+    }
+
+    return originalFetch(input, init);
+  };
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const firstQueueResponse = await fetch(new URL("/api/queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input: "https://youtu.be/dashboard-one"
+    })
+  });
+  assert.equal(firstQueueResponse.ok, true);
+
+  const firstQueuePayload = await firstQueueResponse.json();
+  assert.equal(firstQueuePayload.track.title, "Dashboard One");
+  assert.equal(firstQueuePayload.track.requestedBy.displayName, "Dashboard");
+  assert.equal(firstQueuePayload.state.playbackStatus, "playing");
+  assert.equal(firstQueuePayload.state.currentTrack.title, "Dashboard One");
+
+  const secondQueueResponse = await fetch(new URL("/api/queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input: "https://youtu.be/dashboard-two"
+    })
+  });
+  assert.equal(secondQueueResponse.ok, true);
+
+  const secondQueuePayload = await secondQueueResponse.json();
+  assert.equal(secondQueuePayload.state.queue.length, 1);
+  assert.equal(secondQueuePayload.state.queue[0].title, "Dashboard Two");
+
+  const stopResponse = await fetch(new URL("/api/playback/stop", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(stopResponse.ok, true);
+  const stopPayload = await stopResponse.json();
+  assert.equal(stopPayload.state.playbackStatus, "stopped");
+  assert.equal(stopPayload.state.stoppedTrack.title, "Dashboard One");
+  assert.equal(stopPayload.state.currentTrack, null);
+
+  const playResponse = await fetch(new URL("/api/playback/play-pause", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(playResponse.ok, true);
+  const playPayload = await playResponse.json();
+  assert.equal(playPayload.state.playbackStatus, "playing");
+  assert.equal(playPayload.state.currentTrack.title, "Dashboard One");
+
+  const nextResponse = await fetch(new URL("/api/playback/next", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(nextResponse.ok, true);
+  const nextPayload = await nextResponse.json();
+  assert.equal(nextPayload.state.playbackStatus, "playing");
+  assert.equal(nextPayload.state.currentTrack.title, "Dashboard Two");
 });

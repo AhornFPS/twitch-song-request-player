@@ -7,6 +7,7 @@ export class PlayerController {
     this.playlistRepository = playlistRepository;
     this.queue = [];
     this.currentTrack = null;
+    this.stoppedTrack = null;
     this.isAdvancing = false;
     this.isPlaybackPaused = false;
     this.playbackSuppressed = false;
@@ -37,8 +38,22 @@ export class PlayerController {
   getPublicState() {
     return {
       currentTrack: this.serializeTrack(this.currentTrack),
+      stoppedTrack: this.serializeTrack(this.stoppedTrack),
+      playbackStatus: this.getPlaybackStatus(),
       queue: this.queue.map((track) => this.serializeTrack(track))
     };
+  }
+
+  getPlaybackStatus() {
+    if (this.currentTrack) {
+      return this.isPlaybackPaused ? "paused" : "playing";
+    }
+
+    if (this.stoppedTrack) {
+      return "stopped";
+    }
+
+    return "idle";
   }
 
   handleSocketConnection(socket) {
@@ -118,6 +133,13 @@ export class PlayerController {
     const queuedTrack = this.queue.find((queuedTrack) => queuedTrack.key === trackKey);
 
     if (!queuedTrack) {
+      if (this.stoppedTrack?.key === trackKey) {
+        return {
+          track: this.stoppedTrack,
+          type: "stopped"
+        };
+      }
+
       return null;
     }
 
@@ -170,6 +192,40 @@ export class PlayerController {
     });
 
     return skippedTrack;
+  }
+
+  async skipToNextTrack(triggeredBy) {
+    if (this.currentTrack) {
+      const skippedTrack = await this.skipCurrentTrack(triggeredBy);
+
+      if (skippedTrack) {
+        this.stoppedTrack = null;
+        await this.ensurePlayback();
+      }
+
+      return skippedTrack;
+    }
+
+    if (this.stoppedTrack) {
+      const skippedTrack = this.stoppedTrack;
+      this.stoppedTrack = null;
+      this.isPlaybackPaused = false;
+
+      logInfo("Skipping stopped track and advancing playback", {
+        triggeredBy,
+        track: formatTrack(skippedTrack)
+      });
+
+      this.broadcastState();
+      await this.ensurePlayback();
+      return skippedTrack;
+    }
+
+    logWarn("Next track requested but nothing is currently available", {
+      triggeredBy
+    });
+    await this.ensurePlayback();
+    return this.currentTrack;
   }
 
   async deleteCurrentTrack(triggeredBy) {
@@ -378,6 +434,14 @@ export class PlayerController {
       return;
     }
 
+    if (this.stoppedTrack) {
+      logInfo("Playback is manually stopped; not auto-starting a track", {
+        stoppedTrack: formatTrack(this.stoppedTrack),
+        queueLength: this.queue.length
+      });
+      return;
+    }
+
     this.isAdvancing = true;
 
     try {
@@ -391,18 +455,29 @@ export class PlayerController {
         return;
       }
 
-      this.currentTrack = {
-        ...nextTrack,
-        id: nextTrack.id ?? crypto.randomUUID(),
-        playbackConfirmed: false
-      };
-      this.isPlaybackPaused = false;
-
-      logInfo("Starting playback", {
-        track: formatTrack(this.currentTrack),
-        remainingQueue: this.queue.length
+      await this.startTrackPlayback(nextTrack, {
+        notifyTrackStartListeners: true
       });
+    } finally {
+      this.isAdvancing = false;
+    }
+  }
 
+  async startTrackPlayback(track, { notifyTrackStartListeners = false } = {}) {
+    this.stoppedTrack = null;
+    this.currentTrack = {
+      ...track,
+      id: track.id ?? crypto.randomUUID(),
+      playbackConfirmed: false
+    };
+    this.isPlaybackPaused = false;
+
+    logInfo("Starting playback", {
+      track: formatTrack(this.currentTrack),
+      remainingQueue: this.queue.length
+    });
+
+    if (notifyTrackStartListeners) {
       for (const listener of this.trackStartListeners) {
         try {
           await listener(this.currentTrack);
@@ -412,14 +487,12 @@ export class PlayerController {
           });
         }
       }
-
-      this.broadcastState();
-      this.io.emit("player:load", {
-        track: this.serializeTrack(this.currentTrack)
-      });
-    } finally {
-      this.isAdvancing = false;
     }
+
+    this.broadcastState();
+    this.io.emit("player:load", {
+      track: this.serializeTrack(this.currentTrack)
+    });
   }
 
   broadcastState() {
@@ -457,5 +530,78 @@ export class PlayerController {
       track: this.serializeTrack(this.currentTrack),
       paused: this.isPlaybackPaused
     };
+  }
+
+  async playOrPausePlayback(triggeredBy) {
+    if (this.currentTrack) {
+      return this.togglePauseCurrentTrack(triggeredBy);
+    }
+
+    if (this.stoppedTrack) {
+      logInfo("Resuming stopped track from the beginning", {
+        triggeredBy,
+        track: formatTrack(this.stoppedTrack)
+      });
+      await this.startTrackPlayback(this.stoppedTrack, {
+        notifyTrackStartListeners: false
+      });
+
+      return {
+        track: this.serializeTrack(this.currentTrack),
+        paused: false,
+        resumedFromStopped: true
+      };
+    }
+
+    logInfo("Starting playback from idle state", {
+      triggeredBy,
+      queueLength: this.queue.length
+    });
+    await this.ensurePlayback();
+
+    return {
+      track: this.serializeTrack(this.currentTrack),
+      paused: false,
+      resumedFromStopped: false
+    };
+  }
+
+  async stopPlayback(triggeredBy) {
+    if (this.currentTrack) {
+      const stoppedTrack = {
+        ...this.currentTrack
+      };
+
+      delete stoppedTrack.playbackConfirmed;
+
+      logInfo("Stopping playback without advancing", {
+        triggeredBy,
+        track: formatTrack(stoppedTrack)
+      });
+
+      this.stoppedTrack = stoppedTrack;
+      this.io.emit("player:stop", {
+        reason: "manual_stop",
+        triggeredBy
+      });
+      this.currentTrack = null;
+      this.isPlaybackPaused = false;
+      this.broadcastState();
+
+      return this.serializeTrack(this.stoppedTrack);
+    }
+
+    if (this.stoppedTrack) {
+      logInfo("Stop requested while playback is already stopped", {
+        triggeredBy,
+        track: formatTrack(this.stoppedTrack)
+      });
+      return this.serializeTrack(this.stoppedTrack);
+    }
+
+    logWarn("Stop requested but no track is available", {
+      triggeredBy
+    });
+    return null;
   }
 }

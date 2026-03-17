@@ -247,6 +247,41 @@ export async function startAppServer({
     }));
   });
 
+  app.post("/api/queue", async (request, response) => {
+    try {
+      const input = typeof request.body?.input === "string" ? request.body.input.trim() : "";
+
+      if (!input) {
+        response.status(400).json({
+          error: "Track input is required."
+        });
+        return;
+      }
+
+      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey);
+      const queuedTrack = await playerController.addRequest({
+        ...track,
+        requestedBy: {
+          username: "dashboard",
+          displayName: "Dashboard"
+        }
+      });
+
+      response.json({
+        track: queuedTrack,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to add queued track from dashboard", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to add track to queue."
+      });
+    }
+  });
+
   app.post("/api/playlist/tracks", async (request, response) => {
     try {
       const input = typeof request.body?.input === "string" ? request.body.input.trim() : "";
@@ -468,6 +503,60 @@ export async function startAppServer({
     }
   });
 
+  app.post("/api/playback/play-pause", async (_request, response) => {
+    try {
+      const result = await playerController.playOrPausePlayback("dashboard");
+      response.json({
+        result,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to toggle dashboard playback", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to toggle playback."
+      });
+    }
+  });
+
+  app.post("/api/playback/stop", async (_request, response) => {
+    try {
+      const result = await playerController.stopPlayback("dashboard");
+      response.json({
+        result,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to stop dashboard playback", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to stop playback."
+      });
+    }
+  });
+
+  app.post("/api/playback/next", async (_request, response) => {
+    try {
+      const result = await playerController.skipToNextTrack("dashboard");
+      response.json({
+        result,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to advance dashboard playback", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to play the next track."
+      });
+    }
+  });
+
   app.post("/api/client-log", (request, response) => {
     const level = typeof request.body?.level === "string" ? request.body.level : "info";
     const message = typeof request.body?.message === "string" ? request.body.message : "Client log";
@@ -563,16 +652,10 @@ export async function startAppServer({
     },
     updates: updateService,
     async togglePauseCurrentTrack(triggeredBy = "desktop_media_key") {
-      return playerController.togglePauseCurrentTrack(triggeredBy);
+      return playerController.playOrPausePlayback(triggeredBy);
     },
     async skipCurrentTrack(triggeredBy = "desktop_media_key") {
-      const skippedTrack = await playerController.skipCurrentTrack(triggeredBy);
-
-      if (skippedTrack) {
-        await playerController.ensurePlayback();
-      }
-
-      return skippedTrack;
+      return playerController.skipToNextTrack(triggeredBy);
     },
     async close() {
       await twitchBotService.disconnect();

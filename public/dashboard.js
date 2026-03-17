@@ -28,6 +28,8 @@ let settingsPayload = null;
 let playbackState = null;
 let playlistPayload = null;
 let activeTab = "overview";
+let isQueueSubmitting = false;
+let isPlaybackCommandPending = false;
 
 function el(id) {
   return document.getElementById(id);
@@ -124,10 +126,21 @@ function renderDashboard() {
                 <p class="panel__eyebrow">Playback</p>
                 <h2>Now playing</h2>
               </div>
+              <span id="playback-state-pill" class="status-pill status-pill--idle">Idle</span>
             </div>
             <div class="playback-card">
               <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
               <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <div class="playback-controls">
+                <button id="overview-play-pause" class="primary-button" type="button">Play</button>
+                <button id="overview-stop" class="secondary-button" type="button">Stop</button>
+                <button id="overview-next" class="ghost-button" type="button">Next track</button>
+              </div>
+              <form id="overview-queue-form" class="queue-add-form">
+                <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud URL or search text" autocomplete="off" />
+                <button id="overview-queue-button" class="secondary-button" type="submit">Add to queue</button>
+              </form>
+              <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
               <ul id="queue-preview" class="queue-preview"></ul>
             </div>
           </section>
@@ -314,6 +327,19 @@ function setFeedback(message, tone = "") {
 
 function setPlaylistFeedback(message, tone = "") {
   const feedback = el("playlist-feedback");
+  if (!feedback) {
+    return;
+  }
+
+  feedback.textContent = message;
+  feedback.className = "feedback";
+  if (tone) {
+    feedback.classList.add(`is-${tone}`);
+  }
+}
+
+function setOverviewFeedback(message, tone = "") {
+  const feedback = el("overview-feedback");
   if (!feedback) {
     return;
   }
@@ -571,6 +597,53 @@ function describeRequester(track) {
   return requester ? `Requested by ${requester}` : "Fallback playlist track";
 }
 
+function playbackPillState(playbackStatus) {
+  if (playbackStatus === "playing") {
+    return {
+      className: "status-pill status-pill--ok",
+      text: "Playing"
+    };
+  }
+
+  if (playbackStatus === "paused") {
+    return {
+      className: "status-pill status-pill--warn",
+      text: "Paused"
+    };
+  }
+
+  if (playbackStatus === "stopped") {
+    return {
+      className: "status-pill status-pill--accent",
+      text: "Stopped"
+    };
+  }
+
+  return {
+    className: "status-pill status-pill--idle",
+    text: "Idle"
+  };
+}
+
+function describePlaybackMeta({ currentTrack, stoppedTrack, playbackStatus, queueLength }) {
+  if (currentTrack) {
+    const requesterText = describeRequester(currentTrack);
+    return playbackStatus === "paused"
+      ? `${requesterText} • Paused`
+      : requesterText;
+  }
+
+  if (stoppedTrack) {
+    return "Playback stopped. Press play to restart this track.";
+  }
+
+  if (queueLength > 0) {
+    return "Queue is ready. Press play to start the next track.";
+  }
+
+  return "Queue is empty. Fallback playlist will play automatically.";
+}
+
 async function loadPlaybackState() {
   playbackState = await fetchJson("/api/state");
   applyPlaybackState();
@@ -578,13 +651,47 @@ async function loadPlaybackState() {
 
 function applyPlaybackState() {
   const currentTrack = playbackState?.currentTrack;
+  const stoppedTrack = playbackState?.stoppedTrack;
   const queue = playbackState?.queue || [];
+  const playbackStatus = playbackState?.playbackStatus || "idle";
+  const visibleTrack = currentTrack || stoppedTrack;
+  const playbackPill = el("playback-state-pill");
+  const pillState = playbackPillState(playbackStatus);
 
-  setText("current-track-title", currentTrack?.title || "Waiting for a track");
-  setText(
-    "current-track-meta",
-    currentTrack ? describeRequester(currentTrack) : "Queue is empty. Fallback playlist will play automatically."
-  );
+  setText("current-track-title", visibleTrack?.title || "Waiting for a track");
+  setText("current-track-meta", describePlaybackMeta({
+    currentTrack,
+    stoppedTrack,
+    playbackStatus,
+    queueLength: queue.length
+  }));
+
+  if (playbackPill) {
+    playbackPill.className = pillState.className;
+    playbackPill.textContent = pillState.text;
+  }
+
+  const playPauseButton = el("overview-play-pause");
+  const stopButton = el("overview-stop");
+  const nextButton = el("overview-next");
+  const queueButton = el("overview-queue-button");
+
+  if (playPauseButton) {
+    playPauseButton.disabled = isPlaybackCommandPending;
+    playPauseButton.textContent = playbackStatus === "playing" ? "Pause" : "Play";
+  }
+
+  if (stopButton) {
+    stopButton.disabled = isPlaybackCommandPending || playbackStatus === "idle";
+  }
+
+  if (nextButton) {
+    nextButton.disabled = isPlaybackCommandPending;
+  }
+
+  if (queueButton) {
+    queueButton.disabled = isQueueSubmitting;
+  }
 
   const queueList = el("queue-preview");
   if (!queueList) {
@@ -592,6 +699,14 @@ function applyPlaybackState() {
   }
 
   queueList.innerHTML = "";
+  if (!queue.length) {
+    const item = document.createElement("li");
+    item.className = "queue-preview__empty";
+    item.textContent = "No queued requests yet.";
+    queueList.appendChild(item);
+    return;
+  }
+
   queue.slice(0, 4).forEach((track) => {
     const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
     const item = document.createElement("li");
@@ -815,6 +930,120 @@ async function addPlaylistTrack(event) {
     if (el("playlist-add-button")) {
       el("playlist-add-button").disabled = false;
     }
+  }
+}
+
+async function addOverviewQueueTrack(event) {
+  event.preventDefault();
+  const input = el("overview-queue-input")?.value.trim() || "";
+
+  if (!input) {
+    setOverviewFeedback("Enter a link or search before adding to the queue.", "warning");
+    return;
+  }
+
+  isQueueSubmitting = true;
+  applyPlaybackState();
+  setOverviewFeedback("Adding track to the queue...");
+
+  try {
+    const payload = await fetchJson("/api/queue", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ input })
+    });
+
+    playbackState = payload.state;
+    applyPlaybackState();
+    setValue("overview-queue-input", "");
+
+    const duplicateType = payload.track?.duplicateType;
+    if (duplicateType === "playing") {
+      setOverviewFeedback(`Track is already playing: ${payload.track.title}`, "warning");
+    } else if (duplicateType === "queue") {
+      setOverviewFeedback(`Track is already queued: ${payload.track.title}`, "warning");
+    } else if (duplicateType === "stopped") {
+      setOverviewFeedback(`Track is stopped and ready to restart: ${payload.track.title}`, "warning");
+    } else {
+      setOverviewFeedback(`Added ${payload.track.title} to the queue.`, "success");
+    }
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not add track to the queue.", "error");
+  } finally {
+    isQueueSubmitting = false;
+    applyPlaybackState();
+  }
+}
+
+async function sendOverviewPlaybackCommand(url) {
+  isPlaybackCommandPending = true;
+  applyPlaybackState();
+
+  try {
+    const payload = await fetchJson(url, {
+      method: "POST"
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    return payload;
+  } finally {
+    isPlaybackCommandPending = false;
+    applyPlaybackState();
+  }
+}
+
+async function toggleOverviewPlayback() {
+  const previousStatus = playbackState?.playbackStatus || "idle";
+
+  try {
+    const payload = await sendOverviewPlaybackCommand("/api/playback/play-pause");
+    const nextStatus = payload.state?.playbackStatus || "idle";
+    const nextTrackTitle = payload.state?.currentTrack?.title || payload.result?.track?.title || "the track";
+
+    if (nextStatus === "paused") {
+      setOverviewFeedback("Playback paused.", "success");
+    } else if (nextStatus === "playing" && previousStatus === "paused") {
+      setOverviewFeedback("Playback resumed.", "success");
+    } else if (nextStatus === "playing" && previousStatus === "stopped") {
+      setOverviewFeedback(`Restarted ${nextTrackTitle}.`, "success");
+    } else if (nextStatus === "playing") {
+      setOverviewFeedback(`Playing ${nextTrackTitle}.`, "success");
+    } else {
+      setOverviewFeedback("No track is available to play.", "warning");
+    }
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not toggle playback.", "error");
+  }
+}
+
+async function stopOverviewPlayback() {
+  try {
+    const payload = await sendOverviewPlaybackCommand("/api/playback/stop");
+
+    if (payload.state?.playbackStatus === "stopped" && payload.result?.title) {
+      setOverviewFeedback(`Stopped ${payload.result.title}.`, "success");
+    } else {
+      setOverviewFeedback("Nothing is currently playing.", "warning");
+    }
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not stop playback.", "error");
+  }
+}
+
+async function playNextOverviewTrack() {
+  try {
+    const payload = await sendOverviewPlaybackCommand("/api/playback/next");
+    const nextTitle = payload.state?.currentTrack?.title;
+
+    if (nextTitle) {
+      setOverviewFeedback(`Skipped to ${nextTitle}.`, "success");
+    } else {
+      setOverviewFeedback("No next track is available right now.", "warning");
+    }
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not advance to the next track.", "error");
   }
 }
 
@@ -1047,6 +1276,12 @@ root.addEventListener("click", (event) => {
     }
   } else if (event.target.id === "playlist-export-button") {
     void exportPlaylist();
+  } else if (event.target.id === "overview-play-pause") {
+    void toggleOverviewPlayback();
+  } else if (event.target.id === "overview-stop") {
+    void stopOverviewPlayback();
+  } else if (event.target.id === "overview-next") {
+    void playNextOverviewTrack();
   }
 });
 
@@ -1058,6 +1293,8 @@ root.addEventListener("submit", (event) => {
 
   if (form.id === "settings-form") {
     void saveSettings(event);
+  } else if (form.id === "overview-queue-form") {
+    void addOverviewQueueTrack(event);
   } else if (form.id === "playlist-add-form") {
     void addPlaylistTrack(event);
   }

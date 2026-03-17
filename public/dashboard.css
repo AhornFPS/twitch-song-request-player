@@ -409,11 +409,29 @@ a {
   gap: 10px;
 }
 
+.playback-controls {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.queue-add-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  margin-top: 14px;
+}
+
 .queue-preview li {
   padding: 12px 14px;
   border-radius: 14px;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.queue-preview__empty {
+  color: var(--muted);
 }
 
 .queue-preview__title {
@@ -649,6 +667,8 @@ a {
 
   .status-strip,
   .appearance-controls--single,
+  .playback-controls,
+  .queue-add-form,
   .playlist-add-form,
   .copy-row,
   .copy-row--triple,
