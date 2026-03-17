@@ -1,3 +1,4 @@
+const socket = typeof window.io === "function" ? window.io() : null;
 const settingsForm = document.getElementById("settings-form");
 const saveButton = document.getElementById("save-button");
 const saveFeedback = document.getElementById("save-feedback");
@@ -565,7 +566,9 @@ fetch("/api/updater")
   .then(handleUpdaterStatus)
   .catch(() => {});
 
-socket.on("app:updater-status", handleUpdaterStatus);
+if (socket) {
+  socket.on("app:updater-status", handleUpdaterStatus);
+}
 
 openAppdataButton.addEventListener("click", () => {
   fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
