@@ -81,6 +81,7 @@ function createOverlayTestContext() {
   const elements = new Map();
   const sessionStorageData = new Map();
   const locationReplaceCalls = [];
+  const windowEventListeners = new Map();
   let requestAnimationFrameCalls = 0;
   const timeoutCalls = [];
   let nextTimerId = 1;
@@ -113,6 +114,7 @@ function createOverlayTestContext() {
     },
     location: {
       href: "http://localhost:3000/overlay",
+      origin: "http://localhost:3000",
       replace(url) {
         locationReplaceCalls.push(url);
         this.href = url;
@@ -133,7 +135,11 @@ function createOverlayTestContext() {
     },
     __playerLog() {
     },
-    addEventListener() {
+    addEventListener(type, listener) {
+      if (!windowEventListeners.has(type)) {
+        windowEventListeners.set(type, []);
+      }
+      windowEventListeners.get(type).push(listener);
     },
     requestAnimationFrame(callback) {
       requestAnimationFrameCalls += 1;
@@ -176,6 +182,10 @@ function createOverlayTestContext() {
     context,
     locationReplaceCalls,
     sessionStorageData,
+    dispatchWindowEvent(type, payload) {
+      const listeners = windowEventListeners.get(type) ?? [];
+      listeners.forEach((listener) => listener(payload));
+    },
     getRequestAnimationFrameCalls() {
       return requestAnimationFrameCalls;
     },
@@ -387,4 +397,53 @@ test("overlay queue treats track titles and requesters as text", () => {
   assert.equal(queueList.children[0].children[1].textContent, '<svg onload="window.__xssRequester=1">');
   assert.equal(context.window.__xssTitle, undefined);
   assert.equal(context.window.__xssRequester, undefined);
+});
+
+test("embedded player volume messages update both providers", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, dispatchWindowEvent } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  vm.runInContext(`
+    globalThis.__youtubeVolumeCalls = [];
+    globalThis.__youtubeMuted = false;
+    globalThis.__soundCloudVolumeCalls = [];
+    youtubePlayer = {
+      setVolume(value) { globalThis.__youtubeVolumeCalls.push(value); },
+      mute() { globalThis.__youtubeMuted = true; },
+      unMute() { globalThis.__youtubeMuted = false; }
+    };
+    soundCloudWidget = {
+      setVolume(value) { globalThis.__soundCloudVolumeCalls.push(value); }
+    };
+  `, context);
+
+  dispatchWindowEvent("message", {
+    origin: "http://localhost:3000",
+    data: {
+      type: "gui-player:set-volume",
+      volume: 35
+    }
+  });
+
+  assert.deepEqual(Array.from(context.__youtubeVolumeCalls), [35]);
+  assert.deepEqual(Array.from(context.__soundCloudVolumeCalls), [35]);
+  assert.equal(context.__youtubeMuted, false);
+
+  dispatchWindowEvent("message", {
+    origin: "http://localhost:3000",
+    data: {
+      type: "gui-player:set-volume",
+      volume: 0
+    }
+  });
+
+  assert.deepEqual(Array.from(context.__youtubeVolumeCalls), [35, 0]);
+  assert.deepEqual(Array.from(context.__soundCloudVolumeCalls), [35, 0]);
+  assert.equal(context.__youtubeMuted, true);
 });

@@ -69,6 +69,7 @@ let handoffSourceTrack = null;
 let overlayBuildToken = typeof window.__overlayBuildToken === "string"
   ? window.__overlayBuildToken
   : "";
+let desiredPlayerVolume = 100;
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
 const youtubeStartupRecoveryStorageKey = "youtube-startup-recovery";
 const youtubeStartupTimeoutMs = 15000;
@@ -165,6 +166,60 @@ function formatTime(totalSeconds) {
   const minutes = Math.floor(safeSeconds / 60);
   const seconds = safeSeconds % 60;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function normalizePlayerVolume(value) {
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue)) {
+    return desiredPlayerVolume;
+  }
+
+  return Math.min(100, Math.max(0, Math.round(parsedValue)));
+}
+
+function applyYouTubeVolume() {
+  if (!youtubePlayer) {
+    return;
+  }
+
+  try {
+    youtubePlayer.setVolume?.(desiredPlayerVolume);
+    if (desiredPlayerVolume <= 0) {
+      youtubePlayer.mute?.();
+    } else {
+      youtubePlayer.unMute?.();
+    }
+  } catch (error) {
+    sendClientLog("warn", "Failed to apply YouTube volume", {
+      message: error?.message ?? String(error),
+      volume: desiredPlayerVolume
+    });
+  }
+}
+
+function applySoundCloudVolume() {
+  if (!soundCloudWidget) {
+    return;
+  }
+
+  try {
+    soundCloudWidget.setVolume?.(desiredPlayerVolume);
+  } catch (error) {
+    sendClientLog("warn", "Failed to apply SoundCloud volume", {
+      message: error?.message ?? String(error),
+      volume: desiredPlayerVolume
+    });
+  }
+}
+
+function applyPlayerVolume() {
+  applyYouTubeVolume();
+  applySoundCloudVolume();
+}
+
+function setPlayerVolume(nextVolume) {
+  desiredPlayerVolume = normalizePlayerVolume(nextVolume);
+  applyPlayerVolume();
 }
 
 function updateTimeline(currentTimeSeconds, durationSeconds) {
@@ -569,6 +624,7 @@ function createYouTubePlayer() {
       onReady: () => {
         youtubePlayerReady = true;
         sendClientLog("info", "YouTube player ready");
+        applyYouTubeVolume();
         if (pendingYoutubeTrack) {
           youtubePlayer.loadVideoById(pendingYoutubeTrack.videoId);
           forceYoutubePlayback(pendingYoutubeTrack.videoId);
@@ -687,7 +743,7 @@ function forceYoutubePlayback(videoId, attempt = 0) {
       return;
     }
 
-    youtubePlayer.unMute?.();
+    applyYouTubeVolume();
     youtubePlayer.playVideo?.();
     sendClientLog("info", "Forcing YouTube playback", {
       attempt,
@@ -1223,6 +1279,7 @@ function loadSoundCloudTrack(track) {
   };
 
   soundCloudWidget.bind(window.SC.Widget.Events.READY, () => {
+    applySoundCloudVolume();
     updateDurationFromSoundCloud();
     stopSoundCloudDurationProbe();
     soundCloudDurationProbeTimer = window.setInterval(updateDurationFromSoundCloud, 1500);
@@ -1472,6 +1529,15 @@ window.onYouTubeIframeAPIReady = () => {
 };
 
 window.addEventListener("resize", scheduleTitleMarqueeUpdate);
+window.addEventListener("message", (event) => {
+  if (event.origin !== window.location.origin) {
+    return;
+  }
+
+  if (event.data?.type === "gui-player:set-volume") {
+    setPlayerVolume(event.data.volume);
+  }
+});
 
 if (document.fonts?.ready) {
   document.fonts.ready.then(() => {

@@ -193,6 +193,8 @@ test("partial settings save updates only the theme without touching other fields
     twitchUsername: "demo-bot",
     youtubeApiKey: "youtube-key",
     port,
+    guiPlayerEnabled: false,
+    guiPlayerVolume: 42,
     theme: "aurora"
   };
 
@@ -234,6 +236,8 @@ test("partial settings save updates only the theme without touching other fields
   assert.equal(payload.settings.theme, "winamp");
   assert.equal(payload.settings.dashboardLayout, "atlas");
   assert.equal(payload.settings.port, port);
+  assert.equal(payload.settings.guiPlayerEnabled, false);
+  assert.equal(payload.settings.guiPlayerVolume, 42);
   assert.equal(payload.settings.youtubeApiKey, initialSettings.youtubeApiKey);
   assert.equal(Array.isArray(payload.dashboardLayoutOptions), true);
   assert.deepEqual(payload.dashboardLayoutOptions.map((layout) => layout.id), ["atlas"]);
@@ -244,7 +248,151 @@ test("partial settings save updates only the theme without touching other fields
   assert.equal(persistedSettings.theme, "winamp");
   assert.equal(persistedSettings.dashboardLayout, "atlas");
   assert.equal(persistedSettings.port, port);
+  assert.equal(persistedSettings.guiPlayerEnabled, false);
+  assert.equal(persistedSettings.guiPlayerVolume, 42);
   assert.equal(persistedSettings.youtubeApiKey, initialSettings.youtubeApiKey);
+});
+
+test("partial settings save updates the GUI player state without touching other fields", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port, guiPlayerEnabled: false, guiPlayerVolume: 42, theme: "aurora" }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      guiPlayerEnabled: true
+    })
+  });
+
+  assert.equal(response.ok, true);
+
+  const payload = await response.json();
+  assert.equal(payload.settings.guiPlayerEnabled, true);
+  assert.equal(payload.settings.guiPlayerVolume, 42);
+  assert.equal(payload.settings.theme, "aurora");
+  assert.equal(payload.settings.port, port);
+
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
+  );
+  assert.equal(persistedSettings.guiPlayerEnabled, true);
+  assert.equal(persistedSettings.guiPlayerVolume, 42);
+  assert.equal(persistedSettings.theme, "aurora");
+  assert.equal(persistedSettings.port, port);
+});
+
+test("partial settings save updates the GUI player volume without touching other fields", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port, guiPlayerEnabled: true, guiPlayerVolume: 15, theme: "aurora" }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      guiPlayerVolume: 67
+    })
+  });
+
+  assert.equal(response.ok, true);
+
+  const payload = await response.json();
+  assert.equal(payload.settings.guiPlayerEnabled, true);
+  assert.equal(payload.settings.guiPlayerVolume, 67);
+  assert.equal(payload.settings.theme, "aurora");
+  assert.equal(payload.settings.port, port);
+
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
+  );
+  assert.equal(persistedSettings.guiPlayerEnabled, true);
+  assert.equal(persistedSettings.guiPlayerVolume, 67);
+  assert.equal(persistedSettings.theme, "aurora");
+  assert.equal(persistedSettings.port, port);
 });
 
 test("playlist API supports listing, delete, import, and export", async (t) => {

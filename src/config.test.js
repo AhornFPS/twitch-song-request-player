@@ -53,6 +53,29 @@ test("saved theme, dashboard layout, and port stay active when no env override i
   assert.equal(settings.dashboardLayout, "atlas");
 });
 
+test("saved GUI player state is preserved across reloads", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ guiPlayerEnabled: true, guiPlayerVolume: 42 }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.guiPlayerEnabled, true);
+  assert.equal(settings.guiPlayerVolume, 42);
+});
+
 test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {
   const restoreEnv = captureEnv(["PORT", "THEME", "DASHBOARD_LAYOUT"]);
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));

@@ -30,6 +30,10 @@ let playlistPayload = null;
 let activeTab = "overview";
 let isQueueSubmitting = false;
 let isPlaybackCommandPending = false;
+let isGuiPlayerSaving = false;
+let guiPlayerVolume = 100;
+let guiPlayerVolumeSaveTimer = null;
+let isGuiPlayerVolumeSaving = false;
 
 function el(id) {
   return document.getElementById(id);
@@ -126,7 +130,10 @@ function renderDashboard() {
                 <p class="panel__eyebrow">Playback</p>
                 <h2>Now playing</h2>
               </div>
-              <span id="playback-state-pill" class="status-pill status-pill--idle">Idle</span>
+              <div class="playback-panel__header-actions">
+                <span id="playback-state-pill" class="status-pill status-pill--idle">Idle</span>
+                <button id="overview-gui-player-toggle" class="secondary-button" type="button">Activate GUI player</button>
+              </div>
             </div>
             <div class="playback-card">
               <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
@@ -142,6 +149,29 @@ function renderDashboard() {
               </form>
               <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
               <ul id="queue-preview" class="queue-preview"></ul>
+              <section class="overview-player-panel">
+                <div class="overview-player-panel__header">
+                  <div>
+                    <p class="panel__eyebrow">GUI player</p>
+                    <p id="overview-gui-player-status" class="overview-player-panel__copy">Inactive. Activate it to play inside the desktop app without OBS.</p>
+                  </div>
+                </div>
+                <label class="overview-player-volume">
+                  <span class="overview-player-volume__label">Volume</span>
+                  <div class="overview-player-volume__controls">
+                    <input id="overview-gui-player-volume" class="overview-player-volume__slider" type="range" min="0" max="100" step="1" value="100" />
+                    <span id="overview-gui-player-volume-value" class="overview-player-volume__value">100%</span>
+                  </div>
+                </label>
+                <div id="overview-player-frame-wrap" class="overview-player-frame-wrap" hidden>
+                  <iframe
+                    id="overview-player-frame"
+                    class="overview-player-frame"
+                    title="Embedded desktop player"
+                    allow="autoplay"
+                  ></iframe>
+                </div>
+              </section>
             </div>
           </section>
         </div>
@@ -309,6 +339,9 @@ function renderDashboard() {
     </div>
   `;
 
+  el("overview-player-frame")?.addEventListener("load", () => {
+    syncGuiPlayerFrameVolume();
+  });
   applyTabState();
 }
 
@@ -415,6 +448,8 @@ function collectSettingsPayload() {
     twitchOauthToken: el("twitchOauthToken")?.value.trim() || "",
     youtubeApiKey: el("youtubeApiKey")?.value.trim() || "",
     port: Number.parseInt(el("port")?.value || "3000", 10) || 3000,
+    guiPlayerEnabled: settingsPayload?.settings?.guiPlayerEnabled === true,
+    guiPlayerVolume,
     theme: el("theme-select")?.value || lastSavedTheme,
     chatSuppressedCategories,
     playbackSuppressedCategories
@@ -452,6 +487,9 @@ async function loadSettings() {
   playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
     ? [...settingsPayload.settings.playbackSuppressedCategories]
     : [];
+  guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+    ? settingsPayload.settings.guiPlayerVolume
+    : 100;
 
   if (!root.childElementCount) {
     renderDashboard();
@@ -475,6 +513,7 @@ function applySettingsPayload() {
   renderCategorySelect("chat-category-select", chatSuppressedCategories);
   renderCategorySelect("playback-category-select", playbackSuppressedCategories);
   applyRuntimeState();
+  applyGuiPlayerState();
   isHydratingForm = false;
 }
 
@@ -590,6 +629,127 @@ function applyRuntimeState() {
     void loadSettings().catch(() => {});
   }
   lastTwitchAuthState = twitchAuthStatus?.state || "";
+  applyGuiPlayerState();
+}
+
+function guiPlayerStatusText(isEnabled) {
+  return isEnabled
+    ? "Active. The desktop app is hosting the same player view locally, even if OBS is closed."
+    : "Inactive. Activate it to play inside the desktop app without OBS.";
+}
+
+function applyGuiPlayerState() {
+  const toggleButton = el("overview-gui-player-toggle");
+  const statusText = el("overview-gui-player-status");
+  const frameWrap = el("overview-player-frame-wrap");
+  const frame = el("overview-player-frame");
+  const volumeSlider = el("overview-gui-player-volume");
+  const volumeValue = el("overview-gui-player-volume-value");
+  const runtimeOverlayUrl = settingsPayload?.runtime?.overlayUrl || "";
+  const isEnabled = settingsPayload?.settings?.guiPlayerEnabled === true;
+  const desiredFrameUrl = runtimeOverlayUrl ? `${runtimeOverlayUrl}${runtimeOverlayUrl.includes("?") ? "&" : "?"}embedded=desktop` : "";
+
+  if (toggleButton) {
+    toggleButton.disabled = isGuiPlayerSaving || isGuiPlayerVolumeSaving;
+    toggleButton.textContent = isEnabled ? "Deactivate GUI player" : "Activate GUI player";
+  }
+
+  if (statusText) {
+    statusText.textContent = guiPlayerStatusText(isEnabled);
+  }
+
+  if (volumeSlider instanceof HTMLInputElement) {
+    volumeSlider.disabled = !isEnabled;
+    volumeSlider.value = String(guiPlayerVolume);
+  }
+
+  if (volumeValue) {
+    volumeValue.textContent = `${guiPlayerVolume}%`;
+  }
+
+  if (frameWrap) {
+    frameWrap.hidden = !isEnabled;
+  }
+
+  if (!frame) {
+    return;
+  }
+
+  const currentFrameUrl = frame.getAttribute("src") || "";
+
+  if (isEnabled && desiredFrameUrl) {
+    if (currentFrameUrl !== desiredFrameUrl) {
+      frame.setAttribute("src", desiredFrameUrl);
+    } else {
+      syncGuiPlayerFrameVolume();
+    }
+  } else if (currentFrameUrl) {
+    frame.setAttribute("src", "about:blank");
+  }
+}
+
+function postGuiPlayerMessage(payload) {
+  const frame = el("overview-player-frame");
+  const targetWindow = frame?.contentWindow;
+
+  if (!targetWindow) {
+    return;
+  }
+
+  targetWindow.postMessage(payload, window.location.origin);
+}
+
+function syncGuiPlayerFrameVolume() {
+  if (settingsPayload?.settings?.guiPlayerEnabled !== true) {
+    return;
+  }
+
+  postGuiPlayerMessage({
+    type: "gui-player:set-volume",
+    volume: guiPlayerVolume
+  });
+}
+
+async function persistGuiPlayerVolume() {
+  if (!settingsPayload) {
+    return;
+  }
+
+  const normalizedVolume = Math.min(100, Math.max(0, Number.parseInt(String(guiPlayerVolume ?? 100), 10) || 100));
+  if (settingsPayload.settings.guiPlayerVolume === normalizedVolume) {
+    return;
+  }
+
+  isGuiPlayerVolumeSaving = true;
+  applyGuiPlayerState();
+
+  try {
+    settingsPayload = await persistSettings({
+      guiPlayerVolume: normalizedVolume
+    });
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : normalizedVolume;
+    applySettingsPayload();
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not save the GUI player volume.", "error");
+  } finally {
+    isGuiPlayerVolumeSaving = false;
+    applyGuiPlayerState();
+  }
+}
+
+function scheduleGuiPlayerVolumeSave() {
+  if (guiPlayerVolumeSaveTimer) {
+    window.clearTimeout(guiPlayerVolumeSaveTimer);
+  }
+
+  guiPlayerVolumeSaveTimer = window.setTimeout(() => {
+    guiPlayerVolumeSaveTimer = null;
+    void persistGuiPlayerVolume();
+  }, 180);
 }
 
 function describeRequester(track) {
@@ -691,6 +851,11 @@ function applyPlaybackState() {
 
   if (queueButton) {
     queueButton.disabled = isQueueSubmitting;
+  }
+
+  const guiPlayerToggle = el("overview-gui-player-toggle");
+  if (guiPlayerToggle) {
+    guiPlayerToggle.disabled = isGuiPlayerSaving || isGuiPlayerVolumeSaving;
   }
 
   const queueList = el("queue-preview");
@@ -809,6 +974,9 @@ async function saveSettings(event) {
     playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
       ? [...settingsPayload.settings.playbackSuppressedCategories]
       : [];
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
     applySettingsPayload();
 
     if (settingsPayload.saveSummary?.restartRequired) {
@@ -842,11 +1010,54 @@ async function saveThemeSelection(nextTheme) {
     });
     availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
     lastSavedTheme = settingsPayload.settings.theme || nextTheme;
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
     applySettingsPayload();
     setFeedback("Overlay theme saved.", "success");
   } catch (error) {
     renderThemeOptions(lastSavedTheme);
     setFeedback(error?.message || "Could not save overlay theme.", "error");
+  }
+}
+
+async function saveGuiPlayerEnabled(nextValue) {
+  if (!settingsPayload || settingsPayload.settings.guiPlayerEnabled === nextValue) {
+    return;
+  }
+
+  isGuiPlayerSaving = true;
+  applyPlaybackState();
+  applyGuiPlayerState();
+  setOverviewFeedback(nextValue ? "Activating GUI player..." : "Deactivating GUI player...");
+
+  try {
+    settingsPayload = await persistSettings({
+      guiPlayerEnabled: nextValue
+    });
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
+    applySettingsPayload();
+    if (nextValue) {
+      window.setTimeout(() => {
+        syncGuiPlayerFrameVolume();
+      }, 250);
+    }
+    setOverviewFeedback(
+      nextValue
+        ? "GUI player activated and will stay on after restart."
+        : "GUI player deactivated and will stay off after restart.",
+      "success"
+    );
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not update the GUI player.", "error");
+  } finally {
+    isGuiPlayerSaving = false;
+    applyPlaybackState();
+    applyGuiPlayerState();
   }
 }
 
@@ -1282,6 +1493,8 @@ root.addEventListener("click", (event) => {
     void stopOverviewPlayback();
   } else if (event.target.id === "overview-next") {
     void playNextOverviewTrack();
+  } else if (event.target.id === "overview-gui-player-toggle") {
+    void saveGuiPlayerEnabled(!(settingsPayload?.settings?.guiPlayerEnabled === true));
   }
 });
 
@@ -1322,6 +1535,12 @@ root.addEventListener("change", async (event) => {
         target.value = "";
       }
     }
+  } else if (target.id === "overview-gui-player-volume" && target instanceof HTMLInputElement) {
+    if (guiPlayerVolumeSaveTimer) {
+      window.clearTimeout(guiPlayerVolumeSaveTimer);
+      guiPlayerVolumeSaveTimer = null;
+    }
+    await persistGuiPlayerVolume();
   }
 });
 
@@ -1338,6 +1557,15 @@ root.addEventListener("input", (event) => {
       playlistPage = 1;
       void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
     }, 180);
+  } else if (target.id === "overview-gui-player-volume" && target instanceof HTMLInputElement) {
+    guiPlayerVolume = Number.parseInt(target.value || "100", 10);
+    if (!Number.isFinite(guiPlayerVolume)) {
+      guiPlayerVolume = 100;
+    }
+    guiPlayerVolume = Math.min(100, Math.max(0, guiPlayerVolume));
+    applyGuiPlayerState();
+    syncGuiPlayerFrameVolume();
+    scheduleGuiPlayerVolumeSave();
   }
 });
 

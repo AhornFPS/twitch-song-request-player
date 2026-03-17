@@ -101,6 +101,33 @@ function normalizePort(value) {
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : 3000;
 }
 
+function normalizePercent(value, fallback = 100) {
+  const parsedValue = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsedValue)) {
+    return fallback;
+  }
+
+  return Math.min(100, Math.max(0, parsedValue));
+}
+
+function normalizeBoolean(value, fallback = false) {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) {
+      return true;
+    }
+    if (["false", "0", "no", "off"].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
 function normalizeCategoryList(value, fallback = []) {
   const list = Array.isArray(value)
     ? value
@@ -134,6 +161,8 @@ function normalizeSettings(raw) {
     ),
     youtubeApiKey: trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY),
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
+    guiPlayerEnabled: normalizeBoolean(raw.guiPlayerEnabled, false),
+    guiPlayerVolume: normalizePercent(raw.guiPlayerVolume, 100),
     theme: normalizeTheme(raw.theme ?? raw.THEME),
     dashboardLayout: normalizeDashboardLayout(raw.dashboardLayout ?? raw.DASHBOARD_LAYOUT)
   };
@@ -228,6 +257,14 @@ function mergeSettings(baseSettings, overridingSettings) {
       overridingSettings.playbackSuppressedCategories || baseSettings.playbackSuppressedCategories || [],
     youtubeApiKey: overridingSettings.youtubeApiKey || baseSettings.youtubeApiKey,
     port: overridingSettings.port || baseSettings.port || 3000,
+    guiPlayerEnabled:
+      typeof overridingSettings.guiPlayerEnabled === "boolean"
+        ? overridingSettings.guiPlayerEnabled
+        : (baseSettings.guiPlayerEnabled ?? false),
+    guiPlayerVolume:
+      typeof overridingSettings.guiPlayerVolume === "number"
+        ? normalizePercent(overridingSettings.guiPlayerVolume, baseSettings.guiPlayerVolume ?? 100)
+        : (baseSettings.guiPlayerVolume ?? 100),
     theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id,
     dashboardLayout:
       overridingSettings.dashboardLayout ||
@@ -261,6 +298,8 @@ function normalizeBundledSettings(raw) {
     playbackSuppressedCategories: [],
     youtubeApiKey: "",
     port: 3000,
+    guiPlayerEnabled: false,
+    guiPlayerVolume: 100,
     theme: themeOptions[0].id,
     dashboardLayout: dashboardLayoutOptions[0].id
   };
@@ -373,6 +412,8 @@ export function toRuntimeAppConfig(runtimeConfig) {
       playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },
     youtubeApiKey: runtimeConfig.settings.youtubeApiKey,
+    guiPlayerEnabled: runtimeConfig.settings.guiPlayerEnabled,
+    guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
     theme: runtimeConfig.settings.theme,
     dashboardLayout: runtimeConfig.settings.dashboardLayout
   };
