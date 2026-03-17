@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.6.0 - 2026-03-17
+
 - Added a persistent Overview GUI player toggle that can keep the embedded player active without OBS and restores its last on/off state on app launch.
 - Added an Overview volume slider for the embedded GUI player, and it now restores the last saved loudness after restart without affecting OBS.
 - Rebalanced the Connection tab so Category Rules has more room and the Add category field no longer gets cramped.
