@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Changed in-app Windows updates to install silently and reopen the app without showing the setup wizard again.
+
 ## 1.4.5 - 2026-03-17
 
 - Fixed Windows update releases so installed builds can detect GitHub setup updates again.

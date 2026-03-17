@@ -90,7 +90,7 @@ class UpdateService extends EventEmitter {
 
   installUpdate() {
     if (this.status.state === "downloaded") {
-      autoUpdater.quitAndInstall(false, true);
+      autoUpdater.quitAndInstall(true, true);
     }
   }
 }
