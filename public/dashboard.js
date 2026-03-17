@@ -11,6 +11,7 @@ const restartNote = document.getElementById("restart-note");
 const currentTrackTitle = document.getElementById("current-track-title");
 const currentTrackMeta = document.getElementById("current-track-meta");
 const queuePreview = document.getElementById("queue-preview");
+const openAppdataButton = document.getElementById("open-appdata-button");
 const twitchAuthStartButton = document.getElementById("twitch-auth-start");
 const twitchAuthCancelButton = document.getElementById("twitch-auth-cancel");
 const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
@@ -478,6 +479,10 @@ themeSelect.addEventListener("change", (event) => {
       void saveThemeSelection(event.target.value);
     }
   }
+});
+
+openAppdataButton.addEventListener("click", () => {
+  fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
 });
 
 twitchAuthStartButton.addEventListener("click", () => {

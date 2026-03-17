@@ -14,6 +14,8 @@
     "build:bundle-config": "node scripts/write-bundled-config.js",
     "bundle": "esbuild server.js --bundle --platform=node --format=cjs --outfile=build/server.cjs",
     "build:exe": "npm run build:bundle-config && electron-builder --win portable",
+    "build:setup": "npm run build:bundle-config && electron-builder --win nsis",
+    "build:release": "npm run build:bundle-config && electron-builder --win",
     "release": "node scripts/release.js",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
@@ -26,6 +28,7 @@
     "csv-parse": "^5.5.6",
     "csv-stringify": "^6.5.2",
     "dotenv": "^16.4.7",
+    "electron-updater": "^6.8.3",
     "express": "^4.21.2",
     "socket.io": "^4.8.1",
     "tmi.js": "^1.8.5"
@@ -55,6 +58,12 @@
       "signAndEditExecutable": false,
       "target": [
         {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
           "target": "portable",
           "arch": [
             "x64"
@@ -62,8 +71,19 @@
         }
       ]
     },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "AhornFPS",
+      "repo": "twitch-song-request-player"
+    },
     "portable": {
-      "artifactName": "TwitchSongRequestPlayer.exe"
+      "artifactName": "TwitchSongRequestPlayer-Portable.exe"
     }
   }
 }

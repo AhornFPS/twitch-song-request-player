@@ -299,6 +299,25 @@ export async function startAppServer({
     });
   });
 
+  app.post("/api/open-runtime-dir", (_request, response) => {
+    try {
+      if (process.platform === "win32") {
+        spawn("explorer", [runtimeConfig.runtimeDir], { detached: true, stdio: "ignore" }).unref();
+      } else if (process.platform === "darwin") {
+        spawn("open", [runtimeConfig.runtimeDir], { detached: true, stdio: "ignore" }).unref();
+      } else {
+        spawn("xdg-open", [runtimeConfig.runtimeDir], { detached: true, stdio: "ignore" }).unref();
+      }
+      response.status(204).end();
+    } catch (error) {
+      logError("Failed to open runtime directory", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).end();
+    }
+  });
+
   app.post("/api/player-event", async (request, response) => {
     try {
       logInfo("HTTP player event received", request.body);

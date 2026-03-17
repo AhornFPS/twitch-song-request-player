@@ -1,8 +1,11 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import electronUpdater from "electron-updater";
 import { createConfigStore } from "../src/config.js";
 import { startAppServer } from "../src/app-server.js";
+
+const { autoUpdater } = electronUpdater;
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const appRootDir = path.resolve(moduleDir, "..");
@@ -20,33 +23,16 @@ export async function bootstrapDesktopApp(electron) {
       app.getAppPath().includes("app.asar");
 
     if (isPackagedApp) {
-      const candidateDirs = [
-        process.env.PORTABLE_EXECUTABLE_DIR,
-        process.env.PORTABLE_EXECUTABLE_FILE
-          ? path.dirname(process.env.PORTABLE_EXECUTABLE_FILE)
-          : "",
-        process.argv[0] ? path.dirname(process.argv[0]) : "",
-        process.cwd(),
-        path.dirname(app.getPath("exe"))
-      ].filter(Boolean);
-
-      for (const candidateDir of candidateDirs) {
-        const settingsFile = path.join(candidateDir, "settings.json");
-        if (fs.existsSync(settingsFile)) {
-          return candidateDir;
-        }
+      // If running the electron-builder portable target, keep data next to the executable
+      if (process.env.PORTABLE_EXECUTABLE_DIR) {
+        return process.env.PORTABLE_EXECUTABLE_DIR;
       }
-
-      for (const candidateDir of candidateDirs) {
-        const playlistFile = path.join(candidateDir, "playlist.csv");
-        if (fs.existsSync(playlistFile)) {
-          return candidateDir;
-        }
-      }
-
-      return candidateDirs[0] || path.dirname(app.getPath("exe"));
+      
+      // In a packaged (installed) application, store configs and playlist in the user data directory
+      return app.getPath("userData");
     }
 
+    // In development, store in the project root
     return appRootDir;
   }
 
@@ -210,4 +196,10 @@ export async function bootstrapDesktopApp(electron) {
   await app.whenReady();
   registerMediaShortcuts();
   await bootstrap();
+
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+      console.error("Auto updater check failed:", err);
+    });
+  }
 }

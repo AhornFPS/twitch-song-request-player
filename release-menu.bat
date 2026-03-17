@@ -44,7 +44,7 @@ goto menu
 :build_only
 echo.
 echo Building EXE for testing. This will not change the version or changelog.
-call :run_npm run build:exe
+call :run_npm run build:release
 set "ACTION_EXIT_CODE=%errorlevel%"
 goto done
 

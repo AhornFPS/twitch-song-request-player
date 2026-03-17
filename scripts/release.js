@@ -14,7 +14,6 @@ import {
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const packageJsonPath = path.join(rootDir, "package.json");
 const changelogPath = path.join(rootDir, "CHANGELOG.md");
-const defaultArtifactPath = path.join(rootDir, "dist", "TwitchSongRequestPlayer.exe");
 
 function quoteWindowsArg(value) {
   const stringValue = String(value ?? "");
@@ -159,14 +158,24 @@ function releaseExists(repo, tag) {
   }
 }
 
-async function ensureArtifact(versionedArtifactPath, skipBuild) {
+async function ensureArtifacts(version, skipBuild) {
   if (!skipBuild) {
-    run(getNpmCommand(), ["run", "build:exe"]);
+    run(getNpmCommand(), ["run", "build:release"]);
   }
 
-  await fs.access(defaultArtifactPath);
-  await fs.mkdir(path.dirname(versionedArtifactPath), { recursive: true });
-  await fs.copyFile(defaultArtifactPath, versionedArtifactPath);
+  const artifacts = [
+    `TwitchSongRequestPlayer Setup ${version}.exe`,
+    `TwitchSongRequestPlayer Setup ${version}.exe.blockmap`,
+    `latest.yml`,
+    `TwitchSongRequestPlayer-Portable.exe`
+  ];
+
+  const artifactPaths = artifacts.map(file => path.join(rootDir, "dist", file));
+  for (const artifactPath of artifactPaths) {
+    await fs.access(artifactPath);
+  }
+
+  return artifactPaths;
 }
 
 async function main() {
@@ -183,11 +192,6 @@ async function main() {
   const repo = getGitHubRepo(options.repo);
   const tag = `v${nextVersion}`;
   const branch = getCurrentBranch();
-  const versionedArtifactPath = path.join(
-    rootDir,
-    "dist",
-    `TwitchSongRequestPlayer-v${nextVersion}-win-x64.exe`
-  );
 
   if (options.dryRun) {
     console.log(`Repo: ${repo}`);
@@ -210,7 +214,7 @@ async function main() {
   const releaseNotesPath = path.join(os.tmpdir(), `twitch-song-request-player-${tag}-notes.md`);
   await fs.writeFile(releaseNotesPath, releaseNotes, "utf8");
 
-  await ensureArtifact(versionedArtifactPath, options.skipBuild);
+  const artifactPaths = await ensureArtifacts(nextVersion, options.skipBuild);
 
   run("git", ["add", "package.json", "package-lock.json", "CHANGELOG.md"]);
   run("git", ["commit", "-m", `release: ${tag}`]);
@@ -224,7 +228,7 @@ async function main() {
       "release",
       "upload",
       tag,
-      versionedArtifactPath,
+      ...artifactPaths,
       "--repo",
       repo,
       "--clobber"
@@ -234,7 +238,7 @@ async function main() {
       "release",
       "create",
       tag,
-      versionedArtifactPath,
+      ...artifactPaths,
       "--repo",
       repo,
       "--title",
