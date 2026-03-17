@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 
 function normalizeVersion(version) {
   const value = String(version ?? "").trim();
@@ -192,4 +193,46 @@ export async function buildReleaseNotes(changelogPath, version, { fallbackToUnre
   const body = trimOuterBlankLines(selected.body);
   const sectionBody = body || "- No changelog entries were found for this release.";
   return `## ${selected.title}\n\n${sectionBody}\n`;
+}
+
+function stripWrappedValue(value) {
+  const normalized = String(value ?? "").trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const quote = normalized[0];
+  if ((quote === "'" || quote === "\"") && normalized.at(-1) === quote) {
+    return normalized.slice(1, -1);
+  }
+
+  return normalized;
+}
+
+export function parsePrimaryReleaseArtifactName(latestYamlText) {
+  const match = String(latestYamlText ?? "").match(/^\s*path:\s*(.+)\s*$/m);
+
+  if (!match) {
+    throw new Error("latest.yml does not contain a primary artifact path.");
+  }
+
+  const artifactName = stripWrappedValue(match[1]);
+  if (!artifactName) {
+    throw new Error("latest.yml contains an empty primary artifact path.");
+  }
+
+  return artifactName;
+}
+
+export async function readReleaseArtifacts(distDir, portableArtifactName) {
+  const latestYamlPath = path.join(distDir, "latest.yml");
+  const latestYamlText = await fs.readFile(latestYamlPath, "utf8");
+  const setupArtifactName = parsePrimaryReleaseArtifactName(latestYamlText);
+
+  return [
+    path.join(distDir, setupArtifactName),
+    path.join(distDir, `${setupArtifactName}.blockmap`),
+    latestYamlPath,
+    path.join(distDir, portableArtifactName)
+  ];
 }

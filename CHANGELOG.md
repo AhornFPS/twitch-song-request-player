@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed Windows update releases so installed builds can detect GitHub setup updates again.
+
 ## 1.4.4 - 2026-03-17
 
 - version push for update flow testing

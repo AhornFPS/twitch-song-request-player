@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildReleaseNotes,
   bumpVersion,
+  readReleaseArtifacts,
   readPackageVersion,
   readUnreleasedNotes,
   rollChangelogRelease
@@ -163,14 +164,10 @@ async function ensureArtifacts(version, skipBuild) {
     run(getNpmCommand(), ["run", "build:release"]);
   }
 
-  const artifacts = [
-    `TwitchSongRequestPlayer Setup ${version}.exe`,
-    `TwitchSongRequestPlayer Setup ${version}.exe.blockmap`,
-    `latest.yml`,
-    `TwitchSongRequestPlayer-Portable.exe`
-  ];
-
-  const artifactPaths = artifacts.map(file => path.join(rootDir, "dist", file));
+  const artifactPaths = await readReleaseArtifacts(
+    path.join(rootDir, "dist"),
+    "TwitchSongRequestPlayer-Portable.exe"
+  );
   for (const artifactPath of artifactPaths) {
     await fs.access(artifactPath);
   }

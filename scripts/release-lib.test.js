@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildReleaseNotes, bumpVersion, rollChangelogRelease } from "./release-lib.js";
+import { buildReleaseNotes, bumpVersion, parsePrimaryReleaseArtifactName, readReleaseArtifacts, rollChangelogRelease } from "./release-lib.js";
 
 test("bumpVersion increments patch, minor, and major releases", () => {
   assert.equal(bumpVersion("1.2.3", "patch"), "1.2.4");
@@ -63,4 +63,56 @@ test("buildReleaseNotes returns the version section after changelog roll", async
 
   const notes = await buildReleaseNotes(changelogPath, "1.0.1");
   assert.equal(notes, "## 1.0.1 - 2026-03-16\n\n- Added release automation.\n");
+});
+
+test("parsePrimaryReleaseArtifactName reads the setup filename from latest.yml", () => {
+  const latestYaml = [
+    "version: 1.4.5",
+    "files:",
+    "  - url: TwitchSongRequestPlayer-Setup-1.4.5.exe",
+    "    sha512: abc123",
+    "    size: 12345",
+    "path: TwitchSongRequestPlayer-Setup-1.4.5.exe",
+    "sha512: abc123"
+  ].join("\n");
+
+  assert.equal(
+    parsePrimaryReleaseArtifactName(latestYaml),
+    "TwitchSongRequestPlayer-Setup-1.4.5.exe"
+  );
+});
+
+test("readReleaseArtifacts follows the filenames advertised in latest.yml", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-sc-release-artifacts-"));
+  const distDir = path.join(tempDir, "dist");
+  await fs.mkdir(distDir, { recursive: true });
+
+  await fs.writeFile(
+    path.join(distDir, "latest.yml"),
+    [
+      "version: 1.4.5",
+      "path: TwitchSongRequestPlayer-Setup-1.4.5.exe",
+      "sha512: abc123"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const artifacts = await readReleaseArtifacts(distDir, "TwitchSongRequestPlayer-Portable.exe");
+
+  assert.deepEqual(artifacts, [
+    path.join(distDir, "TwitchSongRequestPlayer-Setup-1.4.5.exe"),
+    path.join(distDir, "TwitchSongRequestPlayer-Setup-1.4.5.exe.blockmap"),
+    path.join(distDir, "latest.yml"),
+    path.join(distDir, "TwitchSongRequestPlayer-Portable.exe")
+  ]);
+});
+
+test("package.json pins the NSIS artifact name to the updater-compatible setup filename", async () => {
+  const packageJsonPath = path.resolve(process.cwd(), "package.json");
+  const packageJson = JSON.parse(await fs.readFile(packageJsonPath, "utf8"));
+
+  assert.equal(
+    packageJson.build?.nsis?.artifactName,
+    "TwitchSongRequestPlayer-Setup-${version}.${ext}"
+  );
 });

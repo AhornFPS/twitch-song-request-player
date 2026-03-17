@@ -72,6 +72,7 @@
       ]
     },
     "nsis": {
+      "artifactName": "TwitchSongRequestPlayer-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
