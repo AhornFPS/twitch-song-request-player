@@ -1,53 +1,6 @@
 const socket = typeof window.io === "function" ? window.io() : null;
-
 const body = document.body;
-const settingsForm = document.getElementById("settings-form");
-const saveButton = document.getElementById("save-button");
-const saveFeedback = document.getElementById("save-feedback");
-const themeSelect = document.getElementById("theme-select");
-const themeDescription = document.getElementById("theme-description");
-const dashboardLayoutSelect = document.getElementById("dashboard-layout-select");
-const dashboardLayoutDescription = document.getElementById("dashboard-layout-description");
-const twitchStatusPill = document.getElementById("twitch-status-pill");
-const serverPortPill = document.getElementById("server-port-pill");
-const twitchStatusText = document.getElementById("twitch-status-text");
-const overlayUrlInput = document.getElementById("overlay-url");
-const restartNote = document.getElementById("restart-note");
-const currentTrackTitle = document.getElementById("current-track-title");
-const currentTrackMeta = document.getElementById("current-track-meta");
-const queuePreview = document.getElementById("queue-preview");
-const openAppdataButton = document.getElementById("open-appdata-button");
-const twitchAuthStartButton = document.getElementById("twitch-auth-start");
-const twitchAuthCancelButton = document.getElementById("twitch-auth-cancel");
-const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
-const twitchAuthDetails = document.getElementById("twitch-auth-details");
-const twitchAuthCodeInput = document.getElementById("twitch-auth-code");
-const twitchAuthUrlInput = document.getElementById("twitch-auth-url");
-const appVersionBadge = document.getElementById("app-version-badge");
-const chatCategoryInput = document.getElementById("chat-category-input");
-const chatCategoryAddButton = document.getElementById("chat-category-add");
-const chatCategoryDeleteButton = document.getElementById("chat-category-delete");
-const chatCategorySelect = document.getElementById("chat-category-select");
-const playbackCategoryInput = document.getElementById("playback-category-input");
-const playbackCategoryAddButton = document.getElementById("playback-category-add");
-const playbackCategoryDeleteButton = document.getElementById("playback-category-delete");
-const playbackCategorySelect = document.getElementById("playback-category-select");
-const playlistAddForm = document.getElementById("playlist-add-form");
-const playlistAddInput = document.getElementById("playlist-add-input");
-const playlistAddButton = document.getElementById("playlist-add-button");
-const playlistFeedback = document.getElementById("playlist-feedback");
-const playlistSearchInput = document.getElementById("playlist-search-input");
-const playlistTableBody = document.getElementById("playlist-table-body");
-const playlistEmptyState = document.getElementById("playlist-empty-state");
-const playlistCount = document.getElementById("playlist-count");
-const playlistPageInfo = document.getElementById("playlist-page-info");
-const playlistPrevPageButton = document.getElementById("playlist-prev-page");
-const playlistNextPageButton = document.getElementById("playlist-next-page");
-const playlistImportAppendButton = document.getElementById("playlist-import-append");
-const playlistImportReplaceButton = document.getElementById("playlist-import-replace");
-const playlistExportButton = document.getElementById("playlist-export-button");
-const playlistImportFileInput = document.getElementById("playlist-import-file");
-const tabButtons = Array.from(document.querySelectorAll("[data-tab-target]"));
+const root = document.getElementById("dashboard-root");
 
 const updateModal = document.getElementById("update-modal");
 const updateVersionText = document.getElementById("update-version-text");
@@ -62,9 +15,7 @@ const updateSkipBtn = document.getElementById("update-skip-btn");
 let isSavingSettings = false;
 let isHydratingForm = false;
 let availableThemes = [];
-let availableDashboardLayouts = [];
 let lastSavedTheme = "aurora";
-let lastSavedDashboardLayout = "atlas";
 let lastTwitchAuthState = "";
 let chatSuppressedCategories = [];
 let playbackSuppressedCategories = [];
@@ -73,227 +24,330 @@ let playlistTotalPages = 1;
 let playlistQuery = "";
 let playlistSearchDebounceTimer = null;
 let playlistImportMode = "append";
+let settingsPayload = null;
+let playbackState = null;
+let playlistPayload = null;
+let activeTab = "overview";
 
-const fields = {
-  twitchChannel: document.getElementById("twitchChannel"),
-  twitchUsername: document.getElementById("twitchUsername"),
-  twitchOauthToken: document.getElementById("twitchOauthToken"),
-  youtubeApiKey: document.getElementById("youtubeApiKey"),
-  port: document.getElementById("port")
-};
+function el(id) {
+  return document.getElementById(id);
+}
+
+function setText(id, value) {
+  const target = el(id);
+  if (target) {
+    target.textContent = value;
+  }
+}
+
+function setValue(id, value) {
+  const target = el(id);
+  if (target) {
+    target.value = value;
+  }
+}
+
+function htmlEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function renderDashboard() {
+  body.dataset.dashboardLayout = "atlas";
+  root.innerHTML = `
+    <div class="app-shell atlas-shell">
+      <header class="panel shell-header shell-header--compact">
+        <div class="hero-copy hero-copy--minimal">
+          <h1>Twitch Song Request Player</h1>
+        </div>
+        <div class="hero-side">
+          <div class="status-strip">
+            <span id="app-version-badge" class="status-pill status-pill--idle">Version Loading</span>
+            <span id="twitch-status-pill" class="status-pill status-pill--idle">Waiting</span>
+            <span id="twitch-category-pill" class="status-pill status-pill--idle">Category unknown</span>
+            <span id="server-port-pill" class="status-pill status-pill--accent">Port 3000</span>
+          </div>
+          <div class="appearance-controls appearance-controls--single">
+            <label class="control-field">
+              <span class="control-field__label">Overlay theme</span>
+              <select id="theme-select"></select>
+            </label>
+            <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
+            <button id="save-button" class="primary-button" type="submit" form="settings-form">Save settings</button>
+          </div>
+        </div>
+      </header>
+
+      <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <nav class="atlas-tabs" aria-label="Dashboard sections">
+        <button class="tab-button" type="button" data-tab="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab="connection">Connection</button>
+        <button class="tab-button" type="button" data-tab="library">Playlist</button>
+      </nav>
+
+      <section id="tab-overview" class="atlas-view">
+        <div class="atlas-grid atlas-grid--overview">
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Runtime</p>
+                <h2>Server and OBS</h2>
+              </div>
+            </div>
+            <div class="info-grid">
+              <article class="info-card">
+                <p class="info-card__label">Twitch status</p>
+                <p id="twitch-status-text" class="info-card__value">Waiting for configuration.</p>
+              </article>
+              <article class="info-card">
+                <p class="info-card__label">Overlay URL</p>
+                <div class="copy-row">
+                  <input id="overlay-url" class="control-input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
+                </div>
+              </article>
+              <article class="info-card info-card--wide">
+                <p class="info-card__label">Restart notice</p>
+                <p id="restart-note" class="info-card__body">Port changes are applied immediately when you restart the app.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Playback</p>
+                <h2>Now playing</h2>
+              </div>
+            </div>
+            <div class="playback-card">
+              <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
+              <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <ul id="queue-preview" class="queue-preview"></ul>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-connection" class="atlas-view" hidden>
+        <form id="settings-form" class="stack-layout">
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Twitch login</p>
+                <h2>Connect the bot account</h2>
+              </div>
+              <div class="button-row">
+                <button id="twitch-auth-start" class="secondary-button" type="button">Connect bot with Twitch</button>
+                <button id="twitch-auth-cancel" class="ghost-button" type="button">Cancel</button>
+              </div>
+            </div>
+            <p id="twitch-auth-status-text" class="panel-note">Use the bundled Twitch Client ID to start the in-app bot login flow.</p>
+            <div id="twitch-auth-details" class="detail-grid" hidden>
+              <div class="detail-card">
+                <span class="detail-card__label">Activation code</span>
+                <div class="copy-row">
+                  <input id="twitch-auth-code" class="control-input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-code">Copy</button>
+                </div>
+              </div>
+              <div class="detail-card">
+                <span class="detail-card__label">Verification page</span>
+                <div class="copy-row copy-row--triple">
+                  <input id="twitch-auth-url" class="control-input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-open-url-target="twitch-auth-url">Open</button>
+                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-url">Copy</button>
+                </div>
+              </div>
+            </div>
+          </section>
+          <div class="atlas-grid atlas-grid--connection">
+            <section class="panel card-panel">
+              <div class="panel__header">
+                <div>
+                  <p class="panel__eyebrow">Credentials</p>
+                  <h2>Manual entry</h2>
+                </div>
+              </div>
+              <div class="form-grid">
+                <label class="field">
+                  <span class="field__label">Twitch channel</span>
+                  <input id="twitchChannel" name="twitchChannel" class="control-input" type="text" autocomplete="off" />
+                  <span class="field__hint">Usually the streamer name without #.</span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Bot username</span>
+                  <input id="twitchUsername" name="twitchUsername" class="control-input" type="text" autocomplete="off" />
+                  <span class="field__hint">The Twitch account that joins chat.</span>
+                </label>
+                <label class="field field--full">
+                  <span class="field__label">Bot OAuth token</span>
+                  <input id="twitchOauthToken" name="twitchOauthToken" class="control-input" type="password" autocomplete="off" />
+                  <span class="field__hint">Manual tokens should keep the oauth: prefix and include chat scopes. <a class="field__link" href="https://dev.twitch.tv/docs/irc/authenticate-bot" target="_blank" rel="noopener noreferrer">How to get this token</a></span>
+                </label>
+                <label class="field field--full">
+                  <span class="field__label">YouTube API key</span>
+                  <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" />
+                  <span class="field__hint">Only needed when viewers request tracks by search terms instead of direct links.</span>
+                </label>
+                <label class="field field--narrow">
+                  <span class="field__label">Local port</span>
+                  <input id="port" name="port" class="control-input" type="number" min="1" max="65535" />
+                  <span class="field__hint">Used for the local dashboard and OBS overlay URL.</span>
+                </label>
+              </div>
+            </section>
+            <section class="panel card-panel">
+              <div class="panel__header">
+                <div>
+                  <p class="panel__eyebrow">Category rules</p>
+                  <h2>Suppression</h2>
+                </div>
+              </div>
+              <div class="rule-grid">
+                <article class="rule-card">
+                  <p class="rule-card__title">Suppress chat messages</p>
+                  <p class="rule-card__body">The bot stops sending replies and now-playing messages for these categories.</p>
+                  <div class="copy-row copy-row--triple">
+                    <input id="chat-category-input" class="control-input" type="text" placeholder="Add category" />
+                    <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
+                    <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
+                  </div>
+                  <label class="field">
+                    <span class="field__label">Configured categories</span>
+                    <select id="chat-category-select" class="control-input"></select>
+                  </label>
+                </article>
+                <article class="rule-card">
+                  <p class="rule-card__title">Suppress music playback</p>
+                  <p class="rule-card__body">Playback stops completely while the stream sits in one of these categories.</p>
+                  <div class="copy-row copy-row--triple">
+                    <input id="playback-category-input" class="control-input" type="text" placeholder="Add category" />
+                    <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
+                    <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
+                  </div>
+                  <label class="field">
+                    <span class="field__label">Configured categories</span>
+                    <select id="playback-category-select" class="control-input"></select>
+                  </label>
+                </article>
+              </div>
+            </section>
+          </div>
+        </form>
+      </section>
+
+      <section id="tab-library" class="atlas-view" hidden>
+        <section class="panel card-panel playlist-panel">
+          <div class="panel__header panel__header--playlist">
+            <div>
+              <p class="panel__eyebrow">Playlist</p>
+              <h2>Fallback track library</h2>
+            </div>
+            <div class="library-toolbar">
+              <label class="control-field">
+                <span class="control-field__label">Search</span>
+                <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
+              </label>
+            </div>
+          </div>
+          <div class="playlist-tools">
+            <form id="playlist-add-form" class="playlist-add-form">
+              <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud URL or search text" autocomplete="off" />
+              <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
+            </form>
+            <div class="button-row button-row--wrap">
+              <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
+              <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
+              <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
+            </div>
+          </div>
+          <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
+          <input id="playlist-import-file" type="file" accept=".csv,text/csv" hidden />
+          <div class="library-summary">
+            <span id="playlist-count">0 tracks</span>
+            <span id="playlist-page-info">Page 1 of 1</span>
+          </div>
+          <div class="playlist-table-wrap">
+            <table class="playlist-table">
+              <thead>
+                <tr>
+                  <th scope="col">Title</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col">Link</th>
+                  <th scope="col" class="playlist-table__actions">Action</th>
+                </tr>
+              </thead>
+              <tbody id="playlist-table-body"></tbody>
+            </table>
+            <div id="playlist-empty-state" class="empty-state" hidden>No playlist tracks matched this search.</div>
+          </div>
+          <div class="pagination-row">
+            <button id="playlist-prev-page" class="ghost-button" type="button">Previous</button>
+            <button id="playlist-next-page" class="ghost-button" type="button">Next</button>
+          </div>
+        </section>
+      </section>
+    </div>
+  `;
+
+  applyTabState();
+}
 
 function setFeedback(message, tone = "") {
-  saveFeedback.textContent = message;
-  saveFeedback.className = "feedback";
+  const feedback = el("save-feedback");
+  if (!feedback) {
+    return;
+  }
 
+  feedback.textContent = message;
+  feedback.className = "feedback";
   if (tone) {
-    saveFeedback.classList.add(`is-${tone}`);
+    feedback.classList.add(`is-${tone}`);
   }
 }
 
 function setPlaylistFeedback(message, tone = "") {
-  playlistFeedback.textContent = message;
-  playlistFeedback.className = "feedback";
+  const feedback = el("playlist-feedback");
+  if (!feedback) {
+    return;
+  }
 
+  feedback.textContent = message;
+  feedback.className = "feedback";
   if (tone) {
-    playlistFeedback.classList.add(`is-${tone}`);
+    feedback.classList.add(`is-${tone}`);
   }
 }
 
-function activateTab(tabId) {
-  tabButtons.forEach((button) => {
-    const isActive = button.dataset.tabTarget === tabId;
-    button.classList.toggle("is-active", isActive);
-  });
+function applyTabState() {
+  ["overview", "connection", "library"].forEach((tabId) => {
+    const button = root.querySelector(`[data-tab="${tabId}"]`);
+    const view = el(`tab-${tabId}`);
+    const isActive = activeTab === tabId;
 
-  document.querySelectorAll(".workspace-view").forEach((view) => {
-    const isActive = view.id === `tab-${tabId}`;
-    view.classList.toggle("is-active", isActive);
-    view.hidden = !isActive;
-  });
-}
-
-function fillSettingsForm(settings) {
-  fields.twitchChannel.value = settings.twitchChannel || "";
-  fields.twitchUsername.value = settings.twitchUsername || "";
-  fields.twitchOauthToken.value = settings.twitchOauthToken || "";
-  fields.youtubeApiKey.value = settings.youtubeApiKey || "";
-  fields.port.value = settings.port || 3000;
-  chatSuppressedCategories = Array.isArray(settings.chatSuppressedCategories)
-    ? [...settings.chatSuppressedCategories]
-    : [];
-  playbackSuppressedCategories = Array.isArray(settings.playbackSuppressedCategories)
-    ? [...settings.playbackSuppressedCategories]
-    : [];
-  renderCategorySelect(chatCategorySelect, chatSuppressedCategories);
-  renderCategorySelect(playbackCategorySelect, playbackSuppressedCategories);
-}
-
-function syncThemeSelection(selectedTheme) {
-  if (themeSelect) {
-    themeSelect.value = selectedTheme || "aurora";
-  }
-
-  const selectedOption =
-    availableThemes.find((theme) => theme.id === (selectedTheme || "aurora")) || availableThemes[0];
-
-  if (themeDescription) {
-    themeDescription.textContent = selectedOption?.description || "";
-  }
-}
-
-function syncDashboardLayoutSelection(selectedLayout) {
-  const nextLayout = selectedLayout || "atlas";
-
-  if (dashboardLayoutSelect) {
-    dashboardLayoutSelect.value = nextLayout;
-  }
-
-  body.dataset.dashboardLayout = nextLayout;
-  const selectedOption =
-    availableDashboardLayouts.find((layout) => layout.id === nextLayout) || availableDashboardLayouts[0];
-
-  if (dashboardLayoutDescription) {
-    dashboardLayoutDescription.textContent = selectedOption?.description || "";
-  }
-}
-
-function renderThemeOptions(themeOptions, selectedTheme) {
-  availableThemes = Array.isArray(themeOptions) ? themeOptions : [];
-  themeSelect.innerHTML = "";
-
-  availableThemes.forEach((theme) => {
-    const option = document.createElement("option");
-    option.value = theme.id;
-    option.textContent = theme.label;
-    themeSelect.appendChild(option);
-  });
-
-  syncThemeSelection(selectedTheme);
-}
-
-function renderDashboardLayoutOptions(layoutOptions, selectedLayout) {
-  availableDashboardLayouts = Array.isArray(layoutOptions) ? layoutOptions : [];
-  dashboardLayoutSelect.innerHTML = "";
-
-  availableDashboardLayouts.forEach((layout) => {
-    const option = document.createElement("option");
-    option.value = layout.id;
-    option.textContent = layout.label;
-    dashboardLayoutSelect.appendChild(option);
-  });
-
-  syncDashboardLayoutSelection(selectedLayout);
-}
-
-function getSelectedTheme() {
-  return themeSelect?.value || "aurora";
-}
-
-function getSelectedDashboardLayout() {
-  return dashboardLayoutSelect?.value || "atlas";
-}
-
-function describeRequester(track) {
-  const requester = track?.requestedBy?.displayName || track?.requestedBy?.username;
-  return requester ? `Requested by ${requester}` : "Fallback playlist track";
-}
-
-function updatePlaybackState(state) {
-  const currentTrack = state.currentTrack;
-  const queue = state.queue || [];
-
-  currentTrackTitle.textContent = currentTrack?.title || "Waiting for a track";
-  currentTrackMeta.textContent = currentTrack
-    ? describeRequester(currentTrack)
-    : "Queue is empty. Fallback playlist will play automatically.";
-
-  queuePreview.innerHTML = "";
-
-  queue.slice(0, 4).forEach((track) => {
-    const item = document.createElement("li");
-    const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
-    const title = document.createElement("span");
-    title.className = "queue-preview__title";
-    title.textContent = track.title;
-
-    const meta = document.createElement("span");
-    meta.className = "queue-preview__meta";
-    meta.textContent = requester;
-
-    item.append(title, meta);
-    queuePreview.appendChild(item);
-  });
-}
-
-function updateRuntimePanel(payload) {
-  const { runtime, twitchStatus, twitchAuthStatus } = payload;
-  const statusState = twitchStatus?.state || "needs_configuration";
-
-  overlayUrlInput.value = runtime.overlayUrl;
-  serverPortPill.textContent = `Port ${runtime.activePort}`;
-  twitchStatusText.textContent = twitchStatus?.message || "Waiting for configuration.";
-
-  twitchStatusPill.className = "status-pill";
-  if (statusState === "connected") {
-    twitchStatusPill.classList.add("status-pill--ok");
-    twitchStatusPill.textContent = "Connected";
-  } else if (statusState === "error") {
-    twitchStatusPill.classList.add("status-pill--error");
-    twitchStatusPill.textContent = "Error";
-  } else if (statusState === "connecting") {
-    twitchStatusPill.classList.add("status-pill--warn");
-    twitchStatusPill.textContent = "Connecting";
-  } else {
-    twitchStatusPill.classList.add("status-pill--idle");
-    twitchStatusPill.textContent = "Setup needed";
-  }
-
-  if (runtime.pendingRestart) {
-    if (runtime.usingFallbackPort) {
-      restartNote.textContent = `Configured port ${runtime.configuredPort} was unavailable at startup, so the app is currently using fallback port ${runtime.activePort}.`;
-    } else {
-      restartNote.textContent = `Saved port ${fields.port.value || runtime.activePort} will be used after restart. The current server is still running on port ${runtime.activePort}.`;
+    if (button) {
+      button.classList.toggle("is-active", isActive);
     }
-  } else {
-    restartNote.textContent = "Port changes are applied immediately when you restart the app.";
+
+    if (view) {
+      view.hidden = !isActive;
+    }
+  });
+}
+
+function renderCategorySelect(selectId, items) {
+  const select = el(selectId);
+  if (!select) {
+    return;
   }
 
-  updateTwitchAuthPanel(twitchAuthStatus);
-}
-
-function renderSettingsPayload(payload) {
-  isHydratingForm = true;
-  fillSettingsForm(payload.settings);
-  renderThemeOptions(payload.themeOptions, payload.settings.theme);
-  renderDashboardLayoutOptions(payload.dashboardLayoutOptions, payload.settings.dashboardLayout);
-  lastSavedTheme = payload.settings.theme || "aurora";
-  lastSavedDashboardLayout = payload.settings.dashboardLayout || "atlas";
-  updateRuntimePanel(payload);
-  isHydratingForm = false;
-}
-
-function collectSettingsPayload() {
-  return {
-    twitchChannel: fields.twitchChannel.value.trim(),
-    twitchUsername: fields.twitchUsername.value.trim(),
-    twitchOauthToken: fields.twitchOauthToken.value.trim(),
-    chatSuppressedCategories,
-    playbackSuppressedCategories,
-    youtubeApiKey: fields.youtubeApiKey.value.trim(),
-    port: Number.parseInt(fields.port.value, 10) || 3000,
-    theme: getSelectedTheme(),
-    dashboardLayout: getSelectedDashboardLayout()
-  };
-}
-
-function normalizeCategoryName(value) {
-  return String(value || "").trim();
-}
-
-function renderCategorySelect(select, items) {
   select.innerHTML = "";
-
   if (!items.length) {
     const option = document.createElement("option");
     option.value = "";
@@ -312,76 +366,33 @@ function renderCategorySelect(select, items) {
   });
 }
 
-function addCategory(listName, input, select) {
-  const normalized = normalizeCategoryName(input.value);
-
-  if (!normalized) {
+function renderThemeOptions(selectedTheme) {
+  const select = el("theme-select");
+  if (!select) {
     return;
   }
 
-  const currentList = listName === "chat"
-    ? chatSuppressedCategories
-    : playbackSuppressedCategories;
-  const alreadyExists = currentList.some((item) => item.toLowerCase() === normalized.toLowerCase());
-
-  if (alreadyExists) {
-    input.value = "";
-    setFeedback(`Category ${normalized} is already configured.`, "warning");
-    return;
-  }
-
-  const nextList = [...currentList, normalized];
-
-  if (listName === "chat") {
-    chatSuppressedCategories = nextList;
-  } else {
-    playbackSuppressedCategories = nextList;
-  }
-
-  renderCategorySelect(select, nextList);
-  select.value = normalized;
-  input.value = "";
+  select.innerHTML = "";
+  availableThemes.forEach((theme) => {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.label;
+    select.appendChild(option);
+  });
+  select.value = selectedTheme || "aurora";
 }
 
-function deleteSelectedCategory(listName, select) {
-  const selectedValue = select.value;
-
-  if (!selectedValue) {
-    return;
-  }
-
-  if (listName === "chat") {
-    chatSuppressedCategories = chatSuppressedCategories.filter((item) => item !== selectedValue);
-    renderCategorySelect(chatCategorySelect, chatSuppressedCategories);
-    return;
-  }
-
-  playbackSuppressedCategories = playbackSuppressedCategories.filter((item) => item !== selectedValue);
-  renderCategorySelect(playbackCategorySelect, playbackSuppressedCategories);
-}
-
-function updateTwitchAuthPanel(authStatus) {
-  const statusState = authStatus?.state || "idle";
-  const verificationUrl = authStatus?.verificationUriComplete || authStatus?.verificationUri || "";
-  const userCode = authStatus?.userCode || "";
-
-  twitchAuthStatusText.textContent =
-    authStatus?.message ||
-    "Use the bundled Twitch Client ID to start the in-app bot login flow.";
-  twitchAuthCodeInput.value = userCode;
-  twitchAuthUrlInput.value = verificationUrl;
-  twitchAuthDetails.hidden = !(verificationUrl || userCode);
-  twitchAuthCancelButton.disabled = statusState !== "pending";
-  twitchAuthStartButton.disabled = isSavingSettings;
-  twitchAuthStartButton.textContent = statusState === "pending"
-    ? "Restart Twitch login"
-    : "Connect bot with Twitch";
-
-  if (statusState === "success" && lastTwitchAuthState !== "success") {
-    void loadSettings().catch(() => {});
-  }
-
-  lastTwitchAuthState = statusState;
+function collectSettingsPayload() {
+  return {
+    twitchChannel: el("twitchChannel")?.value.trim() || "",
+    twitchUsername: el("twitchUsername")?.value.trim() || "",
+    twitchOauthToken: el("twitchOauthToken")?.value.trim() || "",
+    youtubeApiKey: el("youtubeApiKey")?.value.trim() || "",
+    port: Number.parseInt(el("port")?.value || "3000", 10) || 3000,
+    theme: el("theme-select")?.value || lastSavedTheme,
+    chatSuppressedCategories,
+    playbackSuppressedCategories
+  };
 }
 
 async function fetchJson(url, options = {}) {
@@ -392,7 +403,6 @@ async function fetchJson(url, options = {}) {
 
   if (!response.ok) {
     let message = `Request failed: ${response.status}`;
-
     try {
       const errorPayload = await response.json();
       if (typeof errorPayload?.error === "string" && errorPayload.error) {
@@ -400,7 +410,6 @@ async function fetchJson(url, options = {}) {
       }
     } catch {
     }
-
     throw new Error(message);
   }
 
@@ -408,79 +417,247 @@ async function fetchJson(url, options = {}) {
 }
 
 async function loadSettings() {
-  const payload = await fetchJson("/api/settings");
-  renderSettingsPayload(payload);
+  settingsPayload = await fetchJson("/api/settings");
+  availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+  lastSavedTheme = settingsPayload.settings.theme || "aurora";
+  chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
+    ? [...settingsPayload.settings.chatSuppressedCategories]
+    : [];
+  playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
+    ? [...settingsPayload.settings.playbackSuppressedCategories]
+    : [];
+
+  if (!root.childElementCount) {
+    renderDashboard();
+  }
+
+  applySettingsPayload();
 }
 
-async function loadRuntimeStatus() {
-  const payload = await fetchJson("/api/runtime-status");
-  updateRuntimePanel(payload);
+function applySettingsPayload() {
+  if (!settingsPayload) {
+    return;
+  }
+
+  isHydratingForm = true;
+  renderThemeOptions(settingsPayload.settings.theme);
+  setValue("twitchChannel", settingsPayload.settings.twitchChannel || "");
+  setValue("twitchUsername", settingsPayload.settings.twitchUsername || "");
+  setValue("twitchOauthToken", settingsPayload.settings.twitchOauthToken || "");
+  setValue("youtubeApiKey", settingsPayload.settings.youtubeApiKey || "");
+  setValue("port", settingsPayload.settings.port || 3000);
+  renderCategorySelect("chat-category-select", chatSuppressedCategories);
+  renderCategorySelect("playback-category-select", playbackSuppressedCategories);
+  applyRuntimeState();
+  isHydratingForm = false;
+}
+
+function categoryBadgeState(categoryLookup) {
+  const state = categoryLookup?.state || "inactive";
+
+  if (state === "ok") {
+    return {
+      className: "status-pill status-pill--ok",
+      text: categoryLookup?.categoryName
+        ? `Category ${categoryLookup.categoryName}`
+        : "Category OK"
+    };
+  }
+
+  if (state === "oauth_error") {
+    return {
+      className: "status-pill status-pill--error",
+      text: "OAuth issue"
+    };
+  }
+
+  if (state === "error") {
+    return {
+      className: "status-pill status-pill--warn",
+      text: "Category error"
+    };
+  }
+
+  if (state === "checking") {
+    return {
+      className: "status-pill status-pill--warn",
+      text: "Checking category"
+    };
+  }
+
+  return {
+    className: "status-pill status-pill--idle",
+    text: "Category inactive"
+  };
+}
+
+function applyRuntimeState() {
+  if (!settingsPayload) {
+    return;
+  }
+
+  const { runtime, twitchStatus, twitchAuthStatus } = settingsPayload;
+  const statusState = twitchStatus?.state || "needs_configuration";
+  const twitchPill = el("twitch-status-pill");
+  const categoryPill = el("twitch-category-pill");
+  const categoryStatus = categoryBadgeState(twitchStatus?.categoryLookup);
+
+  setText("server-port-pill", `Port ${runtime.activePort}`);
+  setText("twitch-status-text", twitchStatus?.message || "Waiting for configuration.");
+  setValue("overlay-url", runtime.overlayUrl || "");
+
+  if (twitchPill) {
+    twitchPill.className = "status-pill";
+    if (statusState === "connected") {
+      twitchPill.classList.add("status-pill--ok");
+      twitchPill.textContent = "Chat connected";
+    } else if (statusState === "error") {
+      twitchPill.classList.add("status-pill--error");
+      twitchPill.textContent = "Chat error";
+    } else if (statusState === "connecting") {
+      twitchPill.classList.add("status-pill--warn");
+      twitchPill.textContent = "Chat connecting";
+    } else {
+      twitchPill.classList.add("status-pill--idle");
+      twitchPill.textContent = "Chat setup";
+    }
+  }
+
+  if (categoryPill) {
+    categoryPill.className = categoryStatus.className;
+    categoryPill.textContent = categoryStatus.text;
+    categoryPill.title = twitchStatus?.categoryLookup?.message || "";
+  }
+
+  if (runtime.pendingRestart) {
+    if (runtime.usingFallbackPort) {
+      setText("restart-note", `Configured port ${runtime.configuredPort} was unavailable at startup, so the app is currently using fallback port ${runtime.activePort}.`);
+    } else {
+      setText("restart-note", `Saved port ${el("port")?.value || runtime.activePort} will be used after restart. The current server is still running on port ${runtime.activePort}.`);
+    }
+  } else {
+    setText("restart-note", "Port changes are applied immediately when you restart the app.");
+  }
+
+  setText("twitch-auth-status-text", twitchAuthStatus?.message || "Use the bundled Twitch Client ID to start the in-app bot login flow.");
+  setValue("twitch-auth-code", twitchAuthStatus?.userCode || "");
+  setValue("twitch-auth-url", twitchAuthStatus?.verificationUriComplete || twitchAuthStatus?.verificationUri || "");
+
+  const authDetails = el("twitch-auth-details");
+  if (authDetails) {
+    authDetails.hidden = !((twitchAuthStatus?.userCode || "") || (twitchAuthStatus?.verificationUriComplete || twitchAuthStatus?.verificationUri || ""));
+  }
+
+  const authCancel = el("twitch-auth-cancel");
+  const authStart = el("twitch-auth-start");
+  if (authCancel) {
+    authCancel.disabled = twitchAuthStatus?.state !== "pending";
+  }
+  if (authStart) {
+    authStart.disabled = isSavingSettings;
+    authStart.textContent = twitchAuthStatus?.state === "pending"
+      ? "Restart Twitch login"
+      : "Connect bot with Twitch";
+  }
+
+  if (twitchAuthStatus?.state === "success" && lastTwitchAuthState !== "success") {
+    void loadSettings().catch(() => {});
+  }
+  lastTwitchAuthState = twitchAuthStatus?.state || "";
+}
+
+function describeRequester(track) {
+  const requester = track?.requestedBy?.displayName || track?.requestedBy?.username;
+  return requester ? `Requested by ${requester}` : "Fallback playlist track";
 }
 
 async function loadPlaybackState() {
-  const state = await fetchJson("/api/state");
-  updatePlaybackState(state);
+  playbackState = await fetchJson("/api/state");
+  applyPlaybackState();
+}
+
+function applyPlaybackState() {
+  const currentTrack = playbackState?.currentTrack;
+  const queue = playbackState?.queue || [];
+
+  setText("current-track-title", currentTrack?.title || "Waiting for a track");
+  setText(
+    "current-track-meta",
+    currentTrack ? describeRequester(currentTrack) : "Queue is empty. Fallback playlist will play automatically."
+  );
+
+  const queueList = el("queue-preview");
+  if (!queueList) {
+    return;
+  }
+
+  queueList.innerHTML = "";
+  queue.slice(0, 4).forEach((track) => {
+    const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    const item = document.createElement("li");
+    item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(requester)}</span>`;
+    queueList.appendChild(item);
+  });
 }
 
 async function loadPlaylist() {
-  const searchParams = new URLSearchParams({
+  const params = new URLSearchParams({
     page: String(playlistPage),
     pageSize: "100"
   });
 
   if (playlistQuery) {
-    searchParams.set("q", playlistQuery);
+    params.set("q", playlistQuery);
   }
 
-  const payload = await fetchJson(`/api/playlist/tracks?${searchParams.toString()}`);
-  playlistTotalPages = payload.totalPages || 1;
-  playlistPage = payload.page || 1;
-  renderPlaylist(payload);
+  playlistPayload = await fetchJson(`/api/playlist/tracks?${params.toString()}`);
+  playlistTotalPages = playlistPayload.totalPages || 1;
+  playlistPage = playlistPayload.page || 1;
+  applyPlaylistState();
 }
 
-function renderPlaylist(payload) {
-  playlistTableBody.innerHTML = "";
+function applyPlaylistState() {
+  if (!playlistPayload) {
+    return;
+  }
 
-  const tracks = Array.isArray(payload.items) ? payload.items : [];
-  const total = Number.isFinite(payload.total) ? payload.total : tracks.length;
-  const totalPages = Number.isFinite(payload.totalPages) ? payload.totalPages : 1;
+  setText("playlist-count", `${(playlistPayload.total || 0).toLocaleString()} tracks`);
+  setText("playlist-page-info", `Page ${playlistPayload.page || 1} of ${playlistPayload.totalPages || 1}`);
 
-  playlistCount.textContent = `${total.toLocaleString()} tracks`;
-  playlistPageInfo.textContent = `Page ${payload.page} of ${totalPages}`;
-  playlistPrevPageButton.disabled = payload.page <= 1;
-  playlistNextPageButton.disabled = payload.page >= totalPages;
-  playlistEmptyState.hidden = tracks.length > 0;
+  const prevButton = el("playlist-prev-page");
+  const nextButton = el("playlist-next-page");
+  const tableBody = el("playlist-table-body");
+  const emptyState = el("playlist-empty-state");
 
-  tracks.forEach((track) => {
+  if (prevButton) {
+    prevButton.disabled = (playlistPayload.page || 1) <= 1;
+  }
+  if (nextButton) {
+    nextButton.disabled = (playlistPayload.page || 1) >= (playlistPayload.totalPages || 1);
+  }
+  if (emptyState) {
+    emptyState.hidden = (playlistPayload.items || []).length > 0;
+  }
+  if (!tableBody) {
+    return;
+  }
+
+  tableBody.innerHTML = "";
+  (playlistPayload.items || []).forEach((track) => {
     const row = document.createElement("tr");
-
-    const titleCell = document.createElement("td");
-    titleCell.textContent = track.title;
-
-    const providerCell = document.createElement("td");
-    providerCell.innerHTML = `<span class="provider-chip">${track.provider}</span>`;
-
-    const linkCell = document.createElement("td");
-    const link = document.createElement("a");
-    link.href = track.url;
-    link.target = "_blank";
-    link.rel = "noopener noreferrer";
-    link.className = "playlist-link";
-    link.textContent = track.url;
-    linkCell.appendChild(link);
-
-    const actionCell = document.createElement("td");
-    actionCell.className = "playlist-table__actions";
-    const deleteButton = document.createElement("button");
-    deleteButton.type = "button";
-    deleteButton.className = "ghost-button ghost-button--danger";
-    deleteButton.dataset.playlistDeleteKey = track.key;
-    deleteButton.textContent = "Delete";
-    actionCell.appendChild(deleteButton);
-
-    row.append(titleCell, providerCell, linkCell, actionCell);
-    playlistTableBody.appendChild(row);
+    row.innerHTML = `
+      <td>${htmlEscape(track.title)}</td>
+      <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
+      <td><a class="playlist-link" href="${htmlEscape(track.url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(track.url)}</a></td>
+      <td class="playlist-table__actions"><button class="ghost-button ghost-button--danger" type="button" data-playlist-delete-key="${htmlEscape(track.key)}">Delete</button></td>
+    `;
+    tableBody.appendChild(row);
   });
+
+  const searchInput = el("playlist-search-input");
+  if (searchInput && searchInput.value !== playlistQuery) {
+    searchInput.value = playlistQuery;
+  }
 }
 
 async function persistSettings(payload) {
@@ -496,18 +673,32 @@ async function persistSettings(payload) {
 async function saveSettings(event) {
   event.preventDefault();
   isSavingSettings = true;
-  saveButton.disabled = true;
-  themeSelect.disabled = true;
-  dashboardLayoutSelect.disabled = true;
+  const saveButton = el("save-button");
+  const themeSelect = el("theme-select");
+
+  if (saveButton) {
+    saveButton.disabled = true;
+  }
+  if (themeSelect) {
+    themeSelect.disabled = true;
+  }
   setFeedback("Saving settings...");
 
   try {
-    const payload = await persistSettings(collectSettingsPayload());
-    renderSettingsPayload(payload);
+    settingsPayload = await persistSettings(collectSettingsPayload());
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || "aurora";
+    chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
+      ? [...settingsPayload.settings.chatSuppressedCategories]
+      : [];
+    playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
+      ? [...settingsPayload.settings.playbackSuppressedCategories]
+      : [];
+    applySettingsPayload();
 
-    if (payload.saveSummary?.restartRequired) {
+    if (settingsPayload.saveSummary?.restartRequired) {
       setFeedback("Settings saved. Restart the app to switch to the new port.", "warning");
-    } else if (payload.saveSummary?.botReconnected) {
+    } else if (settingsPayload.saveSummary?.botReconnected) {
       setFeedback("Settings saved and Twitch chat was reconnected.", "success");
     } else {
       setFeedback("Settings saved.", "success");
@@ -516,99 +707,59 @@ async function saveSettings(event) {
     setFeedback(error?.message || "Could not save settings.", "error");
   } finally {
     isSavingSettings = false;
-    saveButton.disabled = false;
-    themeSelect.disabled = false;
-    dashboardLayoutSelect.disabled = false;
+    if (el("save-button")) {
+      el("save-button").disabled = false;
+    }
+    if (el("theme-select")) {
+      el("theme-select").disabled = false;
+    }
   }
 }
 
-async function saveDisplayPreference(settingKey, nextValue, previousValue, successMessage) {
-  if (!nextValue || nextValue === previousValue) {
-    return previousValue;
+async function saveThemeSelection(nextTheme) {
+  if (!nextTheme || nextTheme === lastSavedTheme) {
+    return;
   }
 
-  isSavingSettings = true;
-  saveButton.disabled = true;
-  themeSelect.disabled = true;
-  dashboardLayoutSelect.disabled = true;
-  setFeedback("Saving display preference...");
-
   try {
-    const payload = await persistSettings({
-      [settingKey]: nextValue
+    settingsPayload = await persistSettings({
+      theme: nextTheme
     });
-
-    renderSettingsPayload(payload);
-    setFeedback(successMessage, "success");
-    return payload.settings?.[settingKey] || nextValue;
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || nextTheme;
+    applySettingsPayload();
+    setFeedback("Overlay theme saved.", "success");
   } catch (error) {
-    setFeedback(error?.message || "Could not save display preference.", "error");
-    return previousValue;
-  } finally {
-    isSavingSettings = false;
-    saveButton.disabled = false;
-    themeSelect.disabled = false;
-    dashboardLayoutSelect.disabled = false;
+    renderThemeOptions(lastSavedTheme);
+    setFeedback(error?.message || "Could not save overlay theme.", "error");
   }
-}
-
-async function copyFieldValue(targetId) {
-  const target = document.getElementById(targetId);
-  if (!target) {
-    return;
-  }
-
-  try {
-    await navigator.clipboard.writeText(target.value);
-    setFeedback("Copied to clipboard.", "success");
-  } catch {
-    target.select();
-    document.execCommand("copy");
-    setFeedback("Copied to clipboard.", "success");
-  }
-}
-
-function openFieldValue(targetId) {
-  const target = document.getElementById(targetId);
-  const url = target?.value?.trim();
-
-  if (!url) {
-    return;
-  }
-
-  window.open(url, "_blank", "noopener");
 }
 
 async function startTwitchAuth() {
-  twitchAuthStartButton.disabled = true;
   setFeedback("Starting Twitch login...");
-
   try {
-    const payload = await fetchJson("/api/twitch-auth/device/start", {
+    settingsPayload = await fetchJson("/api/twitch-auth/device/start", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        twitchChannel: fields.twitchChannel.value.trim()
+        twitchChannel: el("twitchChannel")?.value.trim() || ""
       })
     });
+    applySettingsPayload();
 
-    renderSettingsPayload(payload);
     const verificationUrl =
-      payload.twitchAuthStatus?.verificationUriComplete ||
-      payload.twitchAuthStatus?.verificationUri ||
+      settingsPayload.twitchAuthStatus?.verificationUriComplete ||
+      settingsPayload.twitchAuthStatus?.verificationUri ||
       "";
 
     if (verificationUrl) {
       window.open(verificationUrl, "_blank", "noopener");
     }
-
     setFeedback("Twitch login started. Approve the bot account in your browser.", "success");
   } catch (error) {
     setFeedback(error?.message || "Could not start Twitch login.", "error");
-  } finally {
-    twitchAuthStartButton.disabled = false;
   }
 }
 
@@ -617,7 +768,11 @@ async function cancelTwitchAuth() {
     const payload = await fetchJson("/api/twitch-auth/device/cancel", {
       method: "POST"
     });
-    updateTwitchAuthPanel(payload.twitchAuthStatus);
+    settingsPayload = {
+      ...settingsPayload,
+      twitchAuthStatus: payload.twitchAuthStatus
+    };
+    applyRuntimeState();
     setFeedback("Twitch login cancelled.", "warning");
   } catch (error) {
     setFeedback(error?.message || "Could not cancel Twitch login.", "error");
@@ -626,13 +781,14 @@ async function cancelTwitchAuth() {
 
 async function addPlaylistTrack(event) {
   event.preventDefault();
-  const input = playlistAddInput.value.trim();
-
+  const input = el("playlist-add-input")?.value.trim() || "";
   if (!input) {
     return;
   }
 
-  playlistAddButton.disabled = true;
+  if (el("playlist-add-button")) {
+    el("playlist-add-button").disabled = true;
+  }
   setPlaylistFeedback("Adding track...");
 
   try {
@@ -641,12 +797,10 @@ async function addPlaylistTrack(event) {
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        input
-      })
+      body: JSON.stringify({ input })
     });
 
-    playlistAddInput.value = "";
+    setValue("playlist-add-input", "");
     playlistPage = 1;
     await loadPlaylist();
     setPlaylistFeedback(
@@ -658,16 +812,14 @@ async function addPlaylistTrack(event) {
   } catch (error) {
     setPlaylistFeedback(error?.message || "Could not add track.", "error");
   } finally {
-    playlistAddButton.disabled = false;
+    if (el("playlist-add-button")) {
+      el("playlist-add-button").disabled = false;
+    }
   }
 }
 
 async function deletePlaylistTrack(trackKey) {
-  if (!trackKey) {
-    return;
-  }
-
-  if (!window.confirm("Delete this track from the fallback playlist?")) {
+  if (!trackKey || !window.confirm("Delete this track from the fallback playlist?")) {
     return;
   }
 
@@ -678,7 +830,6 @@ async function deletePlaylistTrack(trackKey) {
 
     if (!response.ok) {
       let message = `Request failed: ${response.status}`;
-
       try {
         const payload = await response.json();
         if (payload?.error) {
@@ -686,7 +837,6 @@ async function deletePlaylistTrack(trackKey) {
         }
       } catch {
       }
-
       throw new Error(message);
     }
 
@@ -702,7 +852,6 @@ async function exportPlaylist() {
     const response = await fetch("/api/playlist/export", {
       cache: "no-store"
     });
-
     if (!response.ok) {
       throw new Error(`Request failed: ${response.status}`);
     }
@@ -734,15 +883,35 @@ async function importPlaylist(csvText) {
         mode: playlistImportMode
       })
     });
-
     playlistPage = 1;
     await loadPlaylist();
-    setPlaylistFeedback(
-      `Import finished: ${payload.importedCount} added, ${payload.duplicateCount} duplicates skipped, ${payload.finalCount} total.`,
-      "success"
-    );
+    setPlaylistFeedback(`Import finished: ${payload.importedCount} added, ${payload.duplicateCount} duplicates skipped, ${payload.finalCount} total.`, "success");
   } catch (error) {
     setPlaylistFeedback(error?.message || "Could not import playlist.", "error");
+  }
+}
+
+async function copyFieldValue(targetId) {
+  const target = el(targetId);
+  if (!target) {
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(target.value);
+    setFeedback("Copied to clipboard.", "success");
+  } catch {
+    target.select();
+    document.execCommand("copy");
+    setFeedback("Copied to clipboard.", "success");
+  }
+}
+
+function openFieldValue(targetId) {
+  const target = el(targetId);
+  const url = target?.value?.trim();
+  if (url) {
+    window.open(url, "_blank", "noopener");
   }
 }
 
@@ -751,22 +920,22 @@ function formatMarkdown(text) {
     return "";
   }
 
-  let html = text
+  return text
     .replace(/^# (.*$)/gm, "<h1>$1</h1>")
     .replace(/^## (.*$)/gm, "<h2>$1</h2>")
     .replace(/^### (.*$)/gm, "<h3>$1</h3>")
     .replace(/^\* (.*$)/gm, "<li>$1</li>")
-    .replace(/^- (.*$)/gm, "<li>$1</li>");
-
-  html = html.replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
-  html = html.replace(/<\/ul>\s*<ul>/g, "");
-  return html;
+    .replace(/^- (.*$)/gm, "<li>$1</li>")
+    .replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>")
+    .replace(/<\/ul>\s*<ul>/g, "");
 }
 
 function handleUpdaterStatus(status) {
   if (status.appVersion) {
-    appVersionBadge.textContent = `v${status.appVersion}`;
-    appVersionBadge.className = "status-pill status-pill--ok";
+    setText("app-version-badge", `v${status.appVersion}`);
+    if (el("app-version-badge")) {
+      el("app-version-badge").className = "status-pill status-pill--ok";
+    }
   }
 
   updateErrorText.hidden = true;
@@ -800,171 +969,17 @@ function handleUpdaterStatus(status) {
   }
 }
 
-settingsForm.addEventListener("submit", saveSettings);
-playlistAddForm.addEventListener("submit", addPlaylistTrack);
+renderDashboard();
 
-themeSelect.addEventListener("change", async (event) => {
-  if (!(event.target instanceof HTMLSelectElement)) {
-    return;
-  }
-
-  syncThemeSelection(event.target.value);
-
-  if (!isHydratingForm) {
-    lastSavedTheme = await saveDisplayPreference(
-      "theme",
-      event.target.value,
-      lastSavedTheme,
-      "Overlay theme saved."
-    );
-  }
-});
-
-dashboardLayoutSelect.addEventListener("change", async (event) => {
-  if (!(event.target instanceof HTMLSelectElement)) {
-    return;
-  }
-
-  syncDashboardLayoutSelection(event.target.value);
-
-  if (!isHydratingForm) {
-    lastSavedDashboardLayout = await saveDisplayPreference(
-      "dashboardLayout",
-      event.target.value,
-      lastSavedDashboardLayout,
-      "GUI look saved."
-    );
-  }
-});
-
-tabButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    activateTab(button.dataset.tabTarget || "overview");
-  });
-});
-
-updateSkipBtn.addEventListener("click", () => {
-  updateModal.classList.remove("is-visible");
-});
-
-updateActionBtn.addEventListener("click", () => {
-  const buttonText = updateActionBtn.textContent;
-
-  if (buttonText === "Download Update" || buttonText === "Try Again") {
-    fetch("/api/updater/download", { method: "POST" }).catch(() => {});
-  } else if (buttonText === "Restart and Install") {
-    fetch("/api/updater/install", { method: "POST" }).catch(() => {});
-  }
-});
-
-openAppdataButton.addEventListener("click", () => {
-  fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
-});
-
-twitchAuthStartButton.addEventListener("click", () => {
-  void startTwitchAuth();
-});
-
-twitchAuthCancelButton.addEventListener("click", () => {
-  void cancelTwitchAuth();
-});
-
-chatCategoryAddButton.addEventListener("click", () => {
-  addCategory("chat", chatCategoryInput, chatCategorySelect);
-});
-
-chatCategoryDeleteButton.addEventListener("click", () => {
-  deleteSelectedCategory("chat", chatCategorySelect);
-});
-
-playbackCategoryAddButton.addEventListener("click", () => {
-  addCategory("playback", playbackCategoryInput, playbackCategorySelect);
-});
-
-playbackCategoryDeleteButton.addEventListener("click", () => {
-  deleteSelectedCategory("playback", playbackCategorySelect);
-});
-
-chatCategoryInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    addCategory("chat", chatCategoryInput, chatCategorySelect);
-  }
-});
-
-playbackCategoryInput.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") {
-    event.preventDefault();
-    addCategory("playback", playbackCategoryInput, playbackCategorySelect);
-  }
-});
-
-playlistSearchInput.addEventListener("input", () => {
-  window.clearTimeout(playlistSearchDebounceTimer);
-  playlistSearchDebounceTimer = window.setTimeout(() => {
-    playlistQuery = playlistSearchInput.value.trim();
-    playlistPage = 1;
-    void loadPlaylist().catch((error) => {
-      setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
-    });
-  }, 180);
-});
-
-playlistPrevPageButton.addEventListener("click", () => {
-  playlistPage = Math.max(1, playlistPage - 1);
-  void loadPlaylist().catch((error) => {
-    setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
-  });
-});
-
-playlistNextPageButton.addEventListener("click", () => {
-  playlistPage = Math.min(playlistTotalPages, playlistPage + 1);
-  void loadPlaylist().catch((error) => {
-    setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
-  });
-});
-
-playlistImportAppendButton.addEventListener("click", () => {
-  playlistImportMode = "append";
-  playlistImportFileInput.value = "";
-  playlistImportFileInput.click();
-});
-
-playlistImportReplaceButton.addEventListener("click", () => {
-  if (!window.confirm("Replace the entire fallback playlist with the CSV you select?")) {
-    return;
-  }
-
-  playlistImportMode = "replace";
-  playlistImportFileInput.value = "";
-  playlistImportFileInput.click();
-});
-
-playlistExportButton.addEventListener("click", () => {
-  void exportPlaylist();
-});
-
-playlistImportFileInput.addEventListener("change", async () => {
-  const file = playlistImportFileInput.files?.[0];
-
-  if (!file) {
-    return;
-  }
-
-  setPlaylistFeedback("Importing playlist...");
-
-  try {
-    const csvText = await file.text();
-    await importPlaylist(csvText);
-  } catch (error) {
-    setPlaylistFeedback(error?.message || "Could not read import file.", "error");
-  } finally {
-    playlistImportFileInput.value = "";
-  }
-});
-
-document.addEventListener("click", (event) => {
+root.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
+    return;
+  }
+
+  const tabButton = event.target.closest("[data-tab]");
+  if (tabButton) {
+    activeTab = tabButton.getAttribute("data-tab") || "overview";
+    applyTabState();
     return;
   }
 
@@ -976,19 +991,146 @@ document.addEventListener("click", (event) => {
 
   const copyButton = event.target.closest("[data-copy-target]");
   if (copyButton) {
-    const targetId = copyButton.getAttribute("data-copy-target");
-    if (targetId) {
-      void copyFieldValue(targetId);
-      return;
-    }
+    void copyFieldValue(copyButton.getAttribute("data-copy-target"));
+    return;
   }
 
   const openButton = event.target.closest("[data-open-url-target]");
   if (openButton) {
-    const targetId = openButton.getAttribute("data-open-url-target");
-    if (targetId) {
-      openFieldValue(targetId);
+    openFieldValue(openButton.getAttribute("data-open-url-target"));
+    return;
+  }
+
+  if (event.target.id === "open-appdata-button") {
+    fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
+  } else if (event.target.id === "twitch-auth-start") {
+    void startTwitchAuth();
+  } else if (event.target.id === "twitch-auth-cancel") {
+    void cancelTwitchAuth();
+  } else if (event.target.id === "chat-category-add") {
+    const value = String(el("chat-category-input")?.value || "").trim();
+    if (value && !chatSuppressedCategories.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      chatSuppressedCategories = [...chatSuppressedCategories, value];
+      setValue("chat-category-input", "");
+      renderCategorySelect("chat-category-select", chatSuppressedCategories);
     }
+  } else if (event.target.id === "chat-category-delete") {
+    chatSuppressedCategories = chatSuppressedCategories.filter((item) => item !== (el("chat-category-select")?.value || ""));
+    renderCategorySelect("chat-category-select", chatSuppressedCategories);
+  } else if (event.target.id === "playback-category-add") {
+    const value = String(el("playback-category-input")?.value || "").trim();
+    if (value && !playbackSuppressedCategories.some((item) => item.toLowerCase() === value.toLowerCase())) {
+      playbackSuppressedCategories = [...playbackSuppressedCategories, value];
+      setValue("playback-category-input", "");
+      renderCategorySelect("playback-category-select", playbackSuppressedCategories);
+    }
+  } else if (event.target.id === "playback-category-delete") {
+    playbackSuppressedCategories = playbackSuppressedCategories.filter((item) => item !== (el("playback-category-select")?.value || ""));
+    renderCategorySelect("playback-category-select", playbackSuppressedCategories);
+  } else if (event.target.id === "playlist-prev-page") {
+    playlistPage = Math.max(1, playlistPage - 1);
+    void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
+  } else if (event.target.id === "playlist-next-page") {
+    playlistPage = Math.min(playlistTotalPages, playlistPage + 1);
+    void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
+  } else if (event.target.id === "playlist-import-append") {
+    playlistImportMode = "append";
+    if (el("playlist-import-file")) {
+      el("playlist-import-file").value = "";
+      el("playlist-import-file").click();
+    }
+  } else if (event.target.id === "playlist-import-replace") {
+    if (window.confirm("Replace the entire fallback playlist with the CSV you select?") && el("playlist-import-file")) {
+      playlistImportMode = "replace";
+      el("playlist-import-file").value = "";
+      el("playlist-import-file").click();
+    }
+  } else if (event.target.id === "playlist-export-button") {
+    void exportPlaylist();
+  }
+});
+
+root.addEventListener("submit", (event) => {
+  const form = event.target;
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
+
+  if (form.id === "settings-form") {
+    void saveSettings(event);
+  } else if (form.id === "playlist-add-form") {
+    void addPlaylistTrack(event);
+  }
+});
+
+root.addEventListener("change", async (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  if (target.id === "theme-select" && target instanceof HTMLSelectElement && !isHydratingForm) {
+    await saveThemeSelection(target.value);
+  }
+
+  if (target.id === "playlist-import-file" && target instanceof HTMLInputElement) {
+    const file = target.files?.[0];
+    if (file) {
+      setPlaylistFeedback("Importing playlist...");
+      try {
+        await importPlaylist(await file.text());
+      } catch (error) {
+        setPlaylistFeedback(error?.message || "Could not read import file.", "error");
+      } finally {
+        target.value = "";
+      }
+    }
+  }
+});
+
+root.addEventListener("input", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  if (target.id === "playlist-search-input" && target instanceof HTMLInputElement) {
+    window.clearTimeout(playlistSearchDebounceTimer);
+    playlistSearchDebounceTimer = window.setTimeout(() => {
+      playlistQuery = target.value.trim();
+      playlistPage = 1;
+      void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
+    }, 180);
+  }
+});
+
+root.addEventListener("keydown", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  if (event.key === "Enter" && target.id === "chat-category-input") {
+    event.preventDefault();
+    el("chat-category-add")?.click();
+  }
+
+  if (event.key === "Enter" && target.id === "playback-category-input") {
+    event.preventDefault();
+    el("playback-category-add")?.click();
+  }
+});
+
+updateSkipBtn.addEventListener("click", () => {
+  updateModal.classList.remove("is-visible");
+});
+
+updateActionBtn.addEventListener("click", () => {
+  const buttonText = updateActionBtn.textContent;
+  if (buttonText === "Download Update" || buttonText === "Try Again") {
+    fetch("/api/updater/download", { method: "POST" }).catch(() => {});
+  } else if (buttonText === "Restart and Install") {
+    fetch("/api/updater/install", { method: "POST" }).catch(() => {});
   }
 });
 
@@ -1006,17 +1148,21 @@ window.setInterval(() => {
 }, 3000);
 
 window.setInterval(() => {
-  if (isSavingSettings || isHydratingForm) {
-    return;
+  if (!isSavingSettings && !isHydratingForm && settingsPayload) {
+    void fetchJson("/api/runtime-status")
+      .then((payload) => {
+        settingsPayload = {
+          ...settingsPayload,
+          runtime: payload.runtime,
+          twitchStatus: payload.twitchStatus,
+          twitchAuthStatus: payload.twitchAuthStatus
+        };
+        applyRuntimeState();
+      })
+      .catch(() => {});
   }
-
-  void loadRuntimeStatus().catch(() => {});
 }, 3000);
 
-void Promise.all([
-  loadSettings(),
-  loadPlaybackState(),
-  loadPlaylist()
-]).catch((error) => {
+void Promise.all([loadSettings(), loadPlaybackState(), loadPlaylist()]).catch((error) => {
   setFeedback(error?.message || "Could not load dashboard data.", "error");
 });

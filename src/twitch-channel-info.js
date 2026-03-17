@@ -45,6 +45,12 @@ export class TwitchChannelInfo {
     this.lastRefreshAt = 0;
     this.refreshPromise = null;
     this.supportLogged = false;
+    this.lookupStatus = {
+      state: "idle",
+      message: "Category lookup has not run yet.",
+      categoryName: "",
+      lastResolvedAt: null
+    };
   }
 
   isConfigured() {
@@ -59,6 +65,14 @@ export class TwitchChannelInfo {
     this.supportLogged = true;
 
     if (this.isConfigured()) {
+      if (this.lookupStatus.state === "idle") {
+        this.lookupStatus = {
+          state: "checking",
+          message: "Checking Twitch category access...",
+          categoryName: this.lastCategoryName,
+          lastResolvedAt: this.lookupStatus.lastResolvedAt
+        };
+      }
       logInfo("Twitch category-aware chat suppression enabled", {
         channel: this.channelName,
         chatSuppressedCategories: Array.from(this.chatSuppressedCategories),
@@ -67,9 +81,22 @@ export class TwitchChannelInfo {
       return;
     }
 
+    this.lookupStatus = {
+      state: "disabled",
+      message: "Category lookup needs a Twitch Client ID and valid bot token.",
+      categoryName: this.lastCategoryName,
+      lastResolvedAt: this.lookupStatus.lastResolvedAt
+    };
     logWarn("Twitch category-aware chat suppression disabled", {
       reason: "Missing TWITCH_CLIENT_ID or Twitch bot OAuth token"
     });
+  }
+
+  getStatus() {
+    return {
+      ...this.lookupStatus,
+      categoryName: this.lastCategoryName || this.lookupStatus.categoryName || ""
+    };
   }
 
   async shouldSuppressChatMessages() {
@@ -86,6 +113,15 @@ export class TwitchChannelInfo {
     this.logConfigurationState();
 
     if (!this.isConfigured() || !this.hasSuppressionCategories()) {
+      if (!this.hasSuppressionCategories()) {
+        this.lookupStatus = {
+          state: "disabled",
+          message: "Category lookup is idle because no category rules are configured.",
+          categoryName: this.lastCategoryName,
+          lastResolvedAt: this.lookupStatus.lastResolvedAt
+        };
+      }
+
       return {
         categoryName: this.lastCategoryName,
         suppressChatMessages: false,
@@ -122,6 +158,14 @@ export class TwitchChannelInfo {
       this.lastChatSuppressedValue = shouldSuppressChatMessages;
       this.lastPlaybackSuppressedValue = shouldSuppressMusicPlayback;
       this.lastRefreshAt = Date.now();
+      this.lookupStatus = {
+        state: "ok",
+        message: categoryName
+          ? `Reading Twitch category ${categoryName}.`
+          : "Connected to Twitch category lookup.",
+        categoryName,
+        lastResolvedAt: new Date(this.lastRefreshAt).toISOString()
+      };
 
       logInfo("Resolved Twitch channel category", {
         channel: this.channelName,
@@ -136,9 +180,18 @@ export class TwitchChannelInfo {
         suppressMusicPlayback: shouldSuppressMusicPlayback
       };
     } catch (error) {
+      const message = error?.message ?? String(error);
+      this.lookupStatus = {
+        state: message.includes("invalid or expired")
+          ? "oauth_error"
+          : "error",
+        message,
+        categoryName: this.lastCategoryName,
+        lastResolvedAt: this.lookupStatus.lastResolvedAt
+      };
       logWarn("Could not resolve Twitch channel category", {
         channel: this.channelName,
-        message: error?.message ?? String(error)
+        message
       });
       return {
         categoryName: this.lastCategoryName,

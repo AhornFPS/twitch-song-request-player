@@ -64,7 +64,16 @@ export class TwitchBotService {
   }
 
   getStatus() {
-    return { ...this.status };
+    return {
+      ...this.status,
+      categoryLookup:
+        this.bot?.channelInfo?.getStatus?.() ?? {
+          state: "inactive",
+          message: "Category lookup is inactive.",
+          categoryName: "",
+          lastResolvedAt: null
+        }
+    };
   }
 
   getAuthStatus() {

@@ -74,21 +74,6 @@ const dashboardLayoutOptions = [
     id: "atlas",
     label: "Atlas",
     description: "Editorial workspace with a compact top summary and balanced panels."
-  },
-  {
-    id: "neon",
-    label: "Neon Grid",
-    description: "Sharper cards, brighter accents, and a more technical control-room feel."
-  },
-  {
-    id: "paper",
-    label: "Paper Stack",
-    description: "Lightweight studio-board layout with softer surfaces and stronger separation."
-  },
-  {
-    id: "signal",
-    label: "Signal Desk",
-    description: "Dense broadcast-console styling with tighter spacing and heavier framing."
   }
 ];
 const validDashboardLayoutIds = new Set(dashboardLayoutOptions.map((layout) => layout.id));

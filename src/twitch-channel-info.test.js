@@ -67,4 +67,35 @@ test("category suppression uses the bot user token without requiring a client se
   assert.equal(requests[0].clientId, "client-123");
   assert.equal(requests[1].authorization, "Bearer user-token-123");
   assert.equal(channelInfo.lastCategoryName, "Music");
+  assert.equal(channelInfo.getStatus().state, "ok");
+  assert.equal(channelInfo.getStatus().categoryName, "Music");
+});
+
+test("category lookup status reports oauth errors separately", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => new Response(JSON.stringify({
+    message: "Invalid OAuth token"
+  }), {
+    status: 401,
+    headers: {
+      "Content-Type": "application/json"
+    }
+  });
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const channelInfo = new TwitchChannelInfo({
+    channelName: "ahorn",
+    clientId: "client-123",
+    oauthToken: "oauth:expired-token",
+    chatSuppressedCategories: ["Music"]
+  });
+
+  const state = await channelInfo.getCategorySuppressionState();
+
+  assert.equal(state.suppressChatMessages, false);
+  assert.equal(channelInfo.getStatus().state, "oauth_error");
 });

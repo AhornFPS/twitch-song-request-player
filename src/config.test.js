@@ -41,7 +41,7 @@ test("saved theme, dashboard layout, and port stay active when no env override i
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "signal" }, null, 2)}\n`,
+    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "atlas" }, null, 2)}\n`,
     "utf8"
   );
 
@@ -50,7 +50,7 @@ test("saved theme, dashboard layout, and port stay active when no env override i
 
   assert.equal(settings.port, 4311);
   assert.equal(settings.theme, "sunset");
-  assert.equal(settings.dashboardLayout, "signal");
+  assert.equal(settings.dashboardLayout, "atlas");
 });
 
 test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {
@@ -67,11 +67,11 @@ test("explicit env theme, dashboard layout, and port still override saved settin
 
   process.env.PORT = "4322";
   process.env.THEME = "aurora";
-  process.env.DASHBOARD_LAYOUT = "paper";
+  process.env.DASHBOARD_LAYOUT = "atlas";
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "signal" }, null, 2)}\n`,
+    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "atlas" }, null, 2)}\n`,
     "utf8"
   );
 
@@ -80,7 +80,7 @@ test("explicit env theme, dashboard layout, and port still override saved settin
 
   assert.equal(settings.port, 4322);
   assert.equal(settings.theme, "aurora");
-  assert.equal(settings.dashboardLayout, "paper");
+  assert.equal(settings.dashboardLayout, "atlas");
 });
 
 test("bundled client id is used when no stored or env override exists", async (t) => {
@@ -188,7 +188,7 @@ test("new overlay themes are exposed and accepted as valid saved settings", asyn
   ]);
 });
 
-test("dashboard layouts are exposed and accepted as valid saved settings", async (t) => {
+test("dashboard layout is fixed to atlas", async (t) => {
   const restoreEnv = captureEnv(["DASHBOARD_LAYOUT"]);
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 
@@ -212,11 +212,8 @@ test("dashboard layouts are exposed and accepted as valid saved settings", async
   const settings = await configStore.loadEffectiveSettings();
   const layoutIds = configStore.getDashboardLayoutOptions().map((layout) => layout.id);
 
-  assert.equal(settings.dashboardLayout, "neon");
+  assert.equal(settings.dashboardLayout, "atlas");
   assert.deepEqual(layoutIds, [
-    "atlas",
-    "neon",
-    "paper",
-    "signal"
+    "atlas"
   ]);
 });

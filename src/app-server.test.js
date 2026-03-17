@@ -155,7 +155,7 @@ test("app server closes even when a client keeps a connection open", async (t) =
   assert.equal(lingeringSocket.destroyed, true);
 });
 
-test("partial settings save updates display settings without touching other fields", async (t) => {
+test("partial settings save updates only the theme without touching other fields", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
@@ -184,8 +184,7 @@ test("partial settings save updates display settings without touching other fiel
     twitchUsername: "demo-bot",
     youtubeApiKey: "youtube-key",
     port,
-    theme: "aurora",
-    dashboardLayout: "atlas"
+    theme: "aurora"
   };
 
   await fs.writeFile(
@@ -216,8 +215,7 @@ test("partial settings save updates display settings without touching other fiel
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      theme: "winamp",
-      dashboardLayout: "signal"
+      theme: "winamp"
     })
   });
 
@@ -225,16 +223,17 @@ test("partial settings save updates display settings without touching other fiel
 
   const payload = await response.json();
   assert.equal(payload.settings.theme, "winamp");
-  assert.equal(payload.settings.dashboardLayout, "signal");
+  assert.equal(payload.settings.dashboardLayout, "atlas");
   assert.equal(payload.settings.port, port);
   assert.equal(payload.settings.youtubeApiKey, initialSettings.youtubeApiKey);
   assert.equal(Array.isArray(payload.dashboardLayoutOptions), true);
+  assert.deepEqual(payload.dashboardLayoutOptions.map((layout) => layout.id), ["atlas"]);
 
   const persistedSettings = JSON.parse(
     await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
   );
   assert.equal(persistedSettings.theme, "winamp");
-  assert.equal(persistedSettings.dashboardLayout, "signal");
+  assert.equal(persistedSettings.dashboardLayout, "atlas");
   assert.equal(persistedSettings.port, port);
   assert.equal(persistedSettings.youtubeApiKey, initialSettings.youtubeApiKey);
 });
