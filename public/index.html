@@ -7,75 +7,151 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="/dashboard.css?v=20260316e" />
+    <link rel="stylesheet" href="/dashboard.css?v=20260317b" />
   </head>
-  <body>
-    <main class="dashboard-shell">
-      <section class="hero-panel">
-        <div class="hero-panel__copy">
-          <p class="eyebrow">Program GUI</p>
+  <body data-dashboard-layout="atlas">
+    <main class="app-shell">
+      <header class="topbar panel">
+        <div class="brand-block">
+          <p class="eyebrow">Control Center</p>
           <h1>Twitch Song Request Player</h1>
-          <p class="hero-panel__lede">
-            Configure credentials, adjust runtime settings, and manage the OBS overlay URL from one place.
+          <p class="lede">
+            Compact settings, playlist management, and playback status in one desktop dashboard.
           </p>
-          <div style="margin-top: 1rem;">
-            <span id="app-version-badge" class="status-pill status-pill--idle" style="display: inline-flex;">Version Loading</span>
-          </div>
         </div>
-        <div class="hero-panel__status">
-          <div class="hero-stat">
-            <span class="hero-stat__label">Twitch</span>
+
+        <div class="topbar__side">
+          <div class="status-row">
+            <span id="app-version-badge" class="status-pill status-pill--idle">Version Loading</span>
             <span id="twitch-status-pill" class="status-pill status-pill--idle">Waiting</span>
-          </div>
-          <div class="hero-stat">
-            <span class="hero-stat__label">Server</span>
             <span id="server-port-pill" class="status-pill status-pill--accent">Port 3000</span>
           </div>
+
+          <div class="control-row">
+            <label class="select-field">
+              <span class="select-field__label">GUI look</span>
+              <select id="dashboard-layout-select"></select>
+            </label>
+
+            <label class="select-field">
+              <span class="select-field__label">Overlay theme</span>
+              <select id="theme-select"></select>
+            </label>
+
+            <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
+            <button id="save-button" class="primary-button" type="submit" form="settings-form">Save settings</button>
+          </div>
+        </div>
+      </header>
+
+      <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <nav class="workspace-tabs" aria-label="Dashboard sections">
+        <button class="tab-button is-active" type="button" data-tab-target="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab-target="connection">Connection</button>
+        <button class="tab-button" type="button" data-tab-target="library">Playlist Library</button>
+      </nav>
+
+      <section id="tab-overview" class="workspace-view is-active">
+        <div class="overview-grid">
+          <section class="panel summary-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Runtime</p>
+                <h2>Server and OBS</h2>
+              </div>
+            </div>
+
+            <div class="summary-grid">
+              <article class="summary-card">
+                <p class="summary-card__label">Twitch status</p>
+                <p id="twitch-status-text" class="summary-card__value">Waiting for configuration.</p>
+              </article>
+
+              <article class="summary-card">
+                <p class="summary-card__label">Overlay URL</p>
+                <div class="copy-row">
+                  <input id="overlay-url" class="copy-row__input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
+                </div>
+              </article>
+
+              <article class="summary-card summary-card--full">
+                <p class="summary-card__label">Restart notice</p>
+                <p id="restart-note" class="summary-card__text">Port changes are applied immediately when you restart the app.</p>
+              </article>
+            </div>
+          </section>
+
+          <section class="panel playback-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Playback</p>
+                <h2>Now playing</h2>
+              </div>
+            </div>
+
+            <div class="playback-card">
+              <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
+              <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <ul id="queue-preview" class="queue-preview"></ul>
+            </div>
+          </section>
+
+          <section class="panel look-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Desktop GUI</p>
+                <h2>Choose a look</h2>
+              </div>
+            </div>
+            <p id="dashboard-layout-description" class="panel-note"></p>
+          </section>
+
+          <section class="panel overlay-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Overlay</p>
+                <h2>Browser source theme</h2>
+              </div>
+            </div>
+            <p id="theme-description" class="panel-note"></p>
+          </section>
         </div>
       </section>
 
-      <section class="dashboard-grid">
-        <form id="settings-form" class="panel settings-panel">
-          <div class="panel__header">
-            <div>
-              <p class="panel__eyebrow">Settings</p>
-              <h2>Credentials and runtime</h2>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-              <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
-              <button id="save-button" class="primary-button" type="submit">Save settings</button>
-            </div>
-          </div>
-
-          <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
-
-          <section class="bot-auth-card">
-            <div class="bot-auth-card__header">
+      <section id="tab-connection" class="workspace-view" hidden>
+        <form id="settings-form" class="settings-stack">
+          <section class="panel auth-panel">
+            <div class="panel__header">
               <div>
                 <p class="panel__eyebrow">Twitch Login</p>
-                <h3>Connect the bot account in-app</h3>
+                <h2>Connect the bot account</h2>
               </div>
-              <div class="bot-auth-card__actions">
+              <div class="button-row">
                 <button id="twitch-auth-start" class="secondary-button" type="button">Connect bot with Twitch</button>
                 <button id="twitch-auth-cancel" class="ghost-button" type="button">Cancel</button>
               </div>
             </div>
-            <p id="twitch-auth-status-text" class="bot-auth-card__status">
+
+            <p id="twitch-auth-status-text" class="panel-note">
               Use the bundled Twitch Client ID to start the in-app bot login flow.
             </p>
-            <div id="twitch-auth-details" class="bot-auth-card__details" hidden>
-              <div class="runtime-item">
-                <span class="runtime-item__label">Activation code</span>
+
+            <div id="twitch-auth-details" class="detail-grid" hidden>
+              <div class="detail-card">
+                <span class="detail-card__label">Activation code</span>
                 <div class="copy-row">
                   <input id="twitch-auth-code" class="copy-row__input" type="text" readonly />
                   <button class="copy-row__button" type="button" data-copy-target="twitch-auth-code">Copy</button>
                 </div>
               </div>
-              <div class="runtime-item">
-                <span class="runtime-item__label">Verification page</span>
+
+              <div class="detail-card">
+                <span class="detail-card__label">Verification page</span>
                 <div class="copy-row copy-row--triple">
                   <input id="twitch-auth-url" class="copy-row__input" type="text" readonly />
                   <button class="copy-row__button" type="button" data-open-url-target="twitch-auth-url">Open</button>
@@ -85,200 +161,187 @@
             </div>
           </section>
 
-          <div class="manual-fields">
-            <div class="theme-section__header">
-              <div>
-                <p class="panel__eyebrow">Manual Entry</p>
-                <h3>Paste credentials yourself</h3>
-              </div>
-              <p class="theme-section__note">Use this only if you do not want to connect the bot account through Twitch inside the app.</p>
-            </div>
-          </div>
-
-          <div class="form-grid">
-            <label class="field">
-              <span class="field__label">Twitch channel</span>
-              <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
-              <span class="field__hint">The Twitch channel the bot should join. Usually the streamer name, without `#`.</span>
-            </label>
-
-            <label class="field">
-              <span class="field__label">Bot username</span>
-              <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
-              <span class="field__hint">The Twitch account that connects to chat. This can be different from the channel owner if you use a bot account.</span>
-            </label>
-
-            <label class="field field--full">
-              <span class="field__label">Bot OAuth token</span>
-              <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
-              <span class="field__hint">
-                Required for Twitch chat connection. You can paste a token manually, or use the in-app Twitch login below. Manual tokens should keep the `oauth:` prefix
-                and include `chat:read` and `chat:edit`.
-                <a
-                  class="field__link"
-                  href="https://dev.twitch.tv/docs/irc/authenticate-bot"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >How to get this token</a>
-              </span>
-            </label>
-
-            <label class="field field--full">
-              <span class="field__label">YouTube API key</span>
-              <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
-              <span class="field__hint">Optional unless viewers use `!sr <search terms>`. Create it in Google Cloud for the YouTube Data API. Direct YouTube and SoundCloud links do not need this.</span>
-            </label>
-
-            <label class="field field--narrow">
-              <span class="field__label">Local port</span>
-              <input id="port" name="port" type="number" min="1" max="65535" />
-              <span class="field__hint">Only changes the local app URL used on this PC.</span>
-            </label>
-          </div>
-
-          <section class="credentials-guide">
-            <div class="credentials-guide__header">
-              <div>
-                <p class="panel__eyebrow">Credential Guide</p>
-                <h3>What you actually need</h3>
-              </div>
-            </div>
-            <div class="credentials-guide__grid">
-              <article class="credentials-guide__card">
-                <p class="credentials-guide__title">Required for Twitch chat requests</p>
-                <p class="credentials-guide__body">
-                  Fill in <strong>Twitch channel</strong>, <strong>Bot username</strong>, and <strong>Bot OAuth token</strong>.
-                  This is enough for `!sr`, `!skip`, `!delete`, `!save`, and `!currentsong`.
-                </p>
-              </article>
-              <article class="credentials-guide__card">
-                <p class="credentials-guide__title">Built-in Twitch login path</p>
-                <p class="credentials-guide__body">
-                  The desktop app uses the bundled public Twitch Client ID for in-app bot login. End users do not need to type a Twitch Client ID or Client Secret into the GUI.
-                </p>
-              </article>
-              <article class="credentials-guide__card">
-                <p class="credentials-guide__title">Optional YouTube search key</p>
-                <p class="credentials-guide__body">
-                  <strong>YouTube API key</strong> is only needed for `!sr artist song name`. If viewers request direct links, you can leave it empty.
-                </p>
-              </article>
-            </div>
-          </section>
-
-          <section class="suppression-section">
-            <div class="theme-section__header">
-              <div>
-                <p class="panel__eyebrow">Category Rules</p>
-                <h3>Suppress by Twitch category</h3>
-              </div>
-              <p class="theme-section__note">Add categories that should mute chat announcements or stop music playback entirely while your stream is in that category.</p>
-            </div>
-            <div class="suppression-grid">
-              <article class="suppression-card">
-                <p class="suppression-card__title">Suppress chat messages</p>
-                <p class="suppression-card__body">The bot will stop sending chat replies and now-playing messages while the current Twitch category matches one of these entries.</p>
-                <div class="copy-row copy-row--triple suppression-card__controls">
-                  <input id="chat-category-input" class="copy-row__input" type="text" placeholder="Add category" />
-                  <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
-                  <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
+          <div class="connection-grid">
+            <section class="panel">
+              <div class="panel__header">
+                <div>
+                  <p class="panel__eyebrow">Credentials</p>
+                  <h2>Manual entry</h2>
                 </div>
-                <label class="field suppression-card__select">
-                  <span class="field__label">Configured categories</span>
-                  <select id="chat-category-select"></select>
-                </label>
-              </article>
-
-              <article class="suppression-card">
-                <p class="suppression-card__title">Suppress music entirely</p>
-                <p class="suppression-card__body">The player will stop the active track and hold queued playback until the stream leaves one of these categories.</p>
-                <div class="copy-row copy-row--triple suppression-card__controls">
-                  <input id="playback-category-input" class="copy-row__input" type="text" placeholder="Add category" />
-                  <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
-                  <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
-                </div>
-                <label class="field suppression-card__select">
-                  <span class="field__label">Configured categories</span>
-                  <select id="playback-category-select"></select>
-                </label>
-              </article>
-            </div>
-          </section>
-
-          <section class="theme-section">
-            <div class="theme-section__header">
-              <div>
-                <p class="panel__eyebrow">Player Theme</p>
-                <h3>Overlay player appearance</h3>
               </div>
-              <p class="theme-section__note">Choose the theme used by the OBS player overlay. This does not change the desktop GUI.</p>
-            </div>
-            <div class="theme-select">
-              <label class="field" for="theme-select">
-                <span class="field__label">Player overlay theme</span>
-                <select id="theme-select" name="theme" aria-describedby="theme-description"></select>
-              </label>
-              <p id="theme-description" class="theme-select__description"></p>
-            </div>
-          </section>
+
+              <div class="form-grid">
+                <label class="field">
+                  <span class="field__label">Twitch channel</span>
+                  <input id="twitchChannel" name="twitchChannel" type="text" autocomplete="off" />
+                  <span class="field__hint">Usually the streamer name without `#`.</span>
+                </label>
+
+                <label class="field">
+                  <span class="field__label">Bot username</span>
+                  <input id="twitchUsername" name="twitchUsername" type="text" autocomplete="off" />
+                  <span class="field__hint">The Twitch account that joins chat.</span>
+                </label>
+
+                <label class="field field--full">
+                  <span class="field__label">Bot OAuth token</span>
+                  <input id="twitchOauthToken" name="twitchOauthToken" type="password" autocomplete="off" />
+                  <span class="field__hint">
+                    Manual tokens should keep the `oauth:` prefix and include `chat:read` and `chat:edit`.
+                    <a
+                      class="field__link"
+                      href="https://dev.twitch.tv/docs/irc/authenticate-bot"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >How to get this token</a>
+                  </span>
+                </label>
+
+                <label class="field field--full">
+                  <span class="field__label">YouTube API key</span>
+                  <input id="youtubeApiKey" name="youtubeApiKey" type="password" autocomplete="off" />
+                  <span class="field__hint">Only needed when viewers request tracks by search terms instead of direct links.</span>
+                </label>
+
+                <label class="field field--narrow">
+                  <span class="field__label">Local port</span>
+                  <input id="port" name="port" type="number" min="1" max="65535" />
+                  <span class="field__hint">Used for the local dashboard and OBS overlay URL.</span>
+                </label>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel__header">
+                <div>
+                  <p class="panel__eyebrow">Category Rules</p>
+                  <h2>Suppression</h2>
+                </div>
+              </div>
+
+              <div class="rule-stack">
+                <article class="rule-card">
+                  <p class="rule-card__title">Suppress chat messages</p>
+                  <p class="rule-card__body">The bot will stop sending replies and now-playing messages for these categories.</p>
+                  <div class="copy-row copy-row--triple">
+                    <input id="chat-category-input" class="copy-row__input" type="text" placeholder="Add category" />
+                    <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
+                    <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
+                  </div>
+                  <label class="field">
+                    <span class="field__label">Configured categories</span>
+                    <select id="chat-category-select"></select>
+                  </label>
+                </article>
+
+                <article class="rule-card">
+                  <p class="rule-card__title">Suppress music playback</p>
+                  <p class="rule-card__body">Playback stops completely while the stream sits in one of these categories.</p>
+                  <div class="copy-row copy-row--triple">
+                    <input id="playback-category-input" class="copy-row__input" type="text" placeholder="Add category" />
+                    <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
+                    <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
+                  </div>
+                  <label class="field">
+                    <span class="field__label">Configured categories</span>
+                    <select id="playback-category-select"></select>
+                  </label>
+                </article>
+              </div>
+            </section>
+          </div>
         </form>
+      </section>
 
-        <aside class="stack">
+      <section id="tab-library" class="workspace-view" hidden>
+        <div class="library-grid">
           <section class="panel">
             <div class="panel__header">
               <div>
-                <p class="panel__eyebrow">Runtime</p>
-                <h2>Status and OBS URL</h2>
+                <p class="panel__eyebrow">Add Tracks</p>
+                <h2>Paste a URL or search YouTube</h2>
               </div>
             </div>
-            <div class="runtime-list">
-              <div class="runtime-item">
-                <span class="runtime-item__label">Twitch status</span>
-                <span id="twitch-status-text" class="runtime-item__value">Waiting for configuration.</span>
-              </div>
-              <div class="runtime-item">
-                <span class="runtime-item__label">Overlay URL</span>
-                <div class="copy-row">
-                  <input id="overlay-url" class="copy-row__input" type="text" readonly />
-                  <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
-                </div>
-              </div>
-              <div class="runtime-item">
-                <span class="runtime-item__label">Restart notice</span>
-                <span id="restart-note" class="runtime-item__value">Port changes are applied immediately when you restart the app.</span>
-              </div>
-            </div>
+
+            <form id="playlist-add-form" class="playlist-add-form">
+              <input
+                id="playlist-add-input"
+                class="copy-row__input"
+                type="text"
+                placeholder="YouTube / SoundCloud URL or search text"
+                autocomplete="off"
+              />
+              <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
+            </form>
+
+            <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
           </section>
 
           <section class="panel">
             <div class="panel__header">
               <div>
-                <p class="panel__eyebrow">OBS</p>
-                <h2>Overlay output</h2>
+                <p class="panel__eyebrow">Import / Export</p>
+                <h2>Move the fallback playlist</h2>
               </div>
             </div>
-            <div class="overlay-note">
-              <p class="overlay-note__title">The overlay stays separate from the program GUI.</p>
-              <p class="overlay-note__body">
-                Use the overlay URL in OBS as your Browser Source. The dashboard does not embed or control that render directly, so the final output stays clean and untouched.
-              </p>
+
+            <div class="button-row button-row--wrap">
+              <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
+              <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
+              <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
             </div>
+
+            <p class="panel-note">
+              Import expects the same `Link,Title` CSV format that the app exports.
+            </p>
+
+            <input id="playlist-import-file" type="file" accept=".csv,text/csv" hidden />
           </section>
 
-          <section class="panel">
-            <div class="panel__header">
+          <section class="panel panel--full">
+            <div class="panel__header panel__header--library">
               <div>
-                <p class="panel__eyebrow">Playback</p>
-                <h2>Now playing</h2>
+                <p class="panel__eyebrow">Playlist</p>
+                <h2>Fallback track library</h2>
+              </div>
+
+              <div class="library-toolbar">
+                <label class="search-field">
+                  <span class="search-field__label">Search</span>
+                  <input id="playlist-search-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
+                </label>
               </div>
             </div>
-            <div class="playback-card">
-              <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
-              <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
-              <ul id="queue-preview" class="queue-preview"></ul>
+
+            <div class="library-summary">
+              <span id="playlist-count">0 tracks</span>
+              <span id="playlist-page-info">Page 1 of 1</span>
+            </div>
+
+            <div class="playlist-table-wrap">
+              <table class="playlist-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Provider</th>
+                    <th scope="col">Link</th>
+                    <th scope="col" class="playlist-table__actions">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="playlist-table-body"></tbody>
+              </table>
+
+              <div id="playlist-empty-state" class="empty-state" hidden>
+                No playlist tracks matched this search.
+              </div>
+            </div>
+
+            <div class="pagination-row">
+              <button id="playlist-prev-page" class="ghost-button" type="button">Previous</button>
+              <button id="playlist-next-page" class="ghost-button" type="button">Next</button>
             </div>
           </section>
-        </aside>
+        </div>
       </section>
     </main>
 
@@ -288,7 +351,7 @@
           <h2 id="update-modal-title">Update Available</h2>
         </div>
         <div class="modal__body">
-          <p id="update-version-text" style="font-weight: 500; margin-bottom: 0.5rem;"></p>
+          <p id="update-version-text" class="modal-copy"></p>
           <div class="update-notes-container">
             <div id="update-release-notes" class="update-notes"></div>
           </div>
@@ -308,6 +371,6 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/dashboard.js?v=20260317a"></script>
+    <script src="/dashboard.js?v=20260317b"></script>
   </body>
 </html>

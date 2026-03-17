@@ -69,6 +69,29 @@ const themeOptions = [
   }
 ];
 const validThemeIds = new Set(themeOptions.map((theme) => theme.id));
+const dashboardLayoutOptions = [
+  {
+    id: "atlas",
+    label: "Atlas",
+    description: "Editorial workspace with a compact top summary and balanced panels."
+  },
+  {
+    id: "neon",
+    label: "Neon Grid",
+    description: "Sharper cards, brighter accents, and a more technical control-room feel."
+  },
+  {
+    id: "paper",
+    label: "Paper Stack",
+    description: "Lightweight studio-board layout with softer surfaces and stronger separation."
+  },
+  {
+    id: "signal",
+    label: "Signal Desk",
+    description: "Dense broadcast-console styling with tighter spacing and heavier framing."
+  }
+];
+const validDashboardLayoutIds = new Set(dashboardLayoutOptions.map((layout) => layout.id));
 
 function trimValue(value) {
   if (typeof value !== "string") {
@@ -81,6 +104,11 @@ function trimValue(value) {
 function normalizeTheme(value) {
   const themeId = trimValue(value).toLowerCase();
   return validThemeIds.has(themeId) ? themeId : themeOptions[0].id;
+}
+
+function normalizeDashboardLayout(value) {
+  const layoutId = trimValue(value).toLowerCase();
+  return validDashboardLayoutIds.has(layoutId) ? layoutId : dashboardLayoutOptions[0].id;
 }
 
 function normalizePort(value) {
@@ -121,7 +149,8 @@ function normalizeSettings(raw) {
     ),
     youtubeApiKey: trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY),
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
-    theme: normalizeTheme(raw.theme ?? raw.THEME)
+    theme: normalizeTheme(raw.theme ?? raw.THEME),
+    dashboardLayout: normalizeDashboardLayout(raw.dashboardLayout ?? raw.DASHBOARD_LAYOUT)
   };
 }
 
@@ -193,6 +222,10 @@ function normalizeOverrideSettings(raw) {
     overrides.theme = normalizeTheme(raw.theme ?? raw.THEME);
   }
 
+  if (hasOwnSetting(raw, ["dashboardLayout", "DASHBOARD_LAYOUT"])) {
+    overrides.dashboardLayout = normalizeDashboardLayout(raw.dashboardLayout ?? raw.DASHBOARD_LAYOUT);
+  }
+
   return overrides;
 }
 
@@ -210,7 +243,11 @@ function mergeSettings(baseSettings, overridingSettings) {
       overridingSettings.playbackSuppressedCategories || baseSettings.playbackSuppressedCategories || [],
     youtubeApiKey: overridingSettings.youtubeApiKey || baseSettings.youtubeApiKey,
     port: overridingSettings.port || baseSettings.port || 3000,
-    theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id
+    theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id,
+    dashboardLayout:
+      overridingSettings.dashboardLayout ||
+      baseSettings.dashboardLayout ||
+      dashboardLayoutOptions[0].id
   };
 }
 
@@ -239,7 +276,8 @@ function normalizeBundledSettings(raw) {
     playbackSuppressedCategories: [],
     youtubeApiKey: "",
     port: 3000,
-    theme: themeOptions[0].id
+    theme: themeOptions[0].id,
+    dashboardLayout: dashboardLayoutOptions[0].id
   };
 }
 
@@ -308,6 +346,10 @@ export class ConfigStore {
     return themeOptions.map((theme) => ({ ...theme }));
   }
 
+  getDashboardLayoutOptions() {
+    return dashboardLayoutOptions.map((layout) => ({ ...layout }));
+  }
+
   async loadRuntimeConfig() {
     const settings = await this.loadEffectiveSettings();
     await this.ensureRuntimePlaylist();
@@ -346,7 +388,8 @@ export function toRuntimeAppConfig(runtimeConfig) {
       playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },
     youtubeApiKey: runtimeConfig.settings.youtubeApiKey,
-    theme: runtimeConfig.settings.theme
+    theme: runtimeConfig.settings.theme,
+    dashboardLayout: runtimeConfig.settings.dashboardLayout
   };
 }
 

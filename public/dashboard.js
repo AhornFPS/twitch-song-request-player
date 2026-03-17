@@ -1,9 +1,13 @@
 const socket = typeof window.io === "function" ? window.io() : null;
+
+const body = document.body;
 const settingsForm = document.getElementById("settings-form");
 const saveButton = document.getElementById("save-button");
 const saveFeedback = document.getElementById("save-feedback");
 const themeSelect = document.getElementById("theme-select");
 const themeDescription = document.getElementById("theme-description");
+const dashboardLayoutSelect = document.getElementById("dashboard-layout-select");
+const dashboardLayoutDescription = document.getElementById("dashboard-layout-description");
 const twitchStatusPill = document.getElementById("twitch-status-pill");
 const serverPortPill = document.getElementById("server-port-pill");
 const twitchStatusText = document.getElementById("twitch-status-text");
@@ -14,8 +18,37 @@ const currentTrackMeta = document.getElementById("current-track-meta");
 const queuePreview = document.getElementById("queue-preview");
 const openAppdataButton = document.getElementById("open-appdata-button");
 const twitchAuthStartButton = document.getElementById("twitch-auth-start");
+const twitchAuthCancelButton = document.getElementById("twitch-auth-cancel");
+const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
+const twitchAuthDetails = document.getElementById("twitch-auth-details");
+const twitchAuthCodeInput = document.getElementById("twitch-auth-code");
+const twitchAuthUrlInput = document.getElementById("twitch-auth-url");
+const appVersionBadge = document.getElementById("app-version-badge");
+const chatCategoryInput = document.getElementById("chat-category-input");
+const chatCategoryAddButton = document.getElementById("chat-category-add");
+const chatCategoryDeleteButton = document.getElementById("chat-category-delete");
+const chatCategorySelect = document.getElementById("chat-category-select");
+const playbackCategoryInput = document.getElementById("playback-category-input");
+const playbackCategoryAddButton = document.getElementById("playback-category-add");
+const playbackCategoryDeleteButton = document.getElementById("playback-category-delete");
+const playbackCategorySelect = document.getElementById("playback-category-select");
+const playlistAddForm = document.getElementById("playlist-add-form");
+const playlistAddInput = document.getElementById("playlist-add-input");
+const playlistAddButton = document.getElementById("playlist-add-button");
+const playlistFeedback = document.getElementById("playlist-feedback");
+const playlistSearchInput = document.getElementById("playlist-search-input");
+const playlistTableBody = document.getElementById("playlist-table-body");
+const playlistEmptyState = document.getElementById("playlist-empty-state");
+const playlistCount = document.getElementById("playlist-count");
+const playlistPageInfo = document.getElementById("playlist-page-info");
+const playlistPrevPageButton = document.getElementById("playlist-prev-page");
+const playlistNextPageButton = document.getElementById("playlist-next-page");
+const playlistImportAppendButton = document.getElementById("playlist-import-append");
+const playlistImportReplaceButton = document.getElementById("playlist-import-replace");
+const playlistExportButton = document.getElementById("playlist-export-button");
+const playlistImportFileInput = document.getElementById("playlist-import-file");
+const tabButtons = Array.from(document.querySelectorAll("[data-tab-target]"));
 
-// Update Modal Elements
 const updateModal = document.getElementById("update-modal");
 const updateVersionText = document.getElementById("update-version-text");
 const updateReleaseNotes = document.getElementById("update-release-notes");
@@ -25,27 +58,21 @@ const updateProgressText = document.getElementById("update-progress-text");
 const updateErrorText = document.getElementById("update-error-text");
 const updateActionBtn = document.getElementById("update-action-btn");
 const updateSkipBtn = document.getElementById("update-skip-btn");
-const appVersionBadge = document.getElementById("app-version-badge");
-const twitchAuthCancelButton = document.getElementById("twitch-auth-cancel");
-const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
-const twitchAuthDetails = document.getElementById("twitch-auth-details");
-const twitchAuthCodeInput = document.getElementById("twitch-auth-code");
-const twitchAuthUrlInput = document.getElementById("twitch-auth-url");
-const chatCategoryInput = document.getElementById("chat-category-input");
-const chatCategoryAddButton = document.getElementById("chat-category-add");
-const chatCategoryDeleteButton = document.getElementById("chat-category-delete");
-const chatCategorySelect = document.getElementById("chat-category-select");
-const playbackCategoryInput = document.getElementById("playback-category-input");
-const playbackCategoryAddButton = document.getElementById("playback-category-add");
-const playbackCategoryDeleteButton = document.getElementById("playback-category-delete");
-const playbackCategorySelect = document.getElementById("playback-category-select");
+
 let isSavingSettings = false;
 let isHydratingForm = false;
 let availableThemes = [];
+let availableDashboardLayouts = [];
 let lastSavedTheme = "aurora";
+let lastSavedDashboardLayout = "atlas";
 let lastTwitchAuthState = "";
 let chatSuppressedCategories = [];
 let playbackSuppressedCategories = [];
+let playlistPage = 1;
+let playlistTotalPages = 1;
+let playlistQuery = "";
+let playlistSearchDebounceTimer = null;
+let playlistImportMode = "append";
 
 const fields = {
   twitchChannel: document.getElementById("twitchChannel"),
@@ -62,6 +89,28 @@ function setFeedback(message, tone = "") {
   if (tone) {
     saveFeedback.classList.add(`is-${tone}`);
   }
+}
+
+function setPlaylistFeedback(message, tone = "") {
+  playlistFeedback.textContent = message;
+  playlistFeedback.className = "feedback";
+
+  if (tone) {
+    playlistFeedback.classList.add(`is-${tone}`);
+  }
+}
+
+function activateTab(tabId) {
+  tabButtons.forEach((button) => {
+    const isActive = button.dataset.tabTarget === tabId;
+    button.classList.toggle("is-active", isActive);
+  });
+
+  document.querySelectorAll(".workspace-view").forEach((view) => {
+    const isActive = view.id === `tab-${tabId}`;
+    view.classList.toggle("is-active", isActive);
+    view.hidden = !isActive;
+  });
 }
 
 function fillSettingsForm(settings) {
@@ -93,6 +142,22 @@ function syncThemeSelection(selectedTheme) {
   }
 }
 
+function syncDashboardLayoutSelection(selectedLayout) {
+  const nextLayout = selectedLayout || "atlas";
+
+  if (dashboardLayoutSelect) {
+    dashboardLayoutSelect.value = nextLayout;
+  }
+
+  body.dataset.dashboardLayout = nextLayout;
+  const selectedOption =
+    availableDashboardLayouts.find((layout) => layout.id === nextLayout) || availableDashboardLayouts[0];
+
+  if (dashboardLayoutDescription) {
+    dashboardLayoutDescription.textContent = selectedOption?.description || "";
+  }
+}
+
 function renderThemeOptions(themeOptions, selectedTheme) {
   availableThemes = Array.isArray(themeOptions) ? themeOptions : [];
   themeSelect.innerHTML = "";
@@ -107,8 +172,26 @@ function renderThemeOptions(themeOptions, selectedTheme) {
   syncThemeSelection(selectedTheme);
 }
 
+function renderDashboardLayoutOptions(layoutOptions, selectedLayout) {
+  availableDashboardLayouts = Array.isArray(layoutOptions) ? layoutOptions : [];
+  dashboardLayoutSelect.innerHTML = "";
+
+  availableDashboardLayouts.forEach((layout) => {
+    const option = document.createElement("option");
+    option.value = layout.id;
+    option.textContent = layout.label;
+    dashboardLayoutSelect.appendChild(option);
+  });
+
+  syncDashboardLayoutSelection(selectedLayout);
+}
+
 function getSelectedTheme() {
   return themeSelect?.value || "aurora";
+}
+
+function getSelectedDashboardLayout() {
+  return dashboardLayoutSelect?.value || "atlas";
 }
 
 function describeRequester(track) {
@@ -138,8 +221,7 @@ function updatePlaybackState(state) {
     meta.className = "queue-preview__meta";
     meta.textContent = requester;
 
-    item.appendChild(title);
-    item.appendChild(meta);
+    item.append(title, meta);
     queuePreview.appendChild(item);
   });
 }
@@ -169,7 +251,7 @@ function updateRuntimePanel(payload) {
 
   if (runtime.pendingRestart) {
     if (runtime.usingFallbackPort) {
-      restartNote.textContent = `Configured port ${runtime.configuredPort} was unavailable at startup, so the app is currently running on fallback port ${runtime.activePort}. Free that port or save a different one if you want to keep it stable across restarts.`;
+      restartNote.textContent = `Configured port ${runtime.configuredPort} was unavailable at startup, so the app is currently using fallback port ${runtime.activePort}.`;
     } else {
       restartNote.textContent = `Saved port ${fields.port.value || runtime.activePort} will be used after restart. The current server is still running on port ${runtime.activePort}.`;
     }
@@ -184,7 +266,9 @@ function renderSettingsPayload(payload) {
   isHydratingForm = true;
   fillSettingsForm(payload.settings);
   renderThemeOptions(payload.themeOptions, payload.settings.theme);
+  renderDashboardLayoutOptions(payload.dashboardLayoutOptions, payload.settings.dashboardLayout);
   lastSavedTheme = payload.settings.theme || "aurora";
+  lastSavedDashboardLayout = payload.settings.dashboardLayout || "atlas";
   updateRuntimePanel(payload);
   isHydratingForm = false;
 }
@@ -198,7 +282,8 @@ function collectSettingsPayload() {
     playbackSuppressedCategories,
     youtubeApiKey: fields.youtubeApiKey.value.trim(),
     port: Number.parseInt(fields.port.value, 10) || 3000,
-    theme: getSelectedTheme()
+    theme: getSelectedTheme(),
+    dashboardLayout: getSelectedDashboardLayout()
   };
 }
 
@@ -288,12 +373,9 @@ function updateTwitchAuthPanel(authStatus) {
   twitchAuthDetails.hidden = !(verificationUrl || userCode);
   twitchAuthCancelButton.disabled = statusState !== "pending";
   twitchAuthStartButton.disabled = isSavingSettings;
-
-  if (statusState === "pending") {
-    twitchAuthStartButton.textContent = "Restart Twitch login";
-  } else {
-    twitchAuthStartButton.textContent = "Connect bot with Twitch";
-  }
+  twitchAuthStartButton.textContent = statusState === "pending"
+    ? "Restart Twitch login"
+    : "Connect bot with Twitch";
 
   if (statusState === "success" && lastTwitchAuthState !== "success") {
     void loadSettings().catch(() => {});
@@ -340,6 +422,67 @@ async function loadPlaybackState() {
   updatePlaybackState(state);
 }
 
+async function loadPlaylist() {
+  const searchParams = new URLSearchParams({
+    page: String(playlistPage),
+    pageSize: "100"
+  });
+
+  if (playlistQuery) {
+    searchParams.set("q", playlistQuery);
+  }
+
+  const payload = await fetchJson(`/api/playlist/tracks?${searchParams.toString()}`);
+  playlistTotalPages = payload.totalPages || 1;
+  playlistPage = payload.page || 1;
+  renderPlaylist(payload);
+}
+
+function renderPlaylist(payload) {
+  playlistTableBody.innerHTML = "";
+
+  const tracks = Array.isArray(payload.items) ? payload.items : [];
+  const total = Number.isFinite(payload.total) ? payload.total : tracks.length;
+  const totalPages = Number.isFinite(payload.totalPages) ? payload.totalPages : 1;
+
+  playlistCount.textContent = `${total.toLocaleString()} tracks`;
+  playlistPageInfo.textContent = `Page ${payload.page} of ${totalPages}`;
+  playlistPrevPageButton.disabled = payload.page <= 1;
+  playlistNextPageButton.disabled = payload.page >= totalPages;
+  playlistEmptyState.hidden = tracks.length > 0;
+
+  tracks.forEach((track) => {
+    const row = document.createElement("tr");
+
+    const titleCell = document.createElement("td");
+    titleCell.textContent = track.title;
+
+    const providerCell = document.createElement("td");
+    providerCell.innerHTML = `<span class="provider-chip">${track.provider}</span>`;
+
+    const linkCell = document.createElement("td");
+    const link = document.createElement("a");
+    link.href = track.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.className = "playlist-link";
+    link.textContent = track.url;
+    linkCell.appendChild(link);
+
+    const actionCell = document.createElement("td");
+    actionCell.className = "playlist-table__actions";
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "ghost-button ghost-button--danger";
+    deleteButton.dataset.playlistDeleteKey = track.key;
+    deleteButton.textContent = "Delete";
+    actionCell.appendChild(deleteButton);
+
+    row.append(titleCell, providerCell, linkCell, actionCell);
+    playlistTableBody.appendChild(row);
+  });
+}
+
 async function persistSettings(payload) {
   return fetchJson("/api/settings", {
     method: "PUT",
@@ -355,17 +498,17 @@ async function saveSettings(event) {
   isSavingSettings = true;
   saveButton.disabled = true;
   themeSelect.disabled = true;
+  dashboardLayoutSelect.disabled = true;
   setFeedback("Saving settings...");
 
   try {
     const payload = await persistSettings(collectSettingsPayload());
-
     renderSettingsPayload(payload);
 
     if (payload.saveSummary?.restartRequired) {
-      setFeedback("Settings saved. Twitch changes were applied live. Restart the app to use the new port.", "warning");
+      setFeedback("Settings saved. Restart the app to switch to the new port.", "warning");
     } else if (payload.saveSummary?.botReconnected) {
-      setFeedback("Settings saved and Twitch chat was reconnected with the new credentials.", "success");
+      setFeedback("Settings saved and Twitch chat was reconnected.", "success");
     } else {
       setFeedback("Settings saved.", "success");
     }
@@ -375,37 +518,37 @@ async function saveSettings(event) {
     isSavingSettings = false;
     saveButton.disabled = false;
     themeSelect.disabled = false;
+    dashboardLayoutSelect.disabled = false;
   }
 }
 
-async function saveThemeSelection(selectedTheme) {
-  const previousSavedTheme = lastSavedTheme;
-
-  if (!selectedTheme || selectedTheme === previousSavedTheme) {
-    return;
+async function saveDisplayPreference(settingKey, nextValue, previousValue, successMessage) {
+  if (!nextValue || nextValue === previousValue) {
+    return previousValue;
   }
 
   isSavingSettings = true;
   saveButton.disabled = true;
   themeSelect.disabled = true;
-  setFeedback("Saving player theme...");
+  dashboardLayoutSelect.disabled = true;
+  setFeedback("Saving display preference...");
 
   try {
     const payload = await persistSettings({
-      theme: selectedTheme
+      [settingKey]: nextValue
     });
 
-    renderThemeOptions(payload.themeOptions, payload.settings.theme);
-    lastSavedTheme = payload.settings.theme || selectedTheme;
-    updateRuntimePanel(payload);
-    setFeedback("Player theme saved.", "success");
+    renderSettingsPayload(payload);
+    setFeedback(successMessage, "success");
+    return payload.settings?.[settingKey] || nextValue;
   } catch (error) {
-    syncThemeSelection(previousSavedTheme);
-    setFeedback(error?.message || "Could not save player theme.", "error");
+    setFeedback(error?.message || "Could not save display preference.", "error");
+    return previousValue;
   } finally {
     isSavingSettings = false;
     saveButton.disabled = false;
     themeSelect.disabled = false;
+    dashboardLayoutSelect.disabled = false;
   }
 }
 
@@ -452,7 +595,6 @@ async function startTwitchAuth() {
     });
 
     renderSettingsPayload(payload);
-
     const verificationUrl =
       payload.twitchAuthStatus?.verificationUriComplete ||
       payload.twitchAuthStatus?.verificationUri ||
@@ -482,21 +624,133 @@ async function cancelTwitchAuth() {
   }
 }
 
-settingsForm.addEventListener("submit", saveSettings);
+async function addPlaylistTrack(event) {
+  event.preventDefault();
+  const input = playlistAddInput.value.trim();
 
-themeSelect.addEventListener("change", (event) => {
-  if (event.target instanceof HTMLSelectElement) {
-    syncThemeSelection(event.target.value);
-
-    if (!isHydratingForm) {
-      void saveThemeSelection(event.target.value);
-    }
+  if (!input) {
+    return;
   }
-});
 
-// Update Management Logic
+  playlistAddButton.disabled = true;
+  setPlaylistFeedback("Adding track...");
+
+  try {
+    const payload = await fetchJson("/api/playlist/tracks", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        input
+      })
+    });
+
+    playlistAddInput.value = "";
+    playlistPage = 1;
+    await loadPlaylist();
+    setPlaylistFeedback(
+      payload.alreadyExists
+        ? `Track already exists in the playlist: ${payload.track.title}`
+        : `Added ${payload.track.title} to the playlist.`,
+      payload.alreadyExists ? "warning" : "success"
+    );
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not add track.", "error");
+  } finally {
+    playlistAddButton.disabled = false;
+  }
+}
+
+async function deletePlaylistTrack(trackKey) {
+  if (!trackKey) {
+    return;
+  }
+
+  if (!window.confirm("Delete this track from the fallback playlist?")) {
+    return;
+  }
+
+  try {
+    const response = await fetch(`/api/playlist/tracks/${encodeURIComponent(trackKey)}`, {
+      method: "DELETE"
+    });
+
+    if (!response.ok) {
+      let message = `Request failed: ${response.status}`;
+
+      try {
+        const payload = await response.json();
+        if (payload?.error) {
+          message = payload.error;
+        }
+      } catch {
+      }
+
+      throw new Error(message);
+    }
+
+    await loadPlaylist();
+    setPlaylistFeedback("Track removed from the playlist.", "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not delete track.", "error");
+  }
+}
+
+async function exportPlaylist() {
+  try {
+    const response = await fetch("/api/playlist/export", {
+      cache: "no-store"
+    });
+
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "playlist-export.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setPlaylistFeedback("Playlist exported.", "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not export playlist.", "error");
+  }
+}
+
+async function importPlaylist(csvText) {
+  try {
+    const payload = await fetchJson("/api/playlist/import", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        csvText,
+        mode: playlistImportMode
+      })
+    });
+
+    playlistPage = 1;
+    await loadPlaylist();
+    setPlaylistFeedback(
+      `Import finished: ${payload.importedCount} added, ${payload.duplicateCount} duplicates skipped, ${payload.finalCount} total.`,
+      "success"
+    );
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not import playlist.", "error");
+  }
+}
+
 function formatMarkdown(text) {
-  if (!text) return "";
+  if (!text) {
+    return "";
+  }
+
   let html = text
     .replace(/^# (.*$)/gm, "<h1>$1</h1>")
     .replace(/^## (.*$)/gm, "<h2>$1</h2>")
@@ -504,11 +758,8 @@ function formatMarkdown(text) {
     .replace(/^\* (.*$)/gm, "<li>$1</li>")
     .replace(/^- (.*$)/gm, "<li>$1</li>");
 
-  // Wrap list items in <ul>
   html = html.replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
-  // Clean up multiples
   html = html.replace(/<\/ul>\s*<ul>/g, "");
-
   return html;
 }
 
@@ -517,6 +768,9 @@ function handleUpdaterStatus(status) {
     appVersionBadge.textContent = `v${status.appVersion}`;
     appVersionBadge.className = "status-pill status-pill--ok";
   }
+
+  updateErrorText.hidden = true;
+  updateProgressContainer.hidden = true;
 
   if (status.state === "available") {
     updateVersionText.textContent = `Version ${status.version} is now available.`;
@@ -533,7 +787,6 @@ function handleUpdaterStatus(status) {
     updateActionBtn.textContent = "Downloading...";
   } else if (status.state === "downloaded") {
     updateModal.classList.add("is-visible");
-    updateProgressContainer.hidden = true;
     updateActionBtn.disabled = false;
     updateActionBtn.textContent = "Restart and Install";
   } else if (status.state === "error") {
@@ -547,28 +800,62 @@ function handleUpdaterStatus(status) {
   }
 }
 
+settingsForm.addEventListener("submit", saveSettings);
+playlistAddForm.addEventListener("submit", addPlaylistTrack);
+
+themeSelect.addEventListener("change", async (event) => {
+  if (!(event.target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  syncThemeSelection(event.target.value);
+
+  if (!isHydratingForm) {
+    lastSavedTheme = await saveDisplayPreference(
+      "theme",
+      event.target.value,
+      lastSavedTheme,
+      "Overlay theme saved."
+    );
+  }
+});
+
+dashboardLayoutSelect.addEventListener("change", async (event) => {
+  if (!(event.target instanceof HTMLSelectElement)) {
+    return;
+  }
+
+  syncDashboardLayoutSelection(event.target.value);
+
+  if (!isHydratingForm) {
+    lastSavedDashboardLayout = await saveDisplayPreference(
+      "dashboardLayout",
+      event.target.value,
+      lastSavedDashboardLayout,
+      "GUI look saved."
+    );
+  }
+});
+
+tabButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    activateTab(button.dataset.tabTarget || "overview");
+  });
+});
+
 updateSkipBtn.addEventListener("click", () => {
   updateModal.classList.remove("is-visible");
 });
 
 updateActionBtn.addEventListener("click", () => {
-  const btnText = updateActionBtn.textContent;
-  if (btnText === "Download Update" || btnText === "Try Again") {
+  const buttonText = updateActionBtn.textContent;
+
+  if (buttonText === "Download Update" || buttonText === "Try Again") {
     fetch("/api/updater/download", { method: "POST" }).catch(() => {});
-  } else if (btnText === "Restart and Install") {
+  } else if (buttonText === "Restart and Install") {
     fetch("/api/updater/install", { method: "POST" }).catch(() => {});
   }
 });
-
-// Initial load
-fetch("/api/updater")
-  .then((r) => r.json())
-  .then(handleUpdaterStatus)
-  .catch(() => {});
-
-if (socket) {
-  socket.on("app:updater-status", handleUpdaterStatus);
-}
 
 openAppdataButton.addEventListener("click", () => {
   fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
@@ -612,14 +899,84 @@ playbackCategoryInput.addEventListener("keydown", (event) => {
   }
 });
 
+playlistSearchInput.addEventListener("input", () => {
+  window.clearTimeout(playlistSearchDebounceTimer);
+  playlistSearchDebounceTimer = window.setTimeout(() => {
+    playlistQuery = playlistSearchInput.value.trim();
+    playlistPage = 1;
+    void loadPlaylist().catch((error) => {
+      setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
+    });
+  }, 180);
+});
+
+playlistPrevPageButton.addEventListener("click", () => {
+  playlistPage = Math.max(1, playlistPage - 1);
+  void loadPlaylist().catch((error) => {
+    setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
+  });
+});
+
+playlistNextPageButton.addEventListener("click", () => {
+  playlistPage = Math.min(playlistTotalPages, playlistPage + 1);
+  void loadPlaylist().catch((error) => {
+    setPlaylistFeedback(error?.message || "Could not load playlist.", "error");
+  });
+});
+
+playlistImportAppendButton.addEventListener("click", () => {
+  playlistImportMode = "append";
+  playlistImportFileInput.value = "";
+  playlistImportFileInput.click();
+});
+
+playlistImportReplaceButton.addEventListener("click", () => {
+  if (!window.confirm("Replace the entire fallback playlist with the CSV you select?")) {
+    return;
+  }
+
+  playlistImportMode = "replace";
+  playlistImportFileInput.value = "";
+  playlistImportFileInput.click();
+});
+
+playlistExportButton.addEventListener("click", () => {
+  void exportPlaylist();
+});
+
+playlistImportFileInput.addEventListener("change", async () => {
+  const file = playlistImportFileInput.files?.[0];
+
+  if (!file) {
+    return;
+  }
+
+  setPlaylistFeedback("Importing playlist...");
+
+  try {
+    const csvText = await file.text();
+    await importPlaylist(csvText);
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not read import file.", "error");
+  } finally {
+    playlistImportFileInput.value = "";
+  }
+});
+
 document.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
   }
 
-  const button = event.target.closest("[data-copy-target]");
-  if (button) {
-    const targetId = button.getAttribute("data-copy-target");
+  const deleteButton = event.target.closest("[data-playlist-delete-key]");
+  if (deleteButton) {
+    void deletePlaylistTrack(deleteButton.getAttribute("data-playlist-delete-key"));
+    return;
+  }
+
+  const copyButton = event.target.closest("[data-copy-target]");
+  if (copyButton) {
+    const targetId = copyButton.getAttribute("data-copy-target");
     if (targetId) {
       void copyFieldValue(targetId);
       return;
@@ -628,12 +985,21 @@ document.addEventListener("click", (event) => {
 
   const openButton = event.target.closest("[data-open-url-target]");
   if (openButton) {
-    const openTargetId = openButton.getAttribute("data-open-url-target");
-    if (openTargetId) {
-      openFieldValue(openTargetId);
+    const targetId = openButton.getAttribute("data-open-url-target");
+    if (targetId) {
+      openFieldValue(targetId);
     }
   }
 });
+
+fetch("/api/updater")
+  .then((response) => response.json())
+  .then(handleUpdaterStatus)
+  .catch(() => {});
+
+if (socket) {
+  socket.on("app:updater-status", handleUpdaterStatus);
+}
 
 window.setInterval(() => {
   void loadPlaybackState().catch(() => {});
@@ -647,6 +1013,10 @@ window.setInterval(() => {
   void loadRuntimeStatus().catch(() => {});
 }, 3000);
 
-void Promise.all([loadSettings(), loadPlaybackState()]).catch((error) => {
+void Promise.all([
+  loadSettings(),
+  loadPlaybackState(),
+  loadPlaylist()
+]).catch((error) => {
   setFeedback(error?.message || "Could not load dashboard data.", "error");
 });

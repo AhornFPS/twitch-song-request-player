@@ -21,7 +21,8 @@ const isolatedEnvKeys = [
   "PLAYBACK_SUPPRESSED_CATEGORIES",
   "YOUTUBE_API_KEY",
   "PORT",
-  "THEME"
+  "THEME",
+  "DASHBOARD_LAYOUT"
 ];
 
 function snapshotEnv(keys) {
@@ -154,7 +155,7 @@ test("app server closes even when a client keeps a connection open", async (t) =
   assert.equal(lingeringSocket.destroyed, true);
 });
 
-test("partial settings save updates only the theme", async (t) => {
+test("partial settings save updates display settings without touching other fields", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
@@ -183,7 +184,8 @@ test("partial settings save updates only the theme", async (t) => {
     twitchUsername: "demo-bot",
     youtubeApiKey: "youtube-key",
     port,
-    theme: "aurora"
+    theme: "aurora",
+    dashboardLayout: "atlas"
   };
 
   await fs.writeFile(
@@ -214,7 +216,8 @@ test("partial settings save updates only the theme", async (t) => {
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      theme: "winamp"
+      theme: "winamp",
+      dashboardLayout: "signal"
     })
   });
 
@@ -222,13 +225,91 @@ test("partial settings save updates only the theme", async (t) => {
 
   const payload = await response.json();
   assert.equal(payload.settings.theme, "winamp");
+  assert.equal(payload.settings.dashboardLayout, "signal");
   assert.equal(payload.settings.port, port);
   assert.equal(payload.settings.youtubeApiKey, initialSettings.youtubeApiKey);
+  assert.equal(Array.isArray(payload.dashboardLayoutOptions), true);
 
   const persistedSettings = JSON.parse(
     await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
   );
   assert.equal(persistedSettings.theme, "winamp");
+  assert.equal(persistedSettings.dashboardLayout, "signal");
   assert.equal(persistedSettings.port, port);
   assert.equal(persistedSettings.youtubeApiKey, initialSettings.youtubeApiKey);
+});
+
+test("playlist API supports listing, delete, import, and export", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Rick Roll\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const listResponse = await fetch(new URL("/api/playlist/tracks?q=rick", appServer.urls.dashboardUrl));
+  const listPayload = await listResponse.json();
+  assert.equal(listPayload.total, 1);
+
+  const importResponse = await fetch(new URL("/api/playlist/import", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      mode: "append",
+      csvText: "Link,Title\nhttps://soundcloud.com/artist/track,Club Mix\n"
+    })
+  });
+  assert.equal(importResponse.ok, true);
+  const importPayload = await importResponse.json();
+  assert.equal(importPayload.importedCount, 1);
+
+  const deleteResponse = await fetch(
+    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}`, appServer.urls.dashboardUrl),
+    {
+      method: "DELETE"
+    }
+  );
+  assert.equal(deleteResponse.status, 204);
+
+  const exportResponse = await fetch(new URL("/api/playlist/export", appServer.urls.dashboardUrl));
+  const exportText = await exportResponse.text();
+  assert.doesNotMatch(exportText, /Club Mix/);
 });

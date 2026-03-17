@@ -23,8 +23,8 @@ function captureEnv(keys) {
   };
 }
 
-test("saved theme and port stay active when no env override is provided", async (t) => {
-  const restoreEnv = captureEnv(["PORT", "THEME"]);
+test("saved theme, dashboard layout, and port stay active when no env override is provided", async (t) => {
+  const restoreEnv = captureEnv(["PORT", "THEME", "DASHBOARD_LAYOUT"]);
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 
   t.after(async () => {
@@ -37,10 +37,11 @@ test("saved theme and port stay active when no env override is provided", async 
 
   process.env.PORT = "";
   process.env.THEME = "";
+  process.env.DASHBOARD_LAYOUT = "";
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ port: 4311, theme: "sunset" }, null, 2)}\n`,
+    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "signal" }, null, 2)}\n`,
     "utf8"
   );
 
@@ -49,10 +50,11 @@ test("saved theme and port stay active when no env override is provided", async 
 
   assert.equal(settings.port, 4311);
   assert.equal(settings.theme, "sunset");
+  assert.equal(settings.dashboardLayout, "signal");
 });
 
-test("explicit env theme and port still override saved settings", async (t) => {
-  const restoreEnv = captureEnv(["PORT", "THEME"]);
+test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {
+  const restoreEnv = captureEnv(["PORT", "THEME", "DASHBOARD_LAYOUT"]);
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 
   t.after(async () => {
@@ -65,10 +67,11 @@ test("explicit env theme and port still override saved settings", async (t) => {
 
   process.env.PORT = "4322";
   process.env.THEME = "aurora";
+  process.env.DASHBOARD_LAYOUT = "paper";
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ port: 4311, theme: "sunset" }, null, 2)}\n`,
+    `${JSON.stringify({ port: 4311, theme: "sunset", dashboardLayout: "signal" }, null, 2)}\n`,
     "utf8"
   );
 
@@ -77,6 +80,7 @@ test("explicit env theme and port still override saved settings", async (t) => {
 
   assert.equal(settings.port, 4322);
   assert.equal(settings.theme, "aurora");
+  assert.equal(settings.dashboardLayout, "paper");
 });
 
 test("bundled client id is used when no stored or env override exists", async (t) => {
@@ -181,5 +185,38 @@ test("new overlay themes are exposed and accepted as valid saved settings", asyn
     "mixtape",
     "noir",
     "arcade"
+  ]);
+});
+
+test("dashboard layouts are exposed and accepted as valid saved settings", async (t) => {
+  const restoreEnv = captureEnv(["DASHBOARD_LAYOUT"]);
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    restoreEnv();
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  delete process.env.DASHBOARD_LAYOUT;
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ dashboardLayout: "neon" }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+  const layoutIds = configStore.getDashboardLayoutOptions().map((layout) => layout.id);
+
+  assert.equal(settings.dashboardLayout, "neon");
+  assert.deepEqual(layoutIds, [
+    "atlas",
+    "neon",
+    "paper",
+    "signal"
   ]);
 });

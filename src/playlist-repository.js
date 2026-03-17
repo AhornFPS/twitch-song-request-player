@@ -14,6 +14,38 @@ function normalizePlaylistTitle(value) {
   return "";
 }
 
+function buildPlaylistRow(link, title) {
+  const normalizedLink = typeof link === "string" ? link.trim() : "";
+  const provider = detectProvider(normalizedLink);
+
+  if (!normalizedLink || !provider) {
+    return null;
+  }
+
+  return {
+    Link: normalizedLink,
+    Title: normalizePlaylistTitle(title),
+    Provider: provider,
+    Key: getTrackKey(provider, normalizedLink)
+  };
+}
+
+function parsePlaylistRows(csvText) {
+  if (typeof csvText !== "string" || !csvText.trim()) {
+    return [];
+  }
+
+  const parsedRows = parse(csvText, {
+    columns: true,
+    skip_empty_lines: true,
+    trim: true
+  });
+
+  return parsedRows
+    .map((row) => buildPlaylistRow(row.Link, row.Title))
+    .filter(Boolean);
+}
+
 export class PlaylistRepository {
   constructor(filePath, { youtubeApiKey = "", youtubeMetadataResolver = resolveYouTubeTrackFromApi } = {}) {
     this.filePath = filePath;
@@ -34,21 +66,7 @@ export class PlaylistRepository {
         skip_empty_lines: true,
         trim: true
       });
-
-      const filteredRows = parsedRows.map((row) => {
-        const link = row.Link?.trim() ?? "";
-        const title = normalizePlaylistTitle(row.Title);
-        const provider = detectProvider(link);
-
-        return {
-          Link: link,
-          Title: title,
-          Provider: provider,
-          Key: provider ? getTrackKey(provider, link) : link
-        };
-      }).filter((row) => row.Link && row.Provider);
-
-      this.rows = filteredRows;
+      this.rows = parsePlaylistRows(raw);
       logInfo("Playlist initialized", {
         filePath: this.filePath,
         loadedRows: parsedRows.length,
@@ -132,6 +150,40 @@ export class PlaylistRepository {
     return this.rows.some((row) => row.Key === track.key);
   }
 
+  findTrackByKey(trackKey) {
+    return this.rows.find((row) => row.Key === trackKey) ?? null;
+  }
+
+  listTracks({ query = "", page = 1, pageSize = 100 } = {}) {
+    const normalizedQuery = typeof query === "string" ? query.trim().toLowerCase() : "";
+    const safePageSize = Math.min(Math.max(Number.parseInt(String(pageSize), 10) || 100, 1), 250);
+    const safePage = Math.max(Number.parseInt(String(page), 10) || 1, 1);
+    const filteredRows = normalizedQuery
+      ? this.rows.filter((row) => {
+          const haystack = `${row.Title} ${row.Link} ${row.Provider}`.toLowerCase();
+          return haystack.includes(normalizedQuery);
+        })
+      : this.rows;
+    const total = filteredRows.length;
+    const totalPages = total === 0 ? 1 : Math.ceil(total / safePageSize);
+    const normalizedPage = Math.min(safePage, totalPages);
+    const start = (normalizedPage - 1) * safePageSize;
+    const items = filteredRows.slice(start, start + safePageSize).map((row) => ({
+      key: row.Key,
+      url: row.Link,
+      title: row.Title || row.Link,
+      provider: row.Provider
+    }));
+
+    return {
+      items,
+      total,
+      page: normalizedPage,
+      pageSize: safePageSize,
+      totalPages
+    };
+  }
+
   async appendTrack(track) {
     if (this.hasTrack(track)) {
       return false;
@@ -153,6 +205,24 @@ export class PlaylistRepository {
     return true;
   }
 
+  async removeTrackByKey(trackKey) {
+    const track = this.findTrackByKey(trackKey);
+
+    if (!track) {
+      return false;
+    }
+
+    this.rows = this.rows.filter((row) => row.Key !== trackKey);
+    await this.persist();
+    logWarn("Track removed from playlist by key", {
+      key: trackKey,
+      title: track.Title || track.Link,
+      provider: track.Provider,
+      url: track.Link
+    });
+    return true;
+  }
+
   async removeTrack(track) {
     const originalLength = this.rows.length;
     this.rows = this.rows.filter((row) => row.Key !== track.key);
@@ -170,8 +240,8 @@ export class PlaylistRepository {
     return true;
   }
 
-  async persist() {
-    const csv = stringify(
+  exportCsv() {
+    return stringify(
       this.rows.map((row) => ({
         Link: row.Link,
         Title: row.Title
@@ -181,7 +251,60 @@ export class PlaylistRepository {
         columns: ["Link", "Title"]
       }
     );
+  }
 
-    await fs.writeFile(this.filePath, csv, "utf8");
+  async importFromCsv(csvText, { mode = "append" } = {}) {
+    const normalizedMode = mode === "replace" ? "replace" : "append";
+    const incomingRows = parsePlaylistRows(csvText);
+    const seenKeys = new Set();
+    const dedupedIncomingRows = [];
+    let duplicateRows = 0;
+
+    for (const row of incomingRows) {
+      if (seenKeys.has(row.Key)) {
+        duplicateRows += 1;
+        continue;
+      }
+
+      seenKeys.add(row.Key);
+      dedupedIncomingRows.push(row);
+    }
+
+    let importedCount = 0;
+
+    if (normalizedMode === "replace") {
+      importedCount = dedupedIncomingRows.length;
+      this.rows = dedupedIncomingRows;
+      await this.persist();
+    } else {
+      const existingKeys = new Set(this.rows.map((row) => row.Key));
+      const appendRows = dedupedIncomingRows.filter((row) => {
+        if (existingKeys.has(row.Key)) {
+          duplicateRows += 1;
+          return false;
+        }
+
+        existingKeys.add(row.Key);
+        return true;
+      });
+
+      if (appendRows.length > 0) {
+        this.rows.push(...appendRows);
+        importedCount = appendRows.length;
+        await this.persist();
+      }
+    }
+
+    return {
+      importedCount,
+      duplicateCount: duplicateRows,
+      totalRows: incomingRows.length,
+      finalCount: this.rows.length,
+      mode: normalizedMode
+    };
+  }
+
+  async persist() {
+    await fs.writeFile(this.filePath, this.exportCsv(), "utf8");
   }
 }

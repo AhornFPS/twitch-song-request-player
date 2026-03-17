@@ -9,6 +9,7 @@ import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
+import { resolveSongRequest } from "./providers.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
 
 const require = createRequire(import.meta.url);
@@ -34,12 +35,21 @@ function settingsChanged(previousSettings, nextSettings, keys) {
   return keys.some((key) => previousSettings[key] !== nextSettings[key]);
 }
 
-function buildSettingsPayload({ settings, activePort, usingFallbackPort, themeOptions, twitchStatus, twitchAuthStatus }) {
+function buildSettingsPayload({
+  settings,
+  activePort,
+  usingFallbackPort,
+  themeOptions,
+  dashboardLayoutOptions,
+  twitchStatus,
+  twitchAuthStatus
+}) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
     settings: toClientSettings(settings),
     themeOptions,
+    dashboardLayoutOptions,
     twitchStatus,
     twitchAuthStatus,
     runtime: {
@@ -206,6 +216,7 @@ export async function startAppServer({
         activePort,
         usingFallbackPort,
         themeOptions: configStore.getThemeOptions(),
+        dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus()
       })
@@ -222,6 +233,101 @@ export async function startAppServer({
         twitchAuthStatus: twitchBotService.getAuthStatus()
       })
     );
+  });
+
+  app.get("/api/playlist/tracks", (request, response) => {
+    const query = typeof request.query.q === "string" ? request.query.q : "";
+    const page = typeof request.query.page === "string" ? request.query.page : "1";
+    const pageSize = typeof request.query.pageSize === "string" ? request.query.pageSize : "100";
+
+    response.json(playlistRepository.listTracks({
+      query,
+      page,
+      pageSize
+    }));
+  });
+
+  app.post("/api/playlist/tracks", async (request, response) => {
+    try {
+      const input = typeof request.body?.input === "string" ? request.body.input.trim() : "";
+
+      if (!input) {
+        response.status(400).json({
+          error: "Track input is required."
+        });
+        return;
+      }
+
+      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey);
+      const added = await playlistRepository.appendTrack(track);
+
+      response.json({
+        added,
+        alreadyExists: !added,
+        track: {
+          key: track.key,
+          url: track.url,
+          title: track.title,
+          provider: track.provider
+        }
+      });
+    } catch (error) {
+      logError("Failed to add playlist track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to add track to playlist."
+      });
+    }
+  });
+
+  app.delete("/api/playlist/tracks/:trackKey", async (request, response) => {
+    try {
+      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const removed = await playlistRepository.removeTrackByKey(trackKey);
+
+      if (!removed) {
+        response.status(404).json({
+          error: "Track not found in playlist."
+        });
+        return;
+      }
+
+      response.status(204).end();
+    } catch (error) {
+      logError("Failed to delete playlist track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to delete playlist track."
+      });
+    }
+  });
+
+  app.post("/api/playlist/import", async (request, response) => {
+    try {
+      const csvText = typeof request.body?.csvText === "string" ? request.body.csvText : "";
+      const mode = request.body?.mode === "replace" ? "replace" : "append";
+      const summary = await playlistRepository.importFromCsv(csvText, { mode });
+
+      response.json(summary);
+    } catch (error) {
+      logError("Failed to import playlist CSV", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to import playlist CSV."
+      });
+    }
+  });
+
+  app.get("/api/playlist/export", (_request, response) => {
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", 'attachment; filename="playlist-export.csv"');
+    response.send(playlistRepository.exportCsv());
   });
 
   app.put("/api/settings", async (request, response) => {
@@ -269,6 +375,7 @@ export async function startAppServer({
           activePort,
           usingFallbackPort,
           themeOptions: configStore.getThemeOptions(),
+          dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus,
           twitchAuthStatus: twitchBotService.getAuthStatus()
         }),
@@ -306,6 +413,7 @@ export async function startAppServer({
           activePort,
           usingFallbackPort,
           themeOptions: configStore.getThemeOptions(),
+          dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus: twitchBotService.getStatus(),
           twitchAuthStatus: twitchBotService.getAuthStatus()
         })

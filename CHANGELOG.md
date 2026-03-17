@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Reworked the desktop dashboard into a denser tabbed workspace with four selectable GUI looks.
+- Added an in-app playlist library with search, paging, add, delete, CSV import, and CSV export controls.
+
 ## 1.4.6 - 2026-03-17
 
 - Changed in-app Windows updates to install silently and reopen the app without showing the setup wizard again.
