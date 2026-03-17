@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.4.3 - 2026-03-17
+
 - Fixed the desktop dashboard appearing unresponsive or blank by restoring the missing Socket.io client initialization.
 
 ## 1.4.2 - 2026-03-17
