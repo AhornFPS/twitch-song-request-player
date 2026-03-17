@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.4.6 - 2026-03-17
+
 - Changed in-app Windows updates to install silently and reopen the app without showing the setup wizard again.
 
 ## 1.4.5 - 2026-03-17
