@@ -21,6 +21,9 @@
           <p class="hero-panel__lede">
             Configure credentials, adjust runtime settings, and manage the OBS overlay URL from one place.
           </p>
+          <div style="margin-top: 1rem;">
+            <span id="app-version-badge" class="status-pill status-pill--idle" style="display: inline-flex;">Version Loading</span>
+          </div>
         </div>
         <div class="hero-panel__status">
           <div class="hero-stat">
@@ -279,6 +282,31 @@
       </section>
     </main>
 
-    <script src="/dashboard.js?v=20260316e"></script>
+    <div id="update-modal" class="modal-overlay">
+      <div class="modal update-modal" role="dialog" aria-labelledby="update-modal-title" aria-describedby="update-release-notes">
+        <div class="modal__header">
+          <h2 id="update-modal-title">Update Available</h2>
+        </div>
+        <div class="modal__body">
+          <p id="update-version-text" style="font-weight: 500; margin-bottom: 0.5rem;"></p>
+          <div class="update-notes-container">
+            <div id="update-release-notes" class="update-notes"></div>
+          </div>
+          <div id="update-progress-container" class="update-progress" hidden>
+            <div class="update-progress__bar">
+              <div id="update-progress-fill" class="update-progress__fill" style="width: 0%"></div>
+            </div>
+            <span id="update-progress-text" class="update-progress__text">Downloading... 0%</span>
+          </div>
+          <p id="update-error-text" class="feedback is-error" hidden></p>
+        </div>
+        <div class="modal__footer">
+          <button id="update-skip-btn" class="ghost-button" type="button">Skip for now</button>
+          <button id="update-action-btn" class="primary-button" type="button">Download Update</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/dashboard.js?v=20260317a"></script>
   </body>
 </html>

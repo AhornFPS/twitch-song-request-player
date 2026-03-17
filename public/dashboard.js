@@ -13,6 +13,18 @@ const currentTrackMeta = document.getElementById("current-track-meta");
 const queuePreview = document.getElementById("queue-preview");
 const openAppdataButton = document.getElementById("open-appdata-button");
 const twitchAuthStartButton = document.getElementById("twitch-auth-start");
+
+// Update Modal Elements
+const updateModal = document.getElementById("update-modal");
+const updateVersionText = document.getElementById("update-version-text");
+const updateReleaseNotes = document.getElementById("update-release-notes");
+const updateProgressContainer = document.getElementById("update-progress-container");
+const updateProgressFill = document.getElementById("update-progress-fill");
+const updateProgressText = document.getElementById("update-progress-text");
+const updateErrorText = document.getElementById("update-error-text");
+const updateActionBtn = document.getElementById("update-action-btn");
+const updateSkipBtn = document.getElementById("update-skip-btn");
+const appVersionBadge = document.getElementById("app-version-badge");
 const twitchAuthCancelButton = document.getElementById("twitch-auth-cancel");
 const twitchAuthStatusText = document.getElementById("twitch-auth-status-text");
 const twitchAuthDetails = document.getElementById("twitch-auth-details");
@@ -480,6 +492,80 @@ themeSelect.addEventListener("change", (event) => {
     }
   }
 });
+
+// Update Management Logic
+function formatMarkdown(text) {
+  if (!text) return "";
+  let html = text
+    .replace(/^# (.*$)/gm, "<h1>$1</h1>")
+    .replace(/^## (.*$)/gm, "<h2>$1</h2>")
+    .replace(/^### (.*$)/gm, "<h3>$1</h3>")
+    .replace(/^\* (.*$)/gm, "<li>$1</li>")
+    .replace(/^- (.*$)/gm, "<li>$1</li>");
+
+  // Wrap list items in <ul>
+  html = html.replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>");
+  // Clean up multiples
+  html = html.replace(/<\/ul>\s*<ul>/g, "");
+
+  return html;
+}
+
+function handleUpdaterStatus(status) {
+  if (status.appVersion) {
+    appVersionBadge.textContent = `v${status.appVersion}`;
+    appVersionBadge.className = "status-pill status-pill--ok";
+  }
+
+  if (status.state === "available") {
+    updateVersionText.textContent = `Version ${status.version} is now available.`;
+    updateReleaseNotes.innerHTML = formatMarkdown(status.releaseNotes);
+    updateActionBtn.textContent = "Download Update";
+    updateActionBtn.disabled = false;
+    updateModal.classList.add("is-visible");
+  } else if (status.state === "downloading") {
+    updateModal.classList.add("is-visible");
+    updateProgressContainer.hidden = false;
+    updateProgressFill.style.width = `${status.progress}%`;
+    updateProgressText.textContent = `Downloading... ${Math.round(status.progress)}%`;
+    updateActionBtn.disabled = true;
+    updateActionBtn.textContent = "Downloading...";
+  } else if (status.state === "downloaded") {
+    updateModal.classList.add("is-visible");
+    updateProgressContainer.hidden = true;
+    updateActionBtn.disabled = false;
+    updateActionBtn.textContent = "Restart and Install";
+  } else if (status.state === "error") {
+    updateModal.classList.add("is-visible");
+    updateErrorText.textContent = `Update Error: ${status.error}`;
+    updateErrorText.hidden = false;
+    updateActionBtn.disabled = false;
+    updateActionBtn.textContent = "Try Again";
+  } else {
+    updateModal.classList.remove("is-visible");
+  }
+}
+
+updateSkipBtn.addEventListener("click", () => {
+  updateModal.classList.remove("is-visible");
+});
+
+updateActionBtn.addEventListener("click", () => {
+  const btnText = updateActionBtn.textContent;
+  if (btnText === "Download Update" || btnText === "Try Again") {
+    fetch("/api/updater/download", { method: "POST" }).catch(() => {});
+  } else if (btnText === "Restart and Install") {
+    fetch("/api/updater/install", { method: "POST" }).catch(() => {});
+  }
+});
+
+// Initial load
+fetch("/api/updater")
+  .then((r) => r.json())
+  .then(handleUpdaterStatus)
+  .catch(() => {});
+
+socket.on("app:updater-status", handleUpdaterStatus);
 
 openAppdataButton.addEventListener("click", () => {
   fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});

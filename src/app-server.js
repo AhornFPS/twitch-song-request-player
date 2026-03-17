@@ -123,7 +123,8 @@ async function listenOnPort(server, port) {
 export async function startAppServer({
   forceSetup = false,
   noBrowser = false,
-  configStore = createConfigStore()
+  configStore = createConfigStore(),
+  updateService = null
 } = {}) {
   const runtimeConfig = await configStore.loadRuntimeConfig();
   const overlayBuildToken = `${packageJson.version}-${Date.now().toString(36)}`;
@@ -161,7 +162,34 @@ export async function startAppServer({
     }
   });
 
+  if (updateService) {
+    updateService.on("status-changed", (status) => {
+      io.emit("app:updater-status", status);
+    });
+  }
+
   app.use(express.json());
+
+  app.get("/api/updater", (_request, response) => {
+    if (!updateService) {
+      return response.json({ state: "idle", version: null, releaseNotes: null, progress: 0, error: null, appVersion: packageJson.version });
+    }
+    response.json(updateService.getStatus());
+  });
+
+  app.post("/api/updater/download", (_request, response) => {
+    if (updateService) {
+      updateService.downloadUpdate();
+    }
+    response.status(204).end();
+  });
+
+  app.post("/api/updater/install", (_request, response) => {
+    if (updateService) {
+      updateService.installUpdate();
+    }
+    response.status(204).end();
+  });
 
   app.get("/api/state", (_request, response) => {
     response.json({
@@ -425,6 +453,7 @@ export async function startAppServer({
     getCurrentSettings() {
       return { ...currentSettings };
     },
+    updates: updateService,
     async togglePauseCurrentTrack(triggeredBy = "desktop_media_key") {
       return playerController.togglePauseCurrentTrack(triggeredBy);
     },
@@ -441,6 +470,10 @@ export async function startAppServer({
       await twitchBotService.disconnect();
       io.disconnectSockets(true);
       io.close();
+      
+      if (updateService) {
+        updateService.removeAllListeners();
+      }
 
       const closeServerPromise = new Promise((resolve, reject) => {
         server.close((error) => {

@@ -1,11 +1,99 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { EventEmitter } from "node:events";
 import electronUpdater from "electron-updater";
 import { createConfigStore } from "../src/config.js";
 import { startAppServer } from "../src/app-server.js";
 
 const { autoUpdater } = electronUpdater;
+
+class UpdateService extends EventEmitter {
+  constructor(appVersion) {
+    super();
+    this.appVersion = appVersion;
+    this.status = {
+      state: "idle", // idle, checking, available, downloading, downloaded, error
+      version: null,
+      releaseNotes: null,
+      progress: 0,
+      error: null
+    };
+
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+
+    autoUpdater.on("checking-for-update", () => {
+      this.updateStatus({ state: "checking" });
+    });
+
+    autoUpdater.on("update-available", (info) => {
+      this.updateStatus({
+        state: "available",
+        version: info.version,
+        releaseNotes: info.releaseNotes || ""
+      });
+    });
+
+    autoUpdater.on("update-not-available", () => {
+      this.updateStatus({ state: "idle" });
+    });
+
+    autoUpdater.on("error", (error) => {
+      this.updateStatus({
+        state: "error",
+        error: error?.message || String(error)
+      });
+    });
+
+    autoUpdater.on("download-progress", (progressObj) => {
+      this.updateStatus({
+        state: "downloading",
+        progress: progressObj.percent
+      });
+    });
+
+    autoUpdater.on("update-downloaded", () => {
+      this.updateStatus({ state: "downloaded" });
+    });
+  }
+
+  updateStatus(partialStatus) {
+    this.status = { ...this.status, ...partialStatus };
+    this.emit("status-changed", this.status);
+  }
+
+  getStatus() {
+    return { ...this.status, appVersion: this.appVersion };
+  }
+
+  checkForUpdates() {
+    this.updateStatus({ error: null });
+    autoUpdater.checkForUpdates().catch((err) => {
+      this.updateStatus({
+        state: "error",
+        error: err?.message || String(err)
+      });
+    });
+  }
+
+  downloadUpdate() {
+    if (this.status.state !== "available") return;
+    this.updateStatus({ state: "downloading", progress: 0 });
+    autoUpdater.downloadUpdate().catch((err) => {
+      this.updateStatus({
+        state: "error",
+        error: err?.message || String(err)
+      });
+    });
+  }
+
+  installUpdate() {
+    if (this.status.state === "downloaded") {
+      autoUpdater.quitAndInstall(false, true);
+    }
+  }
+}
 
 const moduleDir = path.dirname(fileURLToPath(import.meta.url));
 const appRootDir = path.resolve(moduleDir, "..");
@@ -57,9 +145,12 @@ export async function bootstrapDesktopApp(electron) {
       }
     });
 
+    const updateService = app.isPackaged ? new UpdateService(app.getVersion()) : null;
+
     appServer = await startAppServer({
       noBrowser: true,
-      configStore
+      configStore,
+      updateService
     });
 
     return appServer;
@@ -197,9 +288,7 @@ export async function bootstrapDesktopApp(electron) {
   registerMediaShortcuts();
   await bootstrap();
 
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-      console.error("Auto updater check failed:", err);
-    });
+  if (app.isPackaged && !!appServer?.updates) {
+    appServer.updates.checkForUpdates();
   }
 }
