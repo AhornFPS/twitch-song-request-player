@@ -4,10 +4,13 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.4.0 - 2026-03-17
+
 - Added silent auto-updating using `electron-updater` and GitHub releases.
 - Changed the primary Windows build format to a standard installer (`nsis`) to support delta updates.
 - Moved settings and playlist storage to the user's `AppData` folder for installed builds to prevent data loss on updates.
 - Added an "Open Settings Folder" button to the dashboard to quickly locate `settings.json` and `playlist.csv` (especially for AppData migration).
+
 ## 1.3.3 - 2026-03-16
 
 - Fixed the OBS overlay track-title marquee so it scrolls through the loop point smoothly instead of pausing and snapping at the end.
