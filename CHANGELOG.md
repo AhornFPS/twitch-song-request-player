@@ -3,7 +3,11 @@
 This file is maintained between releases and should be updated as work is completed.
 
 ## Unreleased
+
+## 1.4.2 - 2026-03-17
+
 - Test version to check update flow
+
 ## 1.4.1 - 2026-03-17
 
 - Added an interactive update flow with a prompt showing GitHub release notes.
