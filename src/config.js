@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
+import { normalizeChatCommands } from "./chat-commands.js";
 
 const moduleDir =
   path.resolve(
@@ -144,6 +145,14 @@ function normalizeCategoryList(value, fallback = []) {
   );
 }
 
+function normalizeRequestPolicy(value) {
+  const rawValue = value && typeof value === "object" ? value : {};
+
+  return {
+    requestsEnabled: normalizeBoolean(rawValue.requestsEnabled, true)
+  };
+}
+
 function normalizeSettings(raw) {
   return {
     twitchChannel: trimValue(raw.twitchChannel ?? raw.TWITCH_CHANNEL).replace(/^#/, ""),
@@ -163,6 +172,8 @@ function normalizeSettings(raw) {
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
     guiPlayerEnabled: normalizeBoolean(raw.guiPlayerEnabled, false),
     guiPlayerVolume: normalizePercent(raw.guiPlayerVolume, 100),
+    requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
+    chatCommands: normalizeChatCommands(raw.chatCommands),
     theme: normalizeTheme(raw.theme ?? raw.THEME),
     dashboardLayout: normalizeDashboardLayout(raw.dashboardLayout ?? raw.DASHBOARD_LAYOUT)
   };
@@ -232,6 +243,14 @@ function normalizeOverrideSettings(raw) {
     overrides.port = normalizePort(raw.port ?? raw.PORT);
   }
 
+  if (Object.prototype.hasOwnProperty.call(raw, "requestPolicy")) {
+    overrides.requestPolicy = normalizeRequestPolicy(raw.requestPolicy);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(raw, "chatCommands")) {
+    overrides.chatCommands = normalizeChatCommands(raw.chatCommands);
+  }
+
   if (hasOwnSetting(raw, ["theme", "THEME"])) {
     overrides.theme = normalizeTheme(raw.theme ?? raw.THEME);
   }
@@ -265,6 +284,8 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.guiPlayerVolume === "number"
         ? normalizePercent(overridingSettings.guiPlayerVolume, baseSettings.guiPlayerVolume ?? 100)
         : (baseSettings.guiPlayerVolume ?? 100),
+    requestPolicy: overridingSettings.requestPolicy || baseSettings.requestPolicy || normalizeRequestPolicy(),
+    chatCommands: overridingSettings.chatCommands || baseSettings.chatCommands || normalizeChatCommands(),
     theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id,
     dashboardLayout:
       overridingSettings.dashboardLayout ||
@@ -300,6 +321,8 @@ function normalizeBundledSettings(raw) {
     port: 3000,
     guiPlayerEnabled: false,
     guiPlayerVolume: 100,
+    requestPolicy: normalizeRequestPolicy(),
+    chatCommands: normalizeChatCommands(),
     theme: themeOptions[0].id,
     dashboardLayout: dashboardLayoutOptions[0].id
   };
@@ -414,6 +437,8 @@ export function toRuntimeAppConfig(runtimeConfig) {
     youtubeApiKey: runtimeConfig.settings.youtubeApiKey,
     guiPlayerEnabled: runtimeConfig.settings.guiPlayerEnabled,
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
+    requestPolicy: runtimeConfig.settings.requestPolicy,
+    chatCommands: runtimeConfig.settings.chatCommands,
     theme: runtimeConfig.settings.theme,
     dashboardLayout: runtimeConfig.settings.dashboardLayout
   };

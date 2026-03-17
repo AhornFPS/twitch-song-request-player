@@ -272,3 +272,91 @@ test("duplicate requests are ignored when the same track is stopped", async () =
   assert.equal(controller.getPublicState().playbackStatus, "stopped");
   assert.equal(controller.getPublicState().queue.length, 0);
 });
+
+test("queue items can be promoted and removed from the dashboard queue", async () => {
+  const { controller } = createController();
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/track-one",
+    title: "Track One",
+    key: "youtube:track-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  const secondTrack = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/track-two",
+    title: "Track Two",
+    key: "youtube:track-two",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  const thirdTrack = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/track-three",
+    title: "Track Three",
+    key: "youtube:track-three",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerthree",
+      displayName: "ViewerThree"
+    }
+  });
+
+  const promoted = await controller.promoteQueuedTrack(thirdTrack.id, "dashboard");
+  assert.equal(promoted?.title, "Track Three");
+  assert.deepEqual(
+    controller.getPublicState().queue.map((track) => track.title),
+    ["Track Three", "Track Two"]
+  );
+
+  const removed = await controller.removeQueuedTrack(secondTrack.id, "dashboard");
+  assert.equal(removed?.title, "Track Two");
+  assert.deepEqual(
+    controller.getPublicState().queue.map((track) => track.title),
+    ["Track Three"]
+  );
+});
+
+test("queue can be cleared without interrupting the current track", async () => {
+  const { controller } = createController();
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/clear-current",
+    title: "Current Track",
+    key: "youtube:clear-current",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/clear-next",
+    title: "Queued Track",
+    key: "youtube:clear-next",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  const result = await controller.clearQueue("dashboard");
+
+  assert.equal(result.clearedCount, 1);
+  assert.equal(controller.getPublicState().currentTrack?.title, "Current Track");
+  assert.equal(controller.getPublicState().queue.length, 0);
+});

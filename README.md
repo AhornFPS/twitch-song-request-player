@@ -2,6 +2,8 @@
 
 Small Node app for OBS browser source playback, driven by Twitch chat commands.
 
+See [ROADMAP.md](ROADMAP.md) for the planned queue, moderation, command-configuration, library, safety, and dashboard expansion work.
+
 ## Download
 
 Grab the latest compiled Windows `.exe` directly from the [Releases](https://github.com/AhornFPS/twitch-song-request-player/releases/latest) page. You do not need to install Node or compile the app yourself if you use the pre-built release.

@@ -599,3 +599,234 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   assert.equal(nextPayload.state.playbackStatus, "playing");
   assert.equal(nextPayload.state.currentTrack.title, "Dashboard Two");
 });
+
+test("settings API persists request policy and configurable chat commands", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      requestPolicy: {
+        requestsEnabled: false
+      },
+      chatCommands: {
+        song_request: {
+          trigger: "!song",
+          aliases: ["!req"],
+          permission: "everyone",
+          enabled: true
+        },
+        current_song: {
+          trigger: "!np",
+          aliases: [],
+          permission: "everyone",
+          enabled: true
+        },
+        skip_current: {
+          trigger: "!skip",
+          aliases: [],
+          permission: "vip",
+          enabled: true
+        },
+        delete_current: {
+          trigger: "!delete",
+          aliases: [],
+          permission: "vip",
+          enabled: true
+        },
+        save_current: {
+          trigger: "!save",
+          aliases: [],
+          permission: "vip",
+          enabled: true
+        },
+        open_requests: {
+          trigger: "!openrequests",
+          aliases: [],
+          permission: "moderator",
+          enabled: true
+        },
+        close_requests: {
+          trigger: "!closerequests",
+          aliases: [],
+          permission: "moderator",
+          enabled: true
+        }
+      }
+    })
+  });
+
+  assert.equal(response.ok, true);
+  const payload = await response.json();
+  assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
+  assert.equal(payload.settings.chatCommands.song_request.trigger, "!song");
+  assert.deepEqual(payload.settings.chatCommands.song_request.aliases, ["!req"]);
+
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
+  );
+  assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
+  assert.equal(persistedSettings.chatCommands.current_song.trigger, "!np");
+});
+
+test("queue API supports listing, promoting, removing, and clearing queued tracks", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  const originalFetch = global.fetch;
+  let appServer = null;
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  global.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+    if (url.startsWith("https://www.youtube.com/oembed")) {
+      const parsed = new URL(url);
+      const requestedUrl = parsed.searchParams.get("url") || "";
+      return createJsonResponse({
+        title: requestedUrl.includes("queue-one")
+          ? "Queue One"
+          : requestedUrl.includes("queue-two")
+            ? "Queue Two"
+            : "Queue Three",
+        thumbnail_url: ""
+      });
+    }
+
+    return originalFetch(input, init);
+  };
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  await fetch(new URL("/api/queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ input: "https://youtu.be/queue-one" })
+  });
+  await fetch(new URL("/api/queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ input: "https://youtu.be/queue-two" })
+  });
+  await fetch(new URL("/api/queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ input: "https://youtu.be/queue-three" })
+  });
+
+  const listResponse = await fetch(new URL("/api/queue", appServer.urls.dashboardUrl));
+  const listPayload = await listResponse.json();
+  assert.equal(listPayload.items.length, 2);
+
+  const thirdTrackId = listPayload.items[1].id;
+  const promoteResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(thirdTrackId)}/promote`, appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(promoteResponse.ok, true);
+  const promotePayload = await promoteResponse.json();
+  assert.equal(promotePayload.state.queue[0].title, "Queue Three");
+
+  const secondTrackId = promotePayload.state.queue[1].id;
+  const removeResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(secondTrackId)}`, appServer.urls.dashboardUrl), {
+    method: "DELETE"
+  });
+  assert.equal(removeResponse.ok, true);
+  const removePayload = await removeResponse.json();
+  assert.equal(removePayload.track.title, "Queue Two");
+  assert.equal(removePayload.state.queue.length, 1);
+
+  const clearResponse = await fetch(new URL("/api/queue/clear", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(clearResponse.ok, true);
+  const clearPayload = await clearResponse.json();
+  assert.equal(clearPayload.result.clearedCount, 1);
+  assert.equal(clearPayload.state.queue.length, 0);
+});

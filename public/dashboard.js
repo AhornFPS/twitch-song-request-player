@@ -34,6 +34,7 @@ let isGuiPlayerSaving = false;
 let guiPlayerVolume = 100;
 let guiPlayerVolumeSaveTimer = null;
 let isGuiPlayerVolumeSaving = false;
+let queueActionTrackId = "";
 
 function el(id) {
   return document.getElementById(id);
@@ -75,6 +76,7 @@ function renderDashboard() {
             <span id="app-version-badge" class="status-pill status-pill--idle">Version Loading</span>
             <span id="twitch-status-pill" class="status-pill status-pill--idle">Waiting</span>
             <span id="twitch-category-pill" class="status-pill status-pill--idle">Category unknown</span>
+            <span id="requests-status-pill" class="status-pill status-pill--idle">Requests loading</span>
             <span id="server-port-pill" class="status-pill status-pill--accent">Port 3000</span>
           </div>
           <div class="appearance-controls appearance-controls--single">
@@ -83,7 +85,7 @@ function renderDashboard() {
               <select id="theme-select"></select>
             </label>
             <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
-            <button id="save-button" class="primary-button" type="submit" form="settings-form">Save settings</button>
+            <button id="save-button" class="primary-button" type="button">Save settings</button>
           </div>
         </div>
       </header>
@@ -92,8 +94,10 @@ function renderDashboard() {
 
       <nav class="atlas-tabs" aria-label="Dashboard sections">
         <button class="tab-button" type="button" data-tab="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab="queue">Queue</button>
+        <button class="tab-button" type="button" data-tab="requests">Requests</button>
         <button class="tab-button" type="button" data-tab="connection">Connection</button>
-        <button class="tab-button" type="button" data-tab="library">Playlist</button>
+        <button class="tab-button" type="button" data-tab="library">Library</button>
       </nav>
 
       <section id="tab-overview" class="atlas-view">
@@ -172,6 +176,82 @@ function renderDashboard() {
                   ></iframe>
                 </div>
               </section>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-queue" class="atlas-view" hidden>
+        <section class="panel card-panel queue-panel">
+          <div class="panel__header">
+            <div>
+              <p class="panel__eyebrow">Queue</p>
+              <h2>Live request queue</h2>
+            </div>
+            <div class="button-row">
+              <button id="queue-clear-button" class="ghost-button" type="button">Clear queue</button>
+            </div>
+          </div>
+          <p id="queue-feedback" class="feedback" role="status" aria-live="polite"></p>
+          <div class="queue-table-wrap">
+            <table class="playlist-table">
+              <thead>
+                <tr>
+                  <th scope="col">Title</th>
+                  <th scope="col">Requester</th>
+                  <th scope="col">Provider</th>
+                  <th scope="col" class="playlist-table__actions queue-table__actions">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="queue-table-body"></tbody>
+            </table>
+            <div id="queue-empty-state" class="empty-state" hidden>No queued requests yet.</div>
+          </div>
+        </section>
+      </section>
+
+      <section id="tab-requests" class="atlas-view" hidden>
+        <div class="stack-layout">
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Requests</p>
+                <h2>Viewer request controls</h2>
+              </div>
+              <span id="requests-tab-pill" class="status-pill status-pill--idle">Requests loading</span>
+            </div>
+            <div class="request-policy-row">
+              <label class="toggle-card" for="requests-enabled-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Accept song requests</span>
+                  <span id="requests-status-copy" class="toggle-card__body">Viewer requests can be queued from chat.</span>
+                </span>
+                <input id="requests-enabled-toggle" type="checkbox" />
+              </label>
+            </div>
+            <p id="requests-feedback" class="feedback" role="status" aria-live="polite"></p>
+          </section>
+
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Chat commands</p>
+                <h2>Reconfigure command triggers</h2>
+              </div>
+            </div>
+            <div class="playlist-table-wrap">
+              <table class="playlist-table command-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Command</th>
+                    <th scope="col">Primary trigger</th>
+                    <th scope="col">Aliases</th>
+                    <th scope="col">Permission</th>
+                    <th scope="col">Enabled</th>
+                  </tr>
+                </thead>
+                <tbody id="chat-commands-body"></tbody>
+              </table>
             </div>
           </section>
         </div>
@@ -384,8 +464,34 @@ function setOverviewFeedback(message, tone = "") {
   }
 }
 
+function setQueueFeedback(message, tone = "") {
+  const feedback = el("queue-feedback");
+  if (!feedback) {
+    return;
+  }
+
+  feedback.textContent = message;
+  feedback.className = "feedback";
+  if (tone) {
+    feedback.classList.add(`is-${tone}`);
+  }
+}
+
+function setRequestsFeedback(message, tone = "") {
+  const feedback = el("requests-feedback");
+  if (!feedback) {
+    return;
+  }
+
+  feedback.textContent = message;
+  feedback.className = "feedback";
+  if (tone) {
+    feedback.classList.add(`is-${tone}`);
+  }
+}
+
 function applyTabState() {
-  ["overview", "connection", "library"].forEach((tabId) => {
+  ["overview", "queue", "requests", "connection", "library"].forEach((tabId) => {
     const button = root.querySelector(`[data-tab="${tabId}"]`);
     const view = el(`tab-${tabId}`);
     const isActive = activeTab === tabId;
@@ -441,6 +547,122 @@ function renderThemeOptions(selectedTheme) {
   select.value = selectedTheme || "aurora";
 }
 
+function getRequestPolicy() {
+  return settingsPayload?.settings?.requestPolicy ?? {
+    requestsEnabled: true
+  };
+}
+
+function requestStatusPresentation(isEnabled) {
+  return isEnabled
+    ? {
+        className: "status-pill status-pill--ok",
+        text: "Requests open",
+        copy: "Viewer requests can be queued from chat."
+      }
+    : {
+        className: "status-pill status-pill--warn",
+        text: "Requests closed",
+        copy: "Only moderators and the broadcaster can add requests from chat."
+      };
+}
+
+function applyRequestPolicyState() {
+  const toggle = el("requests-enabled-toggle");
+  const isEnabled = toggle instanceof HTMLInputElement && !isHydratingForm
+    ? toggle.checked
+    : getRequestPolicy().requestsEnabled !== false;
+  const presentation = requestStatusPresentation(isEnabled);
+  const headerPill = el("requests-status-pill");
+  const tabPill = el("requests-tab-pill");
+  const statusCopy = el("requests-status-copy");
+
+  if (headerPill) {
+    headerPill.className = presentation.className;
+    headerPill.textContent = presentation.text;
+  }
+
+  if (tabPill) {
+    tabPill.className = presentation.className;
+    tabPill.textContent = presentation.text;
+  }
+
+  if (statusCopy) {
+    statusCopy.textContent = presentation.copy;
+  }
+
+  if (toggle instanceof HTMLInputElement) {
+    toggle.checked = isEnabled;
+  }
+}
+
+function renderChatCommandRows(chatCommands) {
+  const tableBody = el("chat-commands-body");
+  if (!tableBody) {
+    return;
+  }
+
+  tableBody.innerHTML = "";
+  Object.values(chatCommands ?? {}).forEach((command) => {
+    const row = document.createElement("tr");
+    row.setAttribute("data-chat-command-id", command.id);
+    row.innerHTML = `
+      <td>
+        <strong>${htmlEscape(command.label)}</strong>
+        <div class="command-table__description">${htmlEscape(command.description)}</div>
+      </td>
+      <td>
+        <input class="control-input" data-chat-command-field="trigger" type="text" value="${htmlEscape(command.trigger)}" />
+      </td>
+      <td>
+        <input class="control-input" data-chat-command-field="aliases" type="text" value="${htmlEscape((command.aliases || []).join(", "))}" placeholder="!alias1, !alias2" />
+      </td>
+      <td>
+        <select class="control-input" data-chat-command-field="permission">
+          <option value="everyone">Everyone</option>
+          <option value="vip">VIP / Mod / Broadcaster</option>
+          <option value="moderator">Mod / Broadcaster</option>
+          <option value="broadcaster">Broadcaster only</option>
+        </select>
+      </td>
+      <td>
+        <label class="command-toggle">
+          <input data-chat-command-field="enabled" type="checkbox" ${command.enabled ? "checked" : ""} />
+          <span>${command.enabled ? "Enabled" : "Disabled"}</span>
+        </label>
+      </td>
+    `;
+    row.querySelector('[data-chat-command-field="permission"]').value = command.permission || "everyone";
+    tableBody.appendChild(row);
+  });
+}
+
+function collectChatCommandsPayload() {
+  const rows = root.querySelectorAll("[data-chat-command-id]");
+
+  return Object.fromEntries(
+    Array.from(rows, (row) => {
+      const commandId = row.getAttribute("data-chat-command-id") || "";
+      const triggerInput = row.querySelector('[data-chat-command-field="trigger"]');
+      const aliasesInput = row.querySelector('[data-chat-command-field="aliases"]');
+      const permissionInput = row.querySelector('[data-chat-command-field="permission"]');
+      const enabledInput = row.querySelector('[data-chat-command-field="enabled"]');
+
+      return [
+        commandId,
+        {
+          trigger: triggerInput instanceof HTMLInputElement ? triggerInput.value.trim() : "",
+          aliases: aliasesInput instanceof HTMLInputElement
+            ? aliasesInput.value.split(",").map((value) => value.trim()).filter(Boolean)
+            : [],
+          permission: permissionInput instanceof HTMLSelectElement ? permissionInput.value : "everyone",
+          enabled: enabledInput instanceof HTMLInputElement ? enabledInput.checked : false
+        }
+      ];
+    })
+  );
+}
+
 function collectSettingsPayload() {
   return {
     twitchChannel: el("twitchChannel")?.value.trim() || "",
@@ -450,6 +672,12 @@ function collectSettingsPayload() {
     port: Number.parseInt(el("port")?.value || "3000", 10) || 3000,
     guiPlayerEnabled: settingsPayload?.settings?.guiPlayerEnabled === true,
     guiPlayerVolume,
+    requestPolicy: {
+      requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement
+        ? el("requests-enabled-toggle").checked
+        : true
+    },
+    chatCommands: collectChatCommandsPayload(),
     theme: el("theme-select")?.value || lastSavedTheme,
     chatSuppressedCategories,
     playbackSuppressedCategories
@@ -512,6 +740,8 @@ function applySettingsPayload() {
   setValue("port", settingsPayload.settings.port || 3000);
   renderCategorySelect("chat-category-select", chatSuppressedCategories);
   renderCategorySelect("playback-category-select", playbackSuppressedCategories);
+  renderChatCommandRows(settingsPayload.settings.chatCommands || {});
+  applyRequestPolicyState();
   applyRuntimeState();
   applyGuiPlayerState();
   isHydratingForm = false;
@@ -629,6 +859,7 @@ function applyRuntimeState() {
     void loadSettings().catch(() => {});
   }
   lastTwitchAuthState = twitchAuthStatus?.state || "";
+  applyRequestPolicyState();
   applyGuiPlayerState();
 }
 
@@ -804,6 +1035,46 @@ function describePlaybackMeta({ currentTrack, stoppedTrack, playbackStatus, queu
   return "Queue is empty. Fallback playlist will play automatically.";
 }
 
+function renderFullQueue(queue) {
+  const tableBody = el("queue-table-body");
+  const emptyState = el("queue-empty-state");
+  const clearButton = el("queue-clear-button");
+
+  if (clearButton) {
+    clearButton.disabled = queueActionTrackId === "__clear__" || queue.length === 0;
+  }
+
+  if (emptyState) {
+    emptyState.hidden = queue.length > 0;
+  }
+
+  if (!tableBody) {
+    return;
+  }
+
+  tableBody.innerHTML = "";
+  queue.forEach((track, index) => {
+    const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    const row = document.createElement("tr");
+    const isBusy = queueActionTrackId === track.id;
+    row.innerHTML = `
+      <td>
+        <strong>${htmlEscape(track.title)}</strong>
+        <div class="command-table__description">#${index + 1} in queue</div>
+      </td>
+      <td>${htmlEscape(requester)}</td>
+      <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
+      <td class="playlist-table__actions queue-table__actions">
+        <div class="button-row button-row--compact">
+          <button class="ghost-button" type="button" data-queue-action="promote" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Move to top</button>
+          <button class="ghost-button ghost-button--danger" type="button" data-queue-action="remove" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Remove</button>
+        </div>
+      </td>
+    `;
+    tableBody.appendChild(row);
+  });
+}
+
 async function loadPlaybackState() {
   playbackState = await fetchJson("/api/state");
   applyPlaybackState();
@@ -878,6 +1149,8 @@ function applyPlaybackState() {
     item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(requester)}</span>`;
     queueList.appendChild(item);
   });
+
+  renderFullQueue(queue);
 }
 
 async function loadPlaylist() {
@@ -951,7 +1224,7 @@ async function persistSettings(payload) {
 }
 
 async function saveSettings(event) {
-  event.preventDefault();
+  event?.preventDefault?.();
   isSavingSettings = true;
   const saveButton = el("save-button");
   const themeSelect = el("theme-select");
@@ -1258,6 +1531,78 @@ async function playNextOverviewTrack() {
   }
 }
 
+async function promoteQueueTrack(trackId) {
+  if (!trackId) {
+    return;
+  }
+
+  queueActionTrackId = trackId;
+  applyPlaybackState();
+  setQueueFeedback("Moving track to the top...");
+
+  try {
+    const payload = await fetchJson(`/api/queue/${encodeURIComponent(trackId)}/promote`, {
+      method: "POST"
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    setQueueFeedback(`Moved ${payload.track.title} to the top of the queue.`, "success");
+  } catch (error) {
+    setQueueFeedback(error?.message || "Could not reorder the queue.", "error");
+  } finally {
+    queueActionTrackId = "";
+    applyPlaybackState();
+  }
+}
+
+async function removeQueueTrack(trackId) {
+  if (!trackId) {
+    return;
+  }
+
+  queueActionTrackId = trackId;
+  applyPlaybackState();
+  setQueueFeedback("Removing queued track...");
+
+  try {
+    const payload = await fetchJson(`/api/queue/${encodeURIComponent(trackId)}`, {
+      method: "DELETE"
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    setQueueFeedback(`Removed ${payload.track.title} from the queue.`, "success");
+  } catch (error) {
+    setQueueFeedback(error?.message || "Could not remove the queued track.", "error");
+  } finally {
+    queueActionTrackId = "";
+    applyPlaybackState();
+  }
+}
+
+async function clearQueue() {
+  if (!window.confirm("Clear every queued request?")) {
+    return;
+  }
+
+  queueActionTrackId = "__clear__";
+  applyPlaybackState();
+  setQueueFeedback("Clearing queue...");
+
+  try {
+    const payload = await fetchJson("/api/queue/clear", {
+      method: "POST"
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    setQueueFeedback(`Cleared ${payload.result.clearedCount} queued track${payload.result.clearedCount === 1 ? "" : "s"}.`, "success");
+  } catch (error) {
+    setQueueFeedback(error?.message || "Could not clear the queue.", "error");
+  } finally {
+    queueActionTrackId = "";
+    applyPlaybackState();
+  }
+}
+
 async function deletePlaylistTrack(trackKey) {
   if (!trackKey || !window.confirm("Delete this track from the fallback playlist?")) {
     return;
@@ -1441,7 +1786,25 @@ root.addEventListener("click", (event) => {
     return;
   }
 
-  if (event.target.id === "open-appdata-button") {
+  const queueActionButton = event.target.closest("[data-queue-action]");
+  if (queueActionButton) {
+    const trackId = queueActionButton.getAttribute("data-queue-track-id");
+    const action = queueActionButton.getAttribute("data-queue-action");
+
+    if (action === "promote") {
+      void promoteQueueTrack(trackId);
+      return;
+    }
+
+    if (action === "remove") {
+      void removeQueueTrack(trackId);
+      return;
+    }
+  }
+
+  if (event.target.id === "save-button") {
+    void saveSettings();
+  } else if (event.target.id === "open-appdata-button") {
     fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
   } else if (event.target.id === "twitch-auth-start") {
     void startTwitchAuth();
@@ -1487,6 +1850,8 @@ root.addEventListener("click", (event) => {
     }
   } else if (event.target.id === "playlist-export-button") {
     void exportPlaylist();
+  } else if (event.target.id === "queue-clear-button") {
+    void clearQueue();
   } else if (event.target.id === "overview-play-pause") {
     void toggleOverviewPlayback();
   } else if (event.target.id === "overview-stop") {
@@ -1523,6 +1888,10 @@ root.addEventListener("change", async (event) => {
     await saveThemeSelection(target.value);
   }
 
+  if (target.id === "requests-enabled-toggle" && target instanceof HTMLInputElement) {
+    applyRequestPolicyState();
+  }
+
   if (target.id === "playlist-import-file" && target instanceof HTMLInputElement) {
     const file = target.files?.[0];
     if (file) {
@@ -1541,6 +1910,11 @@ root.addEventListener("change", async (event) => {
       guiPlayerVolumeSaveTimer = null;
     }
     await persistGuiPlayerVolume();
+  } else if (target.matches('[data-chat-command-field="enabled"]') && target instanceof HTMLInputElement) {
+    const label = target.closest(".command-toggle")?.querySelector("span");
+    if (label) {
+      label.textContent = target.checked ? "Enabled" : "Disabled";
+    }
   }
 });
 

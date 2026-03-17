@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getDefaultChatCommands } from "./chat-commands.js";
 import { TwitchBot } from "./twitch-bot.js";
 
 function createBotHarness({
   currentTrack,
   suppressChatMessages = false,
   addRequestResult = null,
-  resolvedTrack = null
+  resolvedTrack = null,
+  chatCommands = getDefaultChatCommands(),
+  requestPolicy = {
+    requestsEnabled: true
+  },
+  updateSettings = async () => ({ requestPolicy })
 }) {
   let playbackListener = null;
   const sentMessages = [];
@@ -45,12 +51,15 @@ function createBotHarness({
         oauthToken: "oauth:test",
         clientId: "",
         clientSecret: ""
-      }
+      },
+      chatCommands,
+      requestPolicy
     },
     playerController,
     client,
     channelInfo,
-    songRequestResolver: async () => resolvedTrack
+    songRequestResolver: async () => resolvedTrack,
+    updateSettings
   });
 
   return {
@@ -135,6 +144,111 @@ test("duplicate song requests send the queue warning to Twitch chat", async () =
       message: "Song Duplicate Track already in the queue"
     }
   ]);
+});
+
+test("renamed chat commands are honored", async () => {
+  const chatCommands = getDefaultChatCommands();
+  chatCommands.song_request.trigger = "!song";
+  chatCommands.current_song.trigger = "!np";
+
+  const harness = createBotHarness({
+    currentTrack: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://youtu.be/example",
+      title: "Playlist Track",
+      origin: "playlist",
+      isSaved: true
+    },
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/custom",
+      title: "Custom Trigger Track",
+      key: "youtube:custom",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "track-2",
+      provider: "youtube",
+      url: "https://youtu.be/custom",
+      title: "Custom Trigger Track",
+      key: "youtube:custom",
+      origin: "queue",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      isSaved: false,
+      alreadyQueued: false,
+      duplicateType: null
+    },
+    chatCommands
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!song custom");
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!np");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Queued: Custom Trigger Track (requested by ViewerOne)"
+    },
+    {
+      channel: "#testchannel",
+      message: "Current song: Playlist Track https://youtu.be/example"
+    }
+  ]);
+});
+
+test("closed requests block viewer song requests but moderators can reopen them", async () => {
+  const updatedPolicies = [];
+  const harness = createBotHarness({
+    currentTrack: null,
+    requestPolicy: {
+      requestsEnabled: false
+    },
+    updateSettings: async (patch) => {
+      updatedPolicies.push(patch);
+      return {
+        requestPolicy: patch.requestPolicy
+      };
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr custom");
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "modone",
+    "display-name": "ModOne",
+    mod: true,
+    badges: {
+      moderator: "1"
+    }
+  }, "!sropen");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Song requests are currently closed."
+    },
+    {
+      channel: "#testchannel",
+      message: "Song requests are now open."
+    }
+  ]);
+  assert.equal(updatedPolicies.length, 1);
+  assert.equal(updatedPolicies[0].requestPolicy.requestsEnabled, true);
 });
 
 test("duplicate requests for the current song send the already playing warning", async () => {

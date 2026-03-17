@@ -118,6 +118,63 @@ export class PlayerController {
     };
   }
 
+  async removeQueuedTrack(trackId, triggeredBy) {
+    const trackIndex = this.queue.findIndex((track) => track.id === trackId);
+
+    if (trackIndex < 0) {
+      logWarn("Requested queued-track removal for an unknown track", {
+        triggeredBy,
+        trackId
+      });
+      return null;
+    }
+
+    const [removedTrack] = this.queue.splice(trackIndex, 1);
+    logInfo("Removed queued track", {
+      triggeredBy,
+      track: formatTrack(removedTrack),
+      remainingQueue: this.queue.length
+    });
+    this.broadcastState();
+    return this.serializeTrack(removedTrack);
+  }
+
+  async promoteQueuedTrack(trackId, triggeredBy) {
+    const trackIndex = this.queue.findIndex((track) => track.id === trackId);
+
+    if (trackIndex < 0) {
+      logWarn("Requested queued-track promotion for an unknown track", {
+        triggeredBy,
+        trackId
+      });
+      return null;
+    }
+
+    const [trackToPromote] = this.queue.splice(trackIndex, 1);
+    this.queue.unshift(trackToPromote);
+    logInfo("Promoted queued track", {
+      triggeredBy,
+      track: formatTrack(trackToPromote),
+      queueLength: this.queue.length
+    });
+    this.broadcastState();
+    return this.serializeTrack(trackToPromote);
+  }
+
+  async clearQueue(triggeredBy) {
+    const clearedTracks = this.queue.map((track) => this.serializeTrack(track));
+    this.queue = [];
+    logInfo("Cleared queue", {
+      triggeredBy,
+      clearedCount: clearedTracks.length
+    });
+    this.broadcastState();
+    return {
+      clearedCount: clearedTracks.length,
+      clearedTracks
+    };
+  }
+
   findDuplicateTrack(trackKey) {
     if (!trackKey) {
       return null;

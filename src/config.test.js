@@ -240,3 +240,47 @@ test("dashboard layout is fixed to atlas", async (t) => {
     "atlas"
   ]);
 });
+
+test("request policy and chat commands are normalized with defaults", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      requestPolicy: {
+        requestsEnabled: false
+      },
+      chatCommands: {
+        song_request: {
+          trigger: "requestsong",
+          aliases: ["playsong"],
+          permission: "everyone",
+          enabled: true
+        },
+        skip_current: {
+          trigger: "!next",
+          aliases: [],
+          permission: "moderator",
+          enabled: true
+        }
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.requestPolicy.requestsEnabled, false);
+  assert.equal(settings.chatCommands.song_request.trigger, "!requestsong");
+  assert.deepEqual(settings.chatCommands.song_request.aliases, ["!playsong"]);
+  assert.equal(settings.chatCommands.skip_current.trigger, "!next");
+  assert.equal(settings.chatCommands.current_song.trigger, "!currentsong");
+});

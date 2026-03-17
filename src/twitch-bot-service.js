@@ -10,8 +10,7 @@ function buildConfigSignature(settings) {
     twitchOauthToken: settings.twitchOauthToken,
     twitchRefreshToken: settings.twitchRefreshToken,
     twitchClientId: settings.twitchClientId,
-    twitchClientSecret: settings.twitchClientSecret,
-    youtubeApiKey: settings.youtubeApiKey
+    twitchClientSecret: settings.twitchClientSecret
   });
 }
 
@@ -27,7 +26,9 @@ function toBotConfig(settings) {
       chatSuppressedCategories: settings.chatSuppressedCategories,
       playbackSuppressedCategories: settings.playbackSuppressedCategories
     },
-    youtubeApiKey: settings.youtubeApiKey
+    youtubeApiKey: settings.youtubeApiKey,
+    requestPolicy: settings.requestPolicy,
+    chatCommands: settings.chatCommands
   };
 }
 
@@ -36,10 +37,11 @@ export class TwitchBotService {
     playerController,
     persistSettings = async (partialSettings) => partialSettings,
     authManager = new TwitchAuthManager(),
-    botFactory = ({ config, playerController: nextPlayerController }) =>
+    botFactory = ({ config, playerController: nextPlayerController, updateSettings }) =>
       new TwitchBot({
         config,
-        playerController: nextPlayerController
+        playerController: nextPlayerController,
+        updateSettings
       })
   }) {
     this.playerController = playerController;
@@ -103,6 +105,7 @@ export class TwitchBotService {
 
     const nextSignature = buildConfigSignature(hydratedSettings);
     if (this.bot && this.configSignature === nextSignature) {
+      this.bot.updateConfig?.(toBotConfig(hydratedSettings));
       await this.refreshCategoryPolicy();
       this.startCategoryPolicyLoop();
       this.startTokenValidationLoop();
@@ -117,7 +120,15 @@ export class TwitchBotService {
 
     const bot = this.botFactory({
       config: toBotConfig(hydratedSettings),
-      playerController: this.playerController
+      playerController: this.playerController,
+      updateSettings: async (partialSettings) => {
+        const nextSettings = await this.persistSettings(partialSettings);
+        this.currentSettings = {
+          ...nextSettings
+        };
+        this.bot?.updateConfig?.(toBotConfig(nextSettings));
+        return nextSettings;
+      }
     });
 
     try {

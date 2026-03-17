@@ -5,6 +5,7 @@ import express from "express";
 import http from "node:http";
 import { Server as SocketServer } from "socket.io";
 import { createRequire } from "node:module";
+import { validateChatCommands } from "./chat-commands.js";
 import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
@@ -282,6 +283,82 @@ export async function startAppServer({
     }
   });
 
+  app.get("/api/queue", (_request, response) => {
+    response.json({
+      items: playerController.getPublicState().queue
+    });
+  });
+
+  app.delete("/api/queue/:trackId", async (request, response) => {
+    try {
+      const removedTrack = await playerController.removeQueuedTrack(request.params.trackId || "", "dashboard");
+
+      if (!removedTrack) {
+        response.status(404).json({
+          error: "Queued track not found."
+        });
+        return;
+      }
+
+      response.json({
+        track: removedTrack,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to remove queued track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to remove queued track."
+      });
+    }
+  });
+
+  app.post("/api/queue/:trackId/promote", async (request, response) => {
+    try {
+      const promotedTrack = await playerController.promoteQueuedTrack(request.params.trackId || "", "dashboard");
+
+      if (!promotedTrack) {
+        response.status(404).json({
+          error: "Queued track not found."
+        });
+        return;
+      }
+
+      response.json({
+        track: promotedTrack,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to promote queued track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to promote queued track."
+      });
+    }
+  });
+
+  app.post("/api/queue/clear", async (_request, response) => {
+    try {
+      const result = await playerController.clearQueue("dashboard");
+      response.json({
+        result,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to clear queue", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to clear queue."
+      });
+    }
+  });
+
   app.post("/api/playlist/tracks", async (request, response) => {
     try {
       const input = typeof request.body?.input === "string" ? request.body.input.trim() : "";
@@ -367,6 +444,16 @@ export async function startAppServer({
 
   app.put("/api/settings", async (request, response) => {
     try {
+      if (request.body?.chatCommands) {
+        const issues = validateChatCommands(request.body.chatCommands);
+        if (issues.length > 0) {
+          response.status(400).json({
+            error: issues[0]
+          });
+          return;
+        }
+      }
+
       const previousSettings = currentSettings;
       const previousTwitchStatus = twitchBotService.getStatus();
       const nextSettings = await configStore.saveSettings({
@@ -386,7 +473,9 @@ export async function startAppServer({
         "twitchClientSecret",
         "chatSuppressedCategories",
         "playbackSuppressedCategories",
-        "youtubeApiKey"
+        "youtubeApiKey",
+        "requestPolicy",
+        "chatCommands"
       ]);
 
       const shouldReconnectBot =

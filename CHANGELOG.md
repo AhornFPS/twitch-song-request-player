@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added configurable Twitch chat commands so streamers can rename or disable the built-in request and moderation triggers from the dashboard.
+- Added dedicated Queue and Requests dashboard tabs with live queue management and request open/closed controls.
+
 ## 1.6.0 - 2026-03-17
 
 - Added a persistent Overview GUI player toggle that can keep the embedded player active without OBS and restores its last on/off state on app launch.

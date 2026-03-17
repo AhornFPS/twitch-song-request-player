@@ -161,6 +161,10 @@ a {
   align-items: center;
 }
 
+.button-row--compact {
+  gap: 8px;
+}
+
 .appearance-controls--single {
   justify-content: flex-end;
 }
@@ -552,6 +556,11 @@ a {
   gap: 14px;
 }
 
+.queue-panel {
+  display: grid;
+  gap: 14px;
+}
+
 .playlist-tools {
   display: grid;
   gap: 12px;
@@ -607,8 +616,61 @@ a {
   width: 112px;
 }
 
+.queue-table__actions {
+  width: 240px;
+}
+
 .playlist-link {
   word-break: break-all;
+}
+
+.command-table__description {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.command-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+}
+
+.request-policy-row {
+  display: grid;
+}
+
+.toggle-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.toggle-card__copy {
+  display: grid;
+  gap: 6px;
+}
+
+.toggle-card__title {
+  font-weight: 700;
+}
+
+.toggle-card__body {
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.toggle-card input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--accent);
 }
 
 .provider-chip {
