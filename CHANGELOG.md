@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.4.4 - 2026-03-17
+
 - version push for update flow testing
 
 ## 1.4.3 - 2026-03-17
