@@ -1022,7 +1022,16 @@ function renderQueue(queue) {
     item.style.animationDelay = `${index * 70}ms`;
     const requester =
       track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
-    item.innerHTML = `<span class="queue-title">${track.title}</span><span class="queue-meta">${requester}</span>`;
+    const title = document.createElement("span");
+    title.className = "queue-title";
+    title.textContent = track.title;
+
+    const meta = document.createElement("span");
+    meta.className = "queue-meta";
+    meta.textContent = requester;
+
+    item.appendChild(title);
+    item.appendChild(meta);
     queueList.appendChild(item);
   });
 }

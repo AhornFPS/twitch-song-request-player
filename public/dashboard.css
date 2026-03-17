@@ -315,7 +315,8 @@ a {
 }
 
 .atlas-grid--connection {
-  grid-template-columns: minmax(0, 1.15fr) minmax(360px, 0.85fr);
+  grid-template-columns: minmax(0, 1.03fr) minmax(430px, 0.97fr);
+  align-items: start;
 }
 
 .panel,
@@ -381,16 +382,20 @@ a {
 
 .copy-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   margin-top: 10px;
 }
 
 .copy-row--triple {
-  grid-template-columns: 1fr auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .copy-row__button {
   padding: 0 14px;
+}
+
+.rule-card .copy-row__button {
+  padding: 0 12px;
 }
 
 .playback-card__title {

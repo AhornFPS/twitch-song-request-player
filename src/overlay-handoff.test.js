@@ -21,10 +21,11 @@ function createClassList() {
 
 function createElement(id = "") {
   const styleValues = new Map();
-  return {
+  const element = {
     id,
     className: "",
     classList: createClassList(),
+    children: [],
     style: {
       display: "",
       width: "",
@@ -39,7 +40,6 @@ function createElement(id = "") {
       },
     },
     textContent: "",
-    innerHTML: "",
     offsetWidth: 0,
     clientWidth: 0,
     scrollWidth: 0,
@@ -52,11 +52,29 @@ function createElement(id = "") {
       replaceChild() {
       }
     },
-    appendChild() {
+    appendChild(child) {
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
     },
     removeAttribute() {
     }
   };
+
+  let innerHtmlValue = "";
+  Object.defineProperty(element, "innerHTML", {
+    get() {
+      return innerHtmlValue;
+    },
+    set(value) {
+      innerHtmlValue = String(value);
+      if (innerHtmlValue === "") {
+        this.children = [];
+      }
+    }
+  });
+
+  return element;
 }
 
 function createOverlayTestContext() {
@@ -324,4 +342,49 @@ test("finished soundcloud playback preserves the handoff path for the next youtu
   assert.equal(locationReplaceCalls.length, 1);
   assert.equal(sessionStorageData.get("soundcloud-to-youtube-reload-track"), "yt-next");
   assert.match(locationReplaceCalls[0], /handoffReload=/);
+});
+
+test("overlay queue treats track titles and requesters as text", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-safe",
+      provider: "youtube",
+      title: "Current track",
+      url: "https://www.youtube.com/watch?v=safe123",
+      origin: "playlist"
+    },
+    queue: [
+      {
+        id: "queued-malicious",
+        provider: "youtube",
+        title: '<img src=x onerror="window.__xssTitle=1">',
+        url: "https://www.youtube.com/watch?v=queued123",
+        origin: "queue",
+        requestedBy: {
+          username: "viewer",
+          displayName: '<svg onload="window.__xssRequester=1">'
+        }
+      }
+    ]
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  const queueList = context.document.getElementById("queue-list");
+  assert.equal(queueList.children.length, 1);
+  assert.equal(queueList.children[0].innerHTML, "");
+  assert.equal(queueList.children[0].children.length, 2);
+  assert.equal(queueList.children[0].children[0].textContent, '<img src=x onerror="window.__xssTitle=1">');
+  assert.equal(queueList.children[0].children[1].textContent, '<svg onload="window.__xssRequester=1">');
+  assert.equal(context.window.__xssTitle, undefined);
+  assert.equal(context.window.__xssRequester, undefined);
 });

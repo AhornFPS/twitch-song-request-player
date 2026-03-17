@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Rebalanced the Connection tab so Category Rules has more room and the Add category field no longer gets cramped.
+- Fixed the OBS overlay queue to render requested track titles and requester names as plain text so chat-driven requests cannot inject markup.
+
 ## 1.5.0 - 2026-03-17
 
 - Simplified the desktop dashboard back to the Atlas layout and removed the GUI look switcher.
