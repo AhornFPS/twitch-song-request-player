@@ -395,7 +395,7 @@ test("partial settings save updates the GUI player volume without touching other
   assert.equal(persistedSettings.port, port);
 });
 
-test("playlist API supports listing, delete, import, and export", async (t) => {
+test("playlist API supports listing, sorting, bulk queue/delete, import, and export", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
@@ -439,9 +439,10 @@ test("playlist API supports listing, delete, import, and export", async (t) => {
     })
   });
 
-  const listResponse = await fetch(new URL("/api/playlist/tracks?q=rick", appServer.urls.dashboardUrl));
+  const listResponse = await fetch(new URL("/api/playlist/tracks?q=rick&sortBy=title", appServer.urls.dashboardUrl));
   const listPayload = await listResponse.json();
   assert.equal(listPayload.total, 1);
+  assert.equal(listPayload.sortBy, "title");
 
   const importResponse = await fetch(new URL("/api/playlist/import", appServer.urls.dashboardUrl), {
     method: "POST",
@@ -457,13 +458,32 @@ test("playlist API supports listing, delete, import, and export", async (t) => {
   const importPayload = await importResponse.json();
   assert.equal(importPayload.importedCount, 1);
 
-  const deleteResponse = await fetch(
-    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}`, appServer.urls.dashboardUrl),
-    {
-      method: "DELETE"
-    }
-  );
-  assert.equal(deleteResponse.status, 204);
+  const bulkQueueResponse = await fetch(new URL("/api/playlist/bulk-queue", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+    })
+  });
+  assert.equal(bulkQueueResponse.ok, true);
+  const bulkQueuePayload = await bulkQueueResponse.json();
+  assert.equal(bulkQueuePayload.result.queuedCount, 1);
+  assert.equal(bulkQueuePayload.state.queue[0].title, "Club Mix");
+
+  const bulkDeleteResponse = await fetch(new URL("/api/playlist/bulk-delete", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+    })
+  });
+  assert.equal(bulkDeleteResponse.ok, true);
+  const bulkDeletePayload = await bulkDeleteResponse.json();
+  assert.equal(bulkDeletePayload.result.removedCount, 1);
 
   const exportResponse = await fetch(new URL("/api/playlist/export", appServer.urls.dashboardUrl));
   const exportText = await exportResponse.text();
@@ -651,7 +671,16 @@ test("settings API persists request policy and configurable chat commands", asyn
     },
     body: JSON.stringify({
       requestPolicy: {
-        requestsEnabled: false
+        requestsEnabled: false,
+        accessLevel: "subscriber",
+        maxQueueLength: 7,
+        maxRequestsPerUser: 2,
+        cooldownSeconds: 90,
+        allowSearchRequests: false,
+        youtubeSafeSearch: "strict",
+        allowedProviders: ["youtube"],
+        blockedUsers: ["viewerone"],
+        blockedPhrases: ["blocked phrase"]
       },
       chatCommands: {
         song_request: {
@@ -662,6 +691,24 @@ test("settings API persists request policy and configurable chat commands", asyn
         },
         current_song: {
           trigger: "!np",
+          aliases: [],
+          permission: "everyone",
+          enabled: true
+        },
+        queue_status: {
+          trigger: "!queue",
+          aliases: [],
+          permission: "everyone",
+          enabled: true
+        },
+        queue_position: {
+          trigger: "!position",
+          aliases: [],
+          permission: "everyone",
+          enabled: true
+        },
+        remove_own_request: {
+          trigger: "!unrequest",
           aliases: [],
           permission: "everyone",
           enabled: true
@@ -695,6 +742,12 @@ test("settings API persists request policy and configurable chat commands", asyn
           aliases: [],
           permission: "moderator",
           enabled: true
+        },
+        clear_queue: {
+          trigger: "!clearqueue",
+          aliases: [],
+          permission: "moderator",
+          enabled: true
         }
       }
     })
@@ -703,17 +756,38 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(response.ok, true);
   const payload = await response.json();
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
+  assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
+  assert.equal(payload.settings.requestPolicy.maxQueueLength, 7);
+  assert.equal(payload.settings.requestPolicy.maxRequestsPerUser, 2);
+  assert.equal(payload.settings.requestPolicy.cooldownSeconds, 90);
+  assert.equal(payload.settings.requestPolicy.allowSearchRequests, false);
+  assert.equal(payload.settings.requestPolicy.youtubeSafeSearch, "strict");
+  assert.deepEqual(payload.settings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(payload.settings.requestPolicy.blockedUsers, ["viewerone"]);
+  assert.deepEqual(payload.settings.requestPolicy.blockedPhrases, ["blocked phrase"]);
   assert.equal(payload.settings.chatCommands.song_request.trigger, "!song");
   assert.deepEqual(payload.settings.chatCommands.song_request.aliases, ["!req"]);
+  assert.equal(payload.settings.chatCommands.queue_status.trigger, "!queue");
+  assert.equal(payload.settings.chatCommands.clear_queue.trigger, "!clearqueue");
 
   const persistedSettings = JSON.parse(
     await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
   );
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
+  assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");
+  assert.equal(persistedSettings.requestPolicy.maxQueueLength, 7);
+  assert.equal(persistedSettings.requestPolicy.maxRequestsPerUser, 2);
+  assert.equal(persistedSettings.requestPolicy.cooldownSeconds, 90);
+  assert.equal(persistedSettings.requestPolicy.allowSearchRequests, false);
+  assert.equal(persistedSettings.requestPolicy.youtubeSafeSearch, "strict");
+  assert.deepEqual(persistedSettings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(persistedSettings.requestPolicy.blockedUsers, ["viewerone"]);
+  assert.deepEqual(persistedSettings.requestPolicy.blockedPhrases, ["blocked phrase"]);
   assert.equal(persistedSettings.chatCommands.current_song.trigger, "!np");
+  assert.equal(persistedSettings.chatCommands.remove_own_request.trigger, "!unrequest");
 });
 
-test("queue API supports listing, promoting, removing, and clearing queued tracks", async (t) => {
+test("queue API supports listing, moving, promoting, removing, and clearing queued tracks", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
@@ -805,7 +879,22 @@ test("queue API supports listing, promoting, removing, and clearing queued track
   const listPayload = await listResponse.json();
   assert.equal(listPayload.items.length, 2);
 
+  const secondTrackId = listPayload.items[0].id;
   const thirdTrackId = listPayload.items[1].id;
+  const moveResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(secondTrackId)}/move`, appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      direction: "down"
+    })
+  });
+  assert.equal(moveResponse.ok, true);
+  const movePayload = await moveResponse.json();
+  assert.equal(movePayload.state.queue[0].title, "Queue Three");
+  assert.equal(movePayload.state.queue[1].title, "Queue Two");
+
   const promoteResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(thirdTrackId)}/promote`, appServer.urls.dashboardUrl), {
     method: "POST"
   });
@@ -813,8 +902,8 @@ test("queue API supports listing, promoting, removing, and clearing queued track
   const promotePayload = await promoteResponse.json();
   assert.equal(promotePayload.state.queue[0].title, "Queue Three");
 
-  const secondTrackId = promotePayload.state.queue[1].id;
-  const removeResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(secondTrackId)}`, appServer.urls.dashboardUrl), {
+  const removeTrackId = promotePayload.state.queue[1].id;
+  const removeResponse = await fetch(new URL(`/api/queue/${encodeURIComponent(removeTrackId)}`, appServer.urls.dashboardUrl), {
     method: "DELETE"
   });
   assert.equal(removeResponse.ok, true);
@@ -829,4 +918,114 @@ test("queue API supports listing, promoting, removing, and clearing queued track
   const clearPayload = await clearResponse.json();
   assert.equal(clearPayload.result.clearedCount, 1);
   assert.equal(clearPayload.state.queue.length, 0);
+});
+
+test("history API returns recent playback events and runtime state restores on startup", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "queue-state.json"),
+    `${JSON.stringify({
+      queue: [
+        {
+          id: "queued-restore",
+          provider: "youtube",
+          url: "https://youtu.be/queued-restore",
+          title: "Queued Restore",
+          key: "youtube:queued-restore",
+          origin: "queue",
+          artworkUrl: "",
+          requestedBy: {
+            username: "viewerone",
+            displayName: "ViewerOne"
+          }
+        }
+      ],
+      stoppedTrack: {
+        id: "stopped-restore",
+        provider: "youtube",
+        url: "https://youtu.be/stopped-restore",
+        title: "Stopped Restore",
+        key: "youtube:stopped-restore",
+        origin: "queue",
+        artworkUrl: "",
+        requestedBy: {
+          username: "viewerone",
+          displayName: "ViewerOne"
+        }
+      },
+      history: [
+        {
+          track: {
+            id: "history-restore",
+            provider: "youtube",
+            url: "https://youtu.be/history-restore",
+            title: "History Restore",
+            key: "youtube:history-restore",
+            origin: "queue",
+            artworkUrl: "",
+            requestedBy: {
+              username: "viewerone",
+              displayName: "ViewerOne"
+            }
+          },
+          status: "stopped",
+          completedAt: "2026-03-17T12:00:00.000Z"
+        }
+      ]
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const stateResponse = await fetch(new URL("/api/state", appServer.urls.dashboardUrl));
+  const statePayload = await stateResponse.json();
+  assert.equal(statePayload.stoppedTrack.title, "Stopped Restore");
+  assert.equal(statePayload.queue.length, 1);
+  assert.equal(statePayload.history.length, 1);
+  assert.equal(statePayload.currentTrack, null);
+
+  const historyResponse = await fetch(new URL("/api/history", appServer.urls.dashboardUrl));
+  const historyPayload = await historyResponse.json();
+  assert.equal(historyPayload.items.length, 1);
+  assert.equal(historyPayload.items[0].track.title, "History Restore");
 });

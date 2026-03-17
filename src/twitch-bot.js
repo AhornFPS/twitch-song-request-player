@@ -11,7 +11,8 @@ function getViewerRoleState(tags, channelName) {
   return {
     isBroadcaster: username === channelName.toLowerCase() || Boolean(badges.broadcaster),
     isModerator: Boolean(tags.mod || badges.moderator),
-    isVip: Boolean(badges.vip)
+    isVip: Boolean(badges.vip),
+    isSubscriber: Boolean(tags.subscriber || badges.subscriber)
   };
 }
 
@@ -55,6 +56,59 @@ function permissionLabel(permission) {
   }
 
   return "You cannot use that command.";
+}
+
+function hasRequestAccess(roleState, accessLevel) {
+  if (roleState.isBroadcaster) {
+    return true;
+  }
+
+  if (accessLevel === "moderator") {
+    return roleState.isModerator;
+  }
+
+  if (accessLevel === "vip") {
+    return roleState.isModerator || roleState.isVip;
+  }
+
+  if (accessLevel === "subscriber") {
+    return roleState.isModerator || roleState.isVip || roleState.isSubscriber;
+  }
+
+  if (accessLevel === "broadcaster") {
+    return false;
+  }
+
+  return true;
+}
+
+function requestAccessLabel(accessLevel) {
+  if (accessLevel === "moderator") {
+    return "Song requests are currently limited to moderators and the broadcaster.";
+  }
+
+  if (accessLevel === "vip") {
+    return "Song requests are currently limited to VIPs, moderators, and the broadcaster.";
+  }
+
+  if (accessLevel === "subscriber") {
+    return "Song requests are currently limited to subscribers, VIPs, moderators, and the broadcaster.";
+  }
+
+  if (accessLevel === "broadcaster") {
+    return "Song requests are currently limited to the broadcaster.";
+  }
+
+  return "Song requests are not available right now.";
+}
+
+function normalizeRequestList(value, { lowerCase = false } = {}) {
+  const list = Array.isArray(value) ? value : [];
+
+  return list
+    .map((item) => typeof item === "string" ? item.trim() : "")
+    .map((item) => lowerCase ? item.toLowerCase() : item)
+    .filter(Boolean);
 }
 
 export class TwitchBot {
@@ -165,6 +219,7 @@ export class TwitchBot {
     const [, ...rest] = message.trim().split(/\s+/);
     const query = rest.join(" ").trim();
     const permission = this.getCommandPermission(actionId);
+    const roleState = getViewerRoleState(tags, this.config.twitch.channel);
 
     if (!hasCommandPermission(tags, this.config.twitch.channel, permission)) {
       await this.reply(channel, permissionLabel(permission));
@@ -179,18 +234,62 @@ export class TwitchBot {
         return;
       }
 
+      const blockedUsers = normalizeRequestList(this.config.requestPolicy?.blockedUsers, {
+        lowerCase: true
+      });
+      const normalizedUsername = tags.username?.trim().toLowerCase() ?? "";
+
+      if (blockedUsers.includes(normalizedUsername)) {
+        await this.reply(channel, "You are not allowed to send song requests in this channel.");
+        return;
+      }
+
+      const accessLevel = typeof this.config.requestPolicy?.accessLevel === "string"
+        ? this.config.requestPolicy.accessLevel
+        : "everyone";
+      if (!hasRequestAccess(roleState, accessLevel)) {
+        await this.reply(channel, requestAccessLabel(accessLevel));
+        return;
+      }
+
       if (!query) {
         await this.reply(channel, "Usage: provide a YouTube or SoundCloud link, or a YouTube search query.");
         return;
       }
 
-      const resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey);
+      const blockedPhrases = normalizeRequestList(this.config.requestPolicy?.blockedPhrases, {
+        lowerCase: true
+      });
+      const normalizedQuery = query.toLowerCase();
+      const blockedPhrase = blockedPhrases.find((phrase) => normalizedQuery.includes(phrase));
+
+      if (blockedPhrase) {
+        await this.reply(channel, "That request matches a blocked phrase and could not be queued.");
+        return;
+      }
+
+      const resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey, {
+        allowSearchRequests: this.config.requestPolicy?.allowSearchRequests,
+        youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch
+      });
+      const allowedProviders = Array.isArray(this.config.requestPolicy?.allowedProviders)
+        ? normalizeRequestList(this.config.requestPolicy.allowedProviders, {
+            lowerCase: true
+          })
+        : ["youtube", "soundcloud"];
+
+      if (!allowedProviders.includes(resolvedTrack.provider)) {
+        await this.reply(channel, `${resolvedTrack.provider} requests are currently disabled.`);
+        return;
+      }
       const queueTrack = await this.playerController.addRequest({
         ...resolvedTrack,
         requestedBy: {
           username: tags.username ?? "",
           displayName: tags["display-name"] ?? tags.username ?? ""
         }
+      }, {
+        bypassRequestLimits: roleState.isBroadcaster || roleState.isModerator
       });
 
       if (queueTrack.duplicateType === "playing") {
@@ -207,6 +306,47 @@ export class TwitchBot {
         channel,
         `Queued: ${queueTrack.title} (requested by ${queueTrack.requestedBy.displayName || queueTrack.requestedBy.username})`
       );
+      return;
+    }
+
+    if (actionId === "queue_status") {
+      const queueSummary = this.playerController.getQueueSummary(3);
+      const currentTrack = this.playerController.getCurrentTrack();
+
+      if (!currentTrack && queueSummary.length === 0) {
+        await this.reply(channel, "The request queue is empty right now.");
+        return;
+      }
+
+      const nowPlayingText = currentTrack ? `Now playing: ${currentTrack.title}. ` : "";
+      const queueText = queueSummary.length > 0
+        ? `Up next: ${queueSummary.map((track, index) => `${index + 1}. ${track.title}`).join(" | ")}`
+        : "No queued requests after the current song.";
+      await this.reply(channel, `${nowPlayingText}${queueText}`);
+      return;
+    }
+
+    if (actionId === "queue_position") {
+      const position = this.playerController.getQueuePositionForRequester(tags.username ?? "");
+
+      if (!position) {
+        await this.reply(channel, "You do not have a queued request right now.");
+        return;
+      }
+
+      await this.reply(channel, `${position.track.title} is #${position.position} in the queue.`);
+      return;
+    }
+
+    if (actionId === "remove_own_request") {
+      const removedTrack = await this.playerController.removeQueuedTrackByRequester(tags.username ?? "", tags.username ?? "unknown");
+
+      if (!removedTrack) {
+        await this.reply(channel, "You do not have a queued request to remove.");
+        return;
+      }
+
+      await this.reply(channel, `Removed your queued request: ${removedTrack.title}`);
       return;
     }
 
@@ -298,6 +438,12 @@ export class TwitchBot {
         }
       });
       await this.reply(channel, "Song requests are now closed.");
+      return;
+    }
+
+    if (actionId === "clear_queue") {
+      const result = await this.playerController.clearQueue(tags.username ?? "unknown");
+      await this.reply(channel, `Cleared ${result.clearedCount} queued request${result.clearedCount === 1 ? "" : "s"}.`);
     }
   }
 

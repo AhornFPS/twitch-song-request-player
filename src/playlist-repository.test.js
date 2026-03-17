@@ -76,11 +76,13 @@ test("playlist repository lists, imports, exports, and deletes playlist rows", a
   const listed = repository.listTracks({
     query: "club",
     page: 1,
-    pageSize: 10
+    pageSize: 10,
+    sortBy: "title"
   });
 
   assert.equal(listed.total, 1);
   assert.equal(listed.items[0].title, "Club Mix");
+  assert.equal(listed.sortBy, "title");
 
   const importSummary = await repository.importFromCsv(
     [
@@ -101,4 +103,12 @@ test("playlist repository lists, imports, exports, and deletes playlist rows", a
   const removed = await repository.removeTrackByKey("youtube:9bZkp7q19f0");
   assert.equal(removed, true);
   assert.equal(repository.listTracks().total, 2);
+
+  const bulkRemoval = await repository.removeTracksByKeys([
+    "youtube:dQw4w9WgXcQ",
+    "youtube:missing"
+  ]);
+  assert.equal(bulkRemoval.removedCount, 1);
+  assert.deepEqual(bulkRemoval.removedKeys, ["youtube:dQw4w9WgXcQ"]);
+  assert.equal(repository.listTracks().total, 1);
 });

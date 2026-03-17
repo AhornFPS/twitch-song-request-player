@@ -22,8 +22,10 @@ let playbackSuppressedCategories = [];
 let playlistPage = 1;
 let playlistTotalPages = 1;
 let playlistQuery = "";
+let playlistSortBy = "recent";
 let playlistSearchDebounceTimer = null;
 let playlistImportMode = "append";
+let playlistSelectedKeys = new Set();
 let settingsPayload = null;
 let playbackState = null;
 let playlistPayload = null;
@@ -35,6 +37,7 @@ let guiPlayerVolume = 100;
 let guiPlayerVolumeSaveTimer = null;
 let isGuiPlayerVolumeSaving = false;
 let queueActionTrackId = "";
+let requestPolicyDraft = null;
 
 function el(id) {
   return document.getElementById(id);
@@ -94,9 +97,10 @@ function renderDashboard() {
 
       <nav class="atlas-tabs" aria-label="Dashboard sections">
         <button class="tab-button" type="button" data-tab="overview">Overview</button>
+        <button class="tab-button" type="button" data-tab="playback">Playback</button>
         <button class="tab-button" type="button" data-tab="queue">Queue</button>
         <button class="tab-button" type="button" data-tab="requests">Requests</button>
-        <button class="tab-button" type="button" data-tab="connection">Connection</button>
+        <button class="tab-button" type="button" data-tab="settings">Settings</button>
         <button class="tab-button" type="button" data-tab="library">Library</button>
       </nav>
 
@@ -153,6 +157,27 @@ function renderDashboard() {
               </form>
               <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
               <ul id="queue-preview" class="queue-preview"></ul>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-playback" class="atlas-view" hidden>
+        <div class="stack-layout">
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Playback</p>
+                <h2>Desktop player and transport</h2>
+              </div>
+              <div class="playback-panel__header-actions">
+                <span id="playback-tab-pill" class="status-pill status-pill--idle">Idle</span>
+                <button id="playback-restart-stopped" class="secondary-button" type="button">Restart stopped track</button>
+              </div>
+            </div>
+            <div class="playback-card">
+              <p id="playback-tab-title" class="playback-card__title">Waiting for a track</p>
+              <p id="playback-tab-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
               <section class="overview-player-panel">
                 <div class="overview-player-panel__header">
                   <div>
@@ -178,36 +203,48 @@ function renderDashboard() {
               </section>
             </div>
           </section>
+
+          <section class="panel card-panel queue-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">History</p>
+                <h2>Recent playback</h2>
+              </div>
+            </div>
+            <div id="history-list" class="history-list"></div>
+          </section>
         </div>
       </section>
 
       <section id="tab-queue" class="atlas-view" hidden>
-        <section class="panel card-panel queue-panel">
-          <div class="panel__header">
-            <div>
-              <p class="panel__eyebrow">Queue</p>
-              <h2>Live request queue</h2>
+        <div class="stack-layout">
+          <section class="panel card-panel queue-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Queue</p>
+                <h2>Live request queue</h2>
+              </div>
+              <div class="button-row">
+                <button id="queue-clear-button" class="ghost-button" type="button">Clear queue</button>
+              </div>
             </div>
-            <div class="button-row">
-              <button id="queue-clear-button" class="ghost-button" type="button">Clear queue</button>
+            <p id="queue-feedback" class="feedback" role="status" aria-live="polite"></p>
+            <div class="queue-table-wrap">
+              <table class="playlist-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Requester</th>
+                    <th scope="col">Provider</th>
+                    <th scope="col" class="playlist-table__actions queue-table__actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="queue-table-body"></tbody>
+              </table>
+              <div id="queue-empty-state" class="empty-state" hidden>No queued requests yet.</div>
             </div>
-          </div>
-          <p id="queue-feedback" class="feedback" role="status" aria-live="polite"></p>
-          <div class="queue-table-wrap">
-            <table class="playlist-table">
-              <thead>
-                <tr>
-                  <th scope="col">Title</th>
-                  <th scope="col">Requester</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col" class="playlist-table__actions queue-table__actions">Actions</th>
-                </tr>
-              </thead>
-              <tbody id="queue-table-body"></tbody>
-            </table>
-            <div id="queue-empty-state" class="empty-state" hidden>No queued requests yet.</div>
-          </div>
-        </section>
+          </section>
+        </div>
       </section>
 
       <section id="tab-requests" class="atlas-view" hidden>
@@ -227,6 +264,78 @@ function renderDashboard() {
                   <span id="requests-status-copy" class="toggle-card__body">Viewer requests can be queued from chat.</span>
                 </span>
                 <input id="requests-enabled-toggle" type="checkbox" />
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <label class="field">
+                <span class="field__label">Who can request</span>
+                <select id="requests-access-level" class="control-input">
+                  <option value="everyone">Everyone</option>
+                  <option value="subscriber">Subscribers and above</option>
+                  <option value="vip">VIPs and above</option>
+                  <option value="moderator">Moderators only</option>
+                  <option value="broadcaster">Broadcaster only</option>
+                </select>
+                <span class="field__hint">Moderators and the broadcaster always bypass request caps.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Max queued requests</span>
+                <input id="requests-max-queue-length" class="control-input" type="number" min="0" step="1" />
+                <span class="field__hint">Set to 0 for no queue-length cap.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Max active requests per user</span>
+                <input id="requests-max-per-user" class="control-input" type="number" min="0" step="1" />
+                <span class="field__hint">Counts queued, playing, and stopped queue tracks. Set to 0 for no per-user cap.</span>
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <label class="field">
+                <span class="field__label">Per-user cooldown (seconds)</span>
+                <input id="requests-cooldown-seconds" class="control-input" type="number" min="0" step="1" />
+                <span class="field__hint">Set to 0 to disable the cooldown between successful requests from the same viewer.</span>
+              </label>
+              <label class="toggle-card" for="requests-allow-search-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Allow text-search requests</span>
+                  <span class="toggle-card__body">If disabled, chat requests must use direct YouTube or SoundCloud links.</span>
+                </span>
+                <input id="requests-allow-search-toggle" type="checkbox" />
+              </label>
+              <label class="field">
+                <span class="field__label">YouTube safe search</span>
+                <select id="requests-safe-search" class="control-input">
+                  <option value="none">None</option>
+                  <option value="moderate">Moderate</option>
+                  <option value="strict">Strict</option>
+                </select>
+                <span class="field__hint">Used for chat search requests only. Direct links are still allowed.</span>
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <fieldset class="field fieldset-card">
+                <legend class="field__label">Allowed providers</legend>
+                <label class="checkbox-row">
+                  <input id="requests-provider-youtube" type="checkbox" />
+                  <span>YouTube</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="requests-provider-soundcloud" type="checkbox" />
+                  <span>SoundCloud</span>
+                </label>
+                <span class="field__hint">Disable providers you do not want viewers to request from chat.</span>
+              </fieldset>
+              <label class="field">
+                <span class="field__label">Blocked usernames</span>
+                <textarea id="requests-blocked-users" class="control-input control-input--multiline" rows="4" placeholder="viewerone&#10;viewertwo"></textarea>
+                <span class="field__hint">One username per line. Matching is case-insensitive.</span>
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <label class="field field--full">
+                <span class="field__label">Blocked phrases</span>
+                <textarea id="requests-blocked-phrases" class="control-input control-input--multiline" rows="4" placeholder="artist name&#10;banned phrase"></textarea>
+                <span class="field__hint">If a chat request contains one of these phrases, it is rejected before it can be queued.</span>
               </label>
             </div>
             <p id="requests-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -257,7 +366,7 @@ function renderDashboard() {
         </div>
       </section>
 
-      <section id="tab-connection" class="atlas-view" hidden>
+      <section id="tab-settings" class="atlas-view" hidden>
         <form id="settings-form" class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -373,10 +482,20 @@ function renderDashboard() {
               <h2>Fallback track library</h2>
             </div>
             <div class="library-toolbar">
-              <label class="control-field">
-                <span class="control-field__label">Search</span>
-                <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
-              </label>
+              <div class="library-toolbar__grid">
+                <label class="control-field">
+                  <span class="control-field__label">Search</span>
+                  <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
+                </label>
+                <label class="control-field">
+                  <span class="control-field__label">Sort</span>
+                  <select id="playlist-sort-select" class="control-input">
+                    <option value="recent">Recently added</option>
+                    <option value="title">Title</option>
+                    <option value="provider">Provider</option>
+                  </select>
+                </label>
+              </div>
             </div>
           </div>
           <div class="playlist-tools">
@@ -389,6 +508,10 @@ function renderDashboard() {
               <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
               <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
             </div>
+            <div class="button-row button-row--wrap">
+              <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
+              <button id="playlist-bulk-delete-button" class="ghost-button ghost-button--danger" type="button">Delete selected</button>
+            </div>
           </div>
           <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
           <input id="playlist-import-file" type="file" accept=".csv,text/csv" hidden />
@@ -400,6 +523,9 @@ function renderDashboard() {
             <table class="playlist-table">
               <thead>
                 <tr>
+                  <th scope="col" class="playlist-table__checkbox">
+                    <input id="playlist-select-page" type="checkbox" />
+                  </th>
                   <th scope="col">Title</th>
                   <th scope="col">Provider</th>
                   <th scope="col">Link</th>
@@ -491,7 +617,7 @@ function setRequestsFeedback(message, tone = "") {
 }
 
 function applyTabState() {
-  ["overview", "queue", "requests", "connection", "library"].forEach((tabId) => {
+  ["overview", "playback", "queue", "requests", "settings", "library"].forEach((tabId) => {
     const button = root.querySelector(`[data-tab="${tabId}"]`);
     const view = el(`tab-${tabId}`);
     const isActive = activeTab === tabId;
@@ -504,6 +630,13 @@ function applyTabState() {
       view.hidden = !isActive;
     }
   });
+}
+
+function parseRequestPolicyList(value) {
+  return String(value ?? "")
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function renderCategorySelect(selectId, items) {
@@ -549,16 +682,96 @@ function renderThemeOptions(selectedTheme) {
 
 function getRequestPolicy() {
   return settingsPayload?.settings?.requestPolicy ?? {
-    requestsEnabled: true
+    requestsEnabled: true,
+    accessLevel: "everyone",
+    maxQueueLength: 0,
+    maxRequestsPerUser: 0,
+    cooldownSeconds: 0,
+    allowSearchRequests: true,
+    youtubeSafeSearch: "none",
+    allowedProviders: ["youtube", "soundcloud"],
+    blockedUsers: [],
+    blockedPhrases: []
   };
 }
 
-function requestStatusPresentation(isEnabled) {
+function getDraftRequestPolicy() {
+  if (requestPolicyDraft && typeof requestPolicyDraft === "object") {
+    return {
+      requestsEnabled: requestPolicyDraft.requestsEnabled !== false,
+      accessLevel: typeof requestPolicyDraft.accessLevel === "string"
+        ? requestPolicyDraft.accessLevel
+        : "everyone",
+      maxQueueLength: Number.parseInt(String(requestPolicyDraft.maxQueueLength ?? 0), 10) || 0,
+      maxRequestsPerUser: Number.parseInt(String(requestPolicyDraft.maxRequestsPerUser ?? 0), 10) || 0,
+      cooldownSeconds: Number.parseInt(String(requestPolicyDraft.cooldownSeconds ?? 0), 10) || 0,
+      allowSearchRequests: requestPolicyDraft.allowSearchRequests !== false,
+      youtubeSafeSearch: typeof requestPolicyDraft.youtubeSafeSearch === "string"
+        ? requestPolicyDraft.youtubeSafeSearch
+        : "none",
+      allowedProviders: Array.isArray(requestPolicyDraft.allowedProviders)
+        ? requestPolicyDraft.allowedProviders.filter(Boolean)
+        : ["youtube", "soundcloud"],
+      blockedUsers: Array.isArray(requestPolicyDraft.blockedUsers)
+        ? requestPolicyDraft.blockedUsers.filter(Boolean)
+        : [],
+      blockedPhrases: Array.isArray(requestPolicyDraft.blockedPhrases)
+        ? requestPolicyDraft.blockedPhrases.filter(Boolean)
+        : []
+    };
+  }
+
+  return getRequestPolicy();
+}
+
+function syncRequestPolicyDraftFromInputs() {
+  const toggle = el("requests-enabled-toggle");
+  const accessLevelSelect = el("requests-access-level");
+  const maxQueueLengthInput = el("requests-max-queue-length");
+  const maxPerUserInput = el("requests-max-per-user");
+  const cooldownInput = el("requests-cooldown-seconds");
+  const blockedUsersInput = el("requests-blocked-users");
+  const blockedPhrasesInput = el("requests-blocked-phrases");
+
+  requestPolicyDraft = {
+    requestsEnabled: toggle instanceof HTMLInputElement ? toggle.checked : getRequestPolicy().requestsEnabled !== false,
+    accessLevel: accessLevelSelect instanceof HTMLSelectElement
+      ? accessLevelSelect.value
+      : (getRequestPolicy().accessLevel || "everyone"),
+    maxQueueLength: Number.parseInt(maxQueueLengthInput?.value || "0", 10) || 0,
+    maxRequestsPerUser: Number.parseInt(maxPerUserInput?.value || "0", 10) || 0,
+    cooldownSeconds: Number.parseInt(cooldownInput?.value || "0", 10) || 0,
+    allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
+      ? el("requests-allow-search-toggle").checked
+      : getRequestPolicy().allowSearchRequests !== false,
+    youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement
+      ? el("requests-safe-search").value
+      : (getRequestPolicy().youtubeSafeSearch || "none"),
+    allowedProviders: [
+      el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked
+        ? "youtube"
+        : "",
+      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked
+        ? "soundcloud"
+        : ""
+    ].filter(Boolean),
+    blockedUsers: blockedUsersInput instanceof HTMLTextAreaElement
+      ? parseRequestPolicyList(blockedUsersInput.value.toLowerCase())
+      : [...(getRequestPolicy().blockedUsers || [])],
+    blockedPhrases: blockedPhrasesInput instanceof HTMLTextAreaElement
+      ? parseRequestPolicyList(blockedPhrasesInput.value)
+      : [...(getRequestPolicy().blockedPhrases || [])]
+  };
+}
+
+function requestStatusPresentation(isEnabled, accessLevel = "everyone") {
   return isEnabled
     ? {
         className: "status-pill status-pill--ok",
         text: "Requests open",
-        copy: "Viewer requests can be queued from chat."
+        copy: accessLevel === "everyone"
+          ? "Viewer requests can be queued from chat."
+          : `Chat requests are open, but limited to ${accessLevel}.`
       }
     : {
         className: "status-pill status-pill--warn",
@@ -569,13 +782,22 @@ function requestStatusPresentation(isEnabled) {
 
 function applyRequestPolicyState() {
   const toggle = el("requests-enabled-toggle");
-  const isEnabled = toggle instanceof HTMLInputElement && !isHydratingForm
-    ? toggle.checked
-    : getRequestPolicy().requestsEnabled !== false;
-  const presentation = requestStatusPresentation(isEnabled);
+  const requestPolicy = isHydratingForm ? getRequestPolicy() : getDraftRequestPolicy();
+  const isEnabled = requestPolicy.requestsEnabled !== false;
+  const presentation = requestStatusPresentation(isEnabled, requestPolicy.accessLevel || "everyone");
   const headerPill = el("requests-status-pill");
   const tabPill = el("requests-tab-pill");
   const statusCopy = el("requests-status-copy");
+  const maxQueueLengthInput = el("requests-max-queue-length");
+  const maxPerUserInput = el("requests-max-per-user");
+  const accessLevelSelect = el("requests-access-level");
+  const cooldownInput = el("requests-cooldown-seconds");
+  const allowSearchToggle = el("requests-allow-search-toggle");
+  const safeSearchSelect = el("requests-safe-search");
+  const youtubeProviderToggle = el("requests-provider-youtube");
+  const soundCloudProviderToggle = el("requests-provider-soundcloud");
+  const blockedUsersInput = el("requests-blocked-users");
+  const blockedPhrasesInput = el("requests-blocked-phrases");
 
   if (headerPill) {
     headerPill.className = presentation.className;
@@ -593,6 +815,46 @@ function applyRequestPolicyState() {
 
   if (toggle instanceof HTMLInputElement) {
     toggle.checked = isEnabled;
+  }
+
+  if (accessLevelSelect instanceof HTMLSelectElement) {
+    accessLevelSelect.value = requestPolicy.accessLevel || "everyone";
+  }
+
+  if (maxQueueLengthInput instanceof HTMLInputElement) {
+    maxQueueLengthInput.value = String(requestPolicy.maxQueueLength ?? 0);
+  }
+
+  if (maxPerUserInput instanceof HTMLInputElement) {
+    maxPerUserInput.value = String(requestPolicy.maxRequestsPerUser ?? 0);
+  }
+
+  if (cooldownInput instanceof HTMLInputElement) {
+    cooldownInput.value = String(requestPolicy.cooldownSeconds ?? 0);
+  }
+
+  if (allowSearchToggle instanceof HTMLInputElement) {
+    allowSearchToggle.checked = requestPolicy.allowSearchRequests !== false;
+  }
+
+  if (safeSearchSelect instanceof HTMLSelectElement) {
+    safeSearchSelect.value = requestPolicy.youtubeSafeSearch || "none";
+  }
+
+  if (youtubeProviderToggle instanceof HTMLInputElement) {
+    youtubeProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("youtube");
+  }
+
+  if (soundCloudProviderToggle instanceof HTMLInputElement) {
+    soundCloudProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("soundcloud");
+  }
+
+  if (blockedUsersInput instanceof HTMLTextAreaElement) {
+    blockedUsersInput.value = (requestPolicy.blockedUsers || []).join("\n");
+  }
+
+  if (blockedPhrasesInput instanceof HTMLTextAreaElement) {
+    blockedPhrasesInput.value = (requestPolicy.blockedPhrases || []).join("\n");
   }
 }
 
@@ -675,7 +937,29 @@ function collectSettingsPayload() {
     requestPolicy: {
       requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement
         ? el("requests-enabled-toggle").checked
-        : true
+        : true,
+      accessLevel: el("requests-access-level") instanceof HTMLSelectElement
+        ? el("requests-access-level").value
+        : "everyone",
+      maxQueueLength: Number.parseInt(el("requests-max-queue-length")?.value || "0", 10) || 0,
+      maxRequestsPerUser: Number.parseInt(el("requests-max-per-user")?.value || "0", 10) || 0,
+      cooldownSeconds: Number.parseInt(el("requests-cooldown-seconds")?.value || "0", 10) || 0,
+      allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
+        ? el("requests-allow-search-toggle").checked
+        : true,
+      youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement
+        ? el("requests-safe-search").value
+        : "none",
+      allowedProviders: [
+        el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked
+          ? "youtube"
+          : "",
+        el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked
+          ? "soundcloud"
+          : ""
+      ].filter(Boolean),
+      blockedUsers: parseRequestPolicyList(el("requests-blocked-users")?.value || "").map((value) => value.toLowerCase()),
+      blockedPhrases: parseRequestPolicyList(el("requests-blocked-phrases")?.value || "")
     },
     chatCommands: collectChatCommandsPayload(),
     theme: el("theme-select")?.value || lastSavedTheme,
@@ -732,6 +1016,7 @@ function applySettingsPayload() {
   }
 
   isHydratingForm = true;
+  requestPolicyDraft = null;
   renderThemeOptions(settingsPayload.settings.theme);
   setValue("twitchChannel", settingsPayload.settings.twitchChannel || "");
   setValue("twitchUsername", settingsPayload.settings.twitchUsername || "");
@@ -1066,12 +1351,101 @@ function renderFullQueue(queue) {
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
       <td class="playlist-table__actions queue-table__actions">
         <div class="button-row button-row--compact">
+          <button class="ghost-button" type="button" data-queue-action="move-up" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy || index === 0 ? "disabled" : ""}>Up</button>
+          <button class="ghost-button" type="button" data-queue-action="move-down" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy || index === queue.length - 1 ? "disabled" : ""}>Down</button>
           <button class="ghost-button" type="button" data-queue-action="promote" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Move to top</button>
           <button class="ghost-button ghost-button--danger" type="button" data-queue-action="remove" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Remove</button>
         </div>
       </td>
     `;
     tableBody.appendChild(row);
+  });
+}
+
+async function moveQueueTrack(trackId, direction) {
+  if (!trackId) {
+    return;
+  }
+
+  queueActionTrackId = trackId;
+  applyPlaybackState();
+  setQueueFeedback(direction === "down" ? "Moving track down..." : "Moving track up...");
+
+  try {
+    const payload = await fetchJson(`/api/queue/${encodeURIComponent(trackId)}/move`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        direction
+      })
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    setQueueFeedback(
+      `Moved ${payload.track.title} ${direction === "down" ? "down" : "up"} in the queue.`,
+      "success"
+    );
+  } catch (error) {
+    setQueueFeedback(error?.message || "Could not move the queued track.", "error");
+  } finally {
+    queueActionTrackId = "";
+    applyPlaybackState();
+  }
+}
+
+function historyStatusLabel(status) {
+  if (status === "skipped") {
+    return "Skipped";
+  }
+
+  if (status === "deleted") {
+    return "Deleted";
+  }
+
+  if (status === "error") {
+    return "Error";
+  }
+
+  if (status === "stopped") {
+    return "Stopped";
+  }
+
+  return "Finished";
+}
+
+function renderHistory(history) {
+  const historyList = el("history-list");
+  if (!historyList) {
+    return;
+  }
+
+  historyList.innerHTML = "";
+
+  if (!history.length) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state";
+    emptyState.textContent = "Playback history will appear here after songs finish, stop, or skip.";
+    historyList.appendChild(emptyState);
+    return;
+  }
+
+  history.slice(0, 12).forEach((entry) => {
+    const item = document.createElement("article");
+    item.className = "history-item";
+    const requester = entry.track?.requestedBy?.displayName || entry.track?.requestedBy?.username || "playlist";
+    item.innerHTML = `
+      <div class="history-item__main">
+        <strong>${htmlEscape(entry.track?.title || "Unknown track")}</strong>
+        <div class="command-table__description">${htmlEscape(requester)} • ${htmlEscape(entry.track?.provider || "unknown")}</div>
+      </div>
+      <div class="history-item__meta">
+        <span class="provider-chip">${htmlEscape(historyStatusLabel(entry.status))}</span>
+        <time class="history-item__time" datetime="${htmlEscape(entry.completedAt || "")}">${htmlEscape(new Date(entry.completedAt || Date.now()).toLocaleString())}</time>
+      </div>
+    `;
+    historyList.appendChild(item);
   });
 }
 
@@ -1084,13 +1458,22 @@ function applyPlaybackState() {
   const currentTrack = playbackState?.currentTrack;
   const stoppedTrack = playbackState?.stoppedTrack;
   const queue = playbackState?.queue || [];
+  const history = playbackState?.history || [];
   const playbackStatus = playbackState?.playbackStatus || "idle";
   const visibleTrack = currentTrack || stoppedTrack;
   const playbackPill = el("playback-state-pill");
+  const playbackTabPill = el("playback-tab-pill");
   const pillState = playbackPillState(playbackStatus);
 
   setText("current-track-title", visibleTrack?.title || "Waiting for a track");
   setText("current-track-meta", describePlaybackMeta({
+    currentTrack,
+    stoppedTrack,
+    playbackStatus,
+    queueLength: queue.length
+  }));
+  setText("playback-tab-title", visibleTrack?.title || "Waiting for a track");
+  setText("playback-tab-meta", describePlaybackMeta({
     currentTrack,
     stoppedTrack,
     playbackStatus,
@@ -1102,10 +1485,16 @@ function applyPlaybackState() {
     playbackPill.textContent = pillState.text;
   }
 
+  if (playbackTabPill) {
+    playbackTabPill.className = pillState.className;
+    playbackTabPill.textContent = pillState.text;
+  }
+
   const playPauseButton = el("overview-play-pause");
   const stopButton = el("overview-stop");
   const nextButton = el("overview-next");
   const queueButton = el("overview-queue-button");
+  const restartStoppedButton = el("playback-restart-stopped");
 
   if (playPauseButton) {
     playPauseButton.disabled = isPlaybackCommandPending;
@@ -1124,6 +1513,10 @@ function applyPlaybackState() {
     queueButton.disabled = isQueueSubmitting;
   }
 
+  if (restartStoppedButton) {
+    restartStoppedButton.disabled = isPlaybackCommandPending || !stoppedTrack;
+  }
+
   const guiPlayerToggle = el("overview-gui-player-toggle");
   if (guiPlayerToggle) {
     guiPlayerToggle.disabled = isGuiPlayerSaving || isGuiPlayerVolumeSaving;
@@ -1140,23 +1533,24 @@ function applyPlaybackState() {
     item.className = "queue-preview__empty";
     item.textContent = "No queued requests yet.";
     queueList.appendChild(item);
-    return;
+  } else {
+    queue.slice(0, 4).forEach((track) => {
+      const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+      const item = document.createElement("li");
+      item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(requester)}</span>`;
+      queueList.appendChild(item);
+    });
   }
 
-  queue.slice(0, 4).forEach((track) => {
-    const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
-    const item = document.createElement("li");
-    item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(requester)}</span>`;
-    queueList.appendChild(item);
-  });
-
   renderFullQueue(queue);
+  renderHistory(history);
 }
 
 async function loadPlaylist() {
   const params = new URLSearchParams({
     page: String(playlistPage),
-    pageSize: "100"
+    pageSize: "100",
+    sortBy: playlistSortBy
   });
 
   if (playlistQuery) {
@@ -1179,6 +1573,10 @@ function applyPlaylistState() {
 
   const prevButton = el("playlist-prev-page");
   const nextButton = el("playlist-next-page");
+  const bulkQueueButton = el("playlist-bulk-queue-button");
+  const bulkDeleteButton = el("playlist-bulk-delete-button");
+  const selectPageCheckbox = el("playlist-select-page");
+  const sortSelect = el("playlist-sort-select");
   const tableBody = el("playlist-table-body");
   const emptyState = el("playlist-empty-state");
 
@@ -1187,6 +1585,21 @@ function applyPlaylistState() {
   }
   if (nextButton) {
     nextButton.disabled = (playlistPayload.page || 1) >= (playlistPayload.totalPages || 1);
+  }
+  if (bulkQueueButton) {
+    bulkQueueButton.disabled = playlistSelectedKeys.size === 0;
+  }
+  if (bulkDeleteButton) {
+    bulkDeleteButton.disabled = playlistSelectedKeys.size === 0;
+  }
+  if (sortSelect instanceof HTMLSelectElement) {
+    sortSelect.value = playlistPayload.sortBy || playlistSortBy;
+  }
+  if (selectPageCheckbox instanceof HTMLInputElement) {
+    const items = playlistPayload.items || [];
+    const selectedCount = items.filter((track) => playlistSelectedKeys.has(track.key)).length;
+    selectPageCheckbox.checked = items.length > 0 && selectedCount === items.length;
+    selectPageCheckbox.indeterminate = selectedCount > 0 && selectedCount < items.length;
   }
   if (emptyState) {
     emptyState.hidden = (playlistPayload.items || []).length > 0;
@@ -1199,6 +1612,9 @@ function applyPlaylistState() {
   (playlistPayload.items || []).forEach((track) => {
     const row = document.createElement("tr");
     row.innerHTML = `
+      <td class="playlist-table__checkbox">
+        <input type="checkbox" data-playlist-select-key="${htmlEscape(track.key)}" ${playlistSelectedKeys.has(track.key) ? "checked" : ""} />
+      </td>
       <td>${htmlEscape(track.title)}</td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
       <td><a class="playlist-link" href="${htmlEscape(track.url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(track.url)}</a></td>
@@ -1210,6 +1626,61 @@ function applyPlaylistState() {
   const searchInput = el("playlist-search-input");
   if (searchInput && searchInput.value !== playlistQuery) {
     searchInput.value = playlistQuery;
+  }
+}
+
+async function bulkQueuePlaylistTracks() {
+  if (playlistSelectedKeys.size === 0) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/playlist/bulk-queue", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trackKeys: Array.from(playlistSelectedKeys)
+      })
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    setPlaylistFeedback(
+      `Queued ${payload.result.queuedCount} track${payload.result.queuedCount === 1 ? "" : "s"} from the library.`,
+      "success"
+    );
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not queue the selected playlist tracks.", "error");
+  }
+}
+
+async function bulkDeletePlaylistTracks() {
+  if (playlistSelectedKeys.size === 0 || !window.confirm("Delete the selected tracks from the fallback playlist?")) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/playlist/bulk-delete", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trackKeys: Array.from(playlistSelectedKeys)
+      })
+    });
+    playlistSelectedKeys = new Set();
+    playlistPayload = payload.playlist;
+    playlistTotalPages = playlistPayload.totalPages || 1;
+    playlistPage = playlistPayload.page || 1;
+    applyPlaylistState();
+    setPlaylistFeedback(
+      `Deleted ${payload.result.removedCount} track${payload.result.removedCount === 1 ? "" : "s"} from the library.`,
+      "success"
+    );
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not delete the selected playlist tracks.", "error");
   }
 }
 
@@ -1531,6 +2002,21 @@ async function playNextOverviewTrack() {
   }
 }
 
+async function restartStoppedTrack() {
+  try {
+    const payload = await sendOverviewPlaybackCommand("/api/playback/play-pause");
+    const restartedTitle = payload.state?.currentTrack?.title;
+
+    if (restartedTitle) {
+      setOverviewFeedback(`Restarted ${restartedTitle}.`, "success");
+    } else {
+      setOverviewFeedback("No stopped track is available to restart.", "warning");
+    }
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not restart the stopped track.", "error");
+  }
+}
+
 async function promoteQueueTrack(trackId) {
   if (!trackId) {
     return;
@@ -1625,6 +2111,7 @@ async function deletePlaylistTrack(trackKey) {
       throw new Error(message);
     }
 
+    playlistSelectedKeys.delete(trackKey);
     await loadPlaylist();
     setPlaylistFeedback("Track removed from the playlist.", "success");
   } catch (error) {
@@ -1669,6 +2156,7 @@ async function importPlaylist(csvText) {
       })
     });
     playlistPage = 1;
+    playlistSelectedKeys = new Set();
     await loadPlaylist();
     setPlaylistFeedback(`Import finished: ${payload.importedCount} added, ${payload.duplicateCount} duplicates skipped, ${payload.finalCount} total.`, "success");
   } catch (error) {
@@ -1791,6 +2279,16 @@ root.addEventListener("click", (event) => {
     const trackId = queueActionButton.getAttribute("data-queue-track-id");
     const action = queueActionButton.getAttribute("data-queue-action");
 
+    if (action === "move-up") {
+      void moveQueueTrack(trackId, "up");
+      return;
+    }
+
+    if (action === "move-down") {
+      void moveQueueTrack(trackId, "down");
+      return;
+    }
+
     if (action === "promote") {
       void promoteQueueTrack(trackId);
       return;
@@ -1850,6 +2348,10 @@ root.addEventListener("click", (event) => {
     }
   } else if (event.target.id === "playlist-export-button") {
     void exportPlaylist();
+  } else if (event.target.id === "playlist-bulk-queue-button") {
+    void bulkQueuePlaylistTracks();
+  } else if (event.target.id === "playlist-bulk-delete-button") {
+    void bulkDeletePlaylistTracks();
   } else if (event.target.id === "queue-clear-button") {
     void clearQueue();
   } else if (event.target.id === "overview-play-pause") {
@@ -1858,6 +2360,8 @@ root.addEventListener("click", (event) => {
     void stopOverviewPlayback();
   } else if (event.target.id === "overview-next") {
     void playNextOverviewTrack();
+  } else if (event.target.id === "playback-restart-stopped") {
+    void restartStoppedTrack();
   } else if (event.target.id === "overview-gui-player-toggle") {
     void saveGuiPlayerEnabled(!(settingsPayload?.settings?.guiPlayerEnabled === true));
   }
@@ -1888,8 +2392,52 @@ root.addEventListener("change", async (event) => {
     await saveThemeSelection(target.value);
   }
 
+  if (target.id === "playlist-sort-select" && target instanceof HTMLSelectElement) {
+    playlistSortBy = target.value || "recent";
+    playlistPage = 1;
+    await loadPlaylist();
+  }
+
   if (target.id === "requests-enabled-toggle" && target instanceof HTMLInputElement) {
+    syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+  }
+
+  if (target.id === "requests-access-level" && target instanceof HTMLSelectElement) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  }
+
+  if (target.id === "requests-allow-search-toggle" && target instanceof HTMLInputElement) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  }
+
+  if (target.id === "requests-safe-search" && target instanceof HTMLSelectElement) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  }
+
+  if (
+    (target.id === "requests-provider-youtube" || target.id === "requests-provider-soundcloud") &&
+    target instanceof HTMLInputElement
+  ) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  }
+
+  if (target.id === "playlist-select-page" && target instanceof HTMLInputElement) {
+    const currentItems = playlistPayload?.items || [];
+    if (target.checked) {
+      currentItems.forEach((track) => {
+        playlistSelectedKeys.add(track.key);
+      });
+    } else {
+      currentItems.forEach((track) => {
+        playlistSelectedKeys.delete(track.key);
+      });
+    }
+    applyPlaylistState();
   }
 
   if (target.id === "playlist-import-file" && target instanceof HTMLInputElement) {
@@ -1915,6 +2463,18 @@ root.addEventListener("change", async (event) => {
     if (label) {
       label.textContent = target.checked ? "Enabled" : "Disabled";
     }
+  } else if (target.matches("[data-playlist-select-key]") && target instanceof HTMLInputElement) {
+    const trackKey = target.getAttribute("data-playlist-select-key") || "";
+    if (!trackKey) {
+      return;
+    }
+
+    if (target.checked) {
+      playlistSelectedKeys.add(trackKey);
+    } else {
+      playlistSelectedKeys.delete(trackKey);
+    }
+    applyPlaylistState();
   }
 });
 
@@ -1931,6 +2491,21 @@ root.addEventListener("input", (event) => {
       playlistPage = 1;
       void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
     }, 180);
+  } else if (
+    (
+      target.id === "requests-max-queue-length" ||
+      target.id === "requests-max-per-user" ||
+      target.id === "requests-cooldown-seconds"
+    ) &&
+    target instanceof HTMLInputElement
+  ) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  } else if (
+    (target.id === "requests-blocked-users" || target.id === "requests-blocked-phrases") &&
+    target instanceof HTMLTextAreaElement
+  ) {
+    syncRequestPolicyDraftFromInputs();
   } else if (target.id === "overview-gui-player-volume" && target instanceof HTMLInputElement) {
     guiPlayerVolume = Number.parseInt(target.value || "100", 10);
     if (!Number.isFinite(guiPlayerVolume)) {
@@ -1957,6 +2532,18 @@ root.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && target.id === "playback-category-input") {
     event.preventDefault();
     el("playback-category-add")?.click();
+  }
+
+  if (
+    event.key === "Enter" &&
+    (
+      target.id === "requests-max-queue-length" ||
+      target.id === "requests-max-per-user" ||
+      target.id === "requests-cooldown-seconds"
+    )
+  ) {
+    event.preventDefault();
+    void saveSettings();
   }
 });
 

@@ -7,10 +7,17 @@ function createBotHarness({
   currentTrack,
   suppressChatMessages = false,
   addRequestResult = null,
+  addRequestImpl = null,
   resolvedTrack = null,
   chatCommands = getDefaultChatCommands(),
   requestPolicy = {
     requestsEnabled: true
+  },
+  queueSummary = [],
+  queuePosition = null,
+  removeOwnRequestResult = null,
+  clearQueueResult = {
+    clearedCount: 0
   },
   updateSettings = async () => ({ requestPolicy })
 }) {
@@ -23,11 +30,27 @@ function createBotHarness({
         playbackListener = null;
       };
     },
-    async addRequest() {
+    async addRequest(track, options) {
+      if (typeof addRequestImpl === "function") {
+        return addRequestImpl(track, options);
+      }
+
       return addRequestResult;
     },
     getCurrentTrack() {
       return currentTrack;
+    },
+    getQueueSummary() {
+      return queueSummary;
+    },
+    getQueuePositionForRequester() {
+      return queuePosition;
+    },
+    async removeQueuedTrackByRequester() {
+      return removeOwnRequestResult;
+    },
+    async clearQueue() {
+      return clearQueueResult;
     }
   };
   const client = {
@@ -249,6 +272,327 @@ test("closed requests block viewer song requests but moderators can reopen them"
   ]);
   assert.equal(updatedPolicies.length, 1);
   assert.equal(updatedPolicies[0].requestPolicy.requestsEnabled, true);
+});
+
+test("request access level and blocked users are enforced before a chat request resolves", async () => {
+  const subscriberHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      accessLevel: "subscriber",
+      blockedUsers: []
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked access");
+    }
+  });
+
+  await subscriberHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr song", false);
+
+  assert.deepEqual(subscriberHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Song requests are currently limited to subscribers, VIPs, moderators, and the broadcaster."
+    }
+  ]);
+
+  const blockedUserHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      accessLevel: "everyone",
+      blockedUsers: ["viewerone"]
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked users");
+    }
+  });
+
+  await blockedUserHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {
+      subscriber: "1"
+    },
+    subscriber: true
+  }, "!sr song", false);
+
+  assert.deepEqual(blockedUserHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "You are not allowed to send song requests in this channel."
+    }
+  ]);
+});
+
+test("viewer request limits surface a chat error while moderator requests can bypass limits", async () => {
+  const addRequestCalls = [];
+  const harness = createBotHarness({
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/limit-test",
+      title: "Limit Test",
+      key: "youtube:limit-test",
+      artworkUrl: ""
+    },
+    addRequestImpl: async (_track, options) => {
+      addRequestCalls.push(options);
+      if (!options?.bypassRequestLimits) {
+        throw new Error("You already have too many active song requests.");
+      }
+
+      return {
+        id: "track-1",
+        provider: "youtube",
+        url: "https://youtu.be/limit-test",
+        title: "Limit Test",
+        key: "youtube:limit-test",
+        origin: "queue",
+        artworkUrl: "",
+        requestedBy: {
+          username: "modone",
+          displayName: "ModOne"
+        },
+        isSaved: false,
+        alreadyQueued: false,
+        duplicateType: null
+      };
+    }
+  });
+
+  await harness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr limit test", false);
+
+  await harness.bot.handleIncomingMessage("#testchannel", {
+    username: "modone",
+    "display-name": "ModOne",
+    mod: true,
+    badges: {
+      moderator: "1"
+    }
+  }, "!sr limit test", false);
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Error: You already have too many active song requests."
+    },
+    {
+      channel: "#testchannel",
+      message: "Queued: Limit Test (requested by ModOne)"
+    }
+  ]);
+  assert.equal(addRequestCalls[0].bypassRequestLimits, false);
+  assert.equal(addRequestCalls[1].bypassRequestLimits, true);
+});
+
+test("blocked phrases and provider restrictions reject chat requests with clear errors", async () => {
+  const blockedPhraseHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      blockedPhrases: ["banned artist"]
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked phrases");
+    }
+  });
+
+  await blockedPhraseHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr banned artist song", false);
+
+  assert.deepEqual(blockedPhraseHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "That request matches a blocked phrase and could not be queued."
+    }
+  ]);
+
+  const providerHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      allowedProviders: ["youtube"]
+    },
+    resolvedTrack: {
+      provider: "soundcloud",
+      url: "https://soundcloud.com/example/track",
+      title: "SoundCloud Only",
+      key: "soundcloud:https://soundcloud.com/example/track",
+      artworkUrl: ""
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked providers");
+    }
+  });
+
+  await providerHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr direct track", false);
+
+  assert.deepEqual(providerHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "soundcloud requests are currently disabled."
+    }
+  ]);
+});
+
+test("queue commands report summary, position, and remove the viewer request", async () => {
+  const harness = createBotHarness({
+    currentTrack: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://youtu.be/now-playing",
+      title: "Now Playing",
+      origin: "queue",
+      isSaved: false
+    },
+    queueSummary: [
+      {
+        id: "track-2",
+        provider: "youtube",
+        url: "https://youtu.be/up-next",
+        title: "Up Next",
+        key: "youtube:up-next",
+        origin: "queue",
+        requestedBy: {
+          username: "viewerone",
+          displayName: "ViewerOne"
+        }
+      },
+      {
+        id: "track-3",
+        provider: "youtube",
+        url: "https://youtu.be/after-that",
+        title: "After That",
+        key: "youtube:after-that",
+        origin: "queue",
+        requestedBy: {
+          username: "viewertwo",
+          displayName: "ViewerTwo"
+        }
+      }
+    ],
+    queuePosition: {
+      position: 2,
+      track: {
+        id: "track-3",
+        provider: "youtube",
+        url: "https://youtu.be/after-that",
+        title: "After That",
+        key: "youtube:after-that",
+        origin: "queue",
+        requestedBy: {
+          username: "viewerone",
+          displayName: "ViewerOne"
+        }
+      }
+    },
+    removeOwnRequestResult: {
+      id: "track-3",
+      provider: "youtube",
+      url: "https://youtu.be/after-that",
+      title: "After That",
+      key: "youtube:after-that",
+      origin: "queue",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!queue");
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!position");
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!unrequest");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Now playing: Now Playing. Up next: 1. Up Next | 2. After That"
+    },
+    {
+      channel: "#testchannel",
+      message: "After That is #2 in the queue."
+    },
+    {
+      channel: "#testchannel",
+      message: "Removed your queued request: After That"
+    }
+  ]);
+});
+
+test("clear queue command clears every queued request for moderators", async () => {
+  const harness = createBotHarness({
+    clearQueueResult: {
+      clearedCount: 4
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "modone",
+    "display-name": "ModOne",
+    mod: true,
+    badges: {
+      moderator: "1"
+    }
+  }, "!clearqueue");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Cleared 4 queued requests."
+    }
+  ]);
+});
+
+test("disabled search requests return a direct-link guidance error", async () => {
+  const harness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      allowSearchRequests: false,
+      youtubeSafeSearch: "strict"
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not be called when search is disabled");
+    },
+    resolvedTrack: null
+  });
+
+  harness.bot.songRequestResolver = async () => {
+    throw new Error("Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead.");
+  };
+
+  await harness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr artist song", false);
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Error: Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead."
+    }
+  ]);
 });
 
 test("duplicate requests for the current song send the already playing warning", async () => {

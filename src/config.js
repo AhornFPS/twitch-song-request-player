@@ -78,6 +78,17 @@ const dashboardLayoutOptions = [
   }
 ];
 const validDashboardLayoutIds = new Set(dashboardLayoutOptions.map((layout) => layout.id));
+const validRequestAccessLevels = new Set([
+  "everyone",
+  "subscriber",
+  "vip",
+  "moderator",
+  "broadcaster"
+]);
+const validRequestProviders = new Set([
+  "youtube",
+  "soundcloud"
+]);
 
 function trimValue(value) {
   if (typeof value !== "string") {
@@ -109,6 +120,15 @@ function normalizePercent(value, fallback = 100) {
   }
 
   return Math.min(100, Math.max(0, parsedValue));
+}
+
+function normalizeLimit(value, fallback = 0) {
+  const parsedValue = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return fallback;
+  }
+
+  return parsedValue;
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -145,11 +165,56 @@ function normalizeCategoryList(value, fallback = []) {
   );
 }
 
+function normalizeStringList(value, fallback = [], { lowerCase = false } = {}) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[\n,]/)
+      : fallback;
+
+  return Array.from(
+    new Set(
+      list
+        .map((item) => trimValue(item))
+        .map((item) => lowerCase ? item.toLowerCase() : item)
+        .filter(Boolean)
+    )
+  );
+}
+
 function normalizeRequestPolicy(value) {
   const rawValue = value && typeof value === "object" ? value : {};
+  const youtubeSafeSearch = typeof rawValue.youtubeSafeSearch === "string"
+    ? rawValue.youtubeSafeSearch.trim().toLowerCase()
+    : "none";
+  const accessLevel = typeof rawValue.accessLevel === "string"
+    ? rawValue.accessLevel.trim().toLowerCase()
+    : "everyone";
+  const allowedProviders = normalizeStringList(
+    Object.prototype.hasOwnProperty.call(rawValue, "allowedProviders")
+      ? rawValue.allowedProviders
+      : ["youtube", "soundcloud"],
+    ["youtube", "soundcloud"],
+    {
+    lowerCase: true
+    }
+  ).filter((provider) => validRequestProviders.has(provider));
 
   return {
-    requestsEnabled: normalizeBoolean(rawValue.requestsEnabled, true)
+    requestsEnabled: normalizeBoolean(rawValue.requestsEnabled, true),
+    accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
+    maxQueueLength: normalizeLimit(rawValue.maxQueueLength, 0),
+    maxRequestsPerUser: normalizeLimit(rawValue.maxRequestsPerUser, 0),
+    cooldownSeconds: normalizeLimit(rawValue.cooldownSeconds, 0),
+    allowSearchRequests: normalizeBoolean(rawValue.allowSearchRequests, true),
+    youtubeSafeSearch: ["none", "moderate", "strict"].includes(youtubeSafeSearch)
+      ? youtubeSafeSearch
+      : "none",
+    allowedProviders,
+    blockedUsers: normalizeStringList(rawValue.blockedUsers, [], {
+      lowerCase: true
+    }),
+    blockedPhrases: normalizeStringList(rawValue.blockedPhrases)
   };
 }
 
@@ -346,6 +411,7 @@ export class ConfigStore {
     this.settingsPath = path.join(this.runtimeDir, "settings.json");
     this.runtimeEnvPath = path.join(this.runtimeDir, ".env");
     this.playlistPath = path.join(this.runtimeDir, "playlist.csv");
+    this.runtimeStatePath = path.join(this.runtimeDir, "queue-state.json");
     this.bundledConfigPath = path.join(this.rootDir, "build", "bundled-config.json");
   }
 
@@ -406,6 +472,7 @@ export class ConfigStore {
       runtimeDir: this.runtimeDir,
       publicDir: this.publicDir,
       playlistPath: this.playlistPath,
+      runtimeStatePath: this.runtimeStatePath,
       port: settings.port,
       settings,
       runtimeDebug: this.runtimeDebug
@@ -423,6 +490,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
     runtimeDir: runtimeConfig.runtimeDir,
     publicDir: runtimeConfig.publicDir,
     playlistPath: runtimeConfig.playlistPath,
+    runtimeStatePath: runtimeConfig.runtimeStatePath,
     port: runtimeConfig.settings.port,
     twitch: {
       channel: runtimeConfig.settings.twitchChannel,

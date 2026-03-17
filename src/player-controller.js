@@ -1,19 +1,95 @@
 import crypto from "node:crypto";
 import { formatTrack, logInfo, logWarn } from "./logger.js";
 
+const validRequestAccessLevels = new Set([
+  "everyone",
+  "subscriber",
+  "vip",
+  "moderator",
+  "broadcaster"
+]);
+
+const validProviders = new Set([
+  "youtube",
+  "soundcloud"
+]);
+
+function normalizeRequestPolicyList(value, { lowerCase = false } = {}) {
+  const list = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : [];
+
+  return Array.from(
+    new Set(
+      list
+        .map((item) => typeof item === "string" ? item.trim() : "")
+        .map((item) => lowerCase ? item.toLowerCase() : item)
+        .filter(Boolean)
+    )
+  );
+}
+
+function normalizeAllowedProviders(value) {
+  const sourceValue =
+    Array.isArray(value) || typeof value === "string"
+      ? value
+      : ["youtube", "soundcloud"];
+  const allowedProviders = normalizeRequestPolicyList(sourceValue, {
+    lowerCase: true
+  }).filter((provider) => validProviders.has(provider));
+
+  return allowedProviders;
+}
+
+function normalizeRequestPolicy(requestPolicy = {}) {
+  const accessLevel = typeof requestPolicy.accessLevel === "string"
+    ? requestPolicy.accessLevel.trim().toLowerCase()
+    : "everyone";
+
+  return {
+    requestsEnabled: requestPolicy.requestsEnabled !== false,
+    accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
+    maxQueueLength: Number.parseInt(String(requestPolicy.maxQueueLength ?? 0), 10) || 0,
+    maxRequestsPerUser: Number.parseInt(String(requestPolicy.maxRequestsPerUser ?? 0), 10) || 0,
+    cooldownSeconds: Number.parseInt(String(requestPolicy.cooldownSeconds ?? 0), 10) || 0,
+    allowSearchRequests: requestPolicy.allowSearchRequests !== false,
+    youtubeSafeSearch: typeof requestPolicy.youtubeSafeSearch === "string"
+      ? requestPolicy.youtubeSafeSearch
+      : "none",
+    allowedProviders: normalizeAllowedProviders(requestPolicy.allowedProviders),
+    blockedUsers: normalizeRequestPolicyList(requestPolicy.blockedUsers, {
+      lowerCase: true
+    }),
+    blockedPhrases: normalizeRequestPolicyList(requestPolicy.blockedPhrases)
+  };
+}
+
 export class PlayerController {
-  constructor({ io, playlistRepository }) {
+  constructor({
+    io,
+    playlistRepository,
+    runtimeStateStore = null,
+    historyLimit = 25,
+    requestPolicy = {}
+  }) {
     this.io = io;
     this.playlistRepository = playlistRepository;
+    this.runtimeStateStore = runtimeStateStore;
+    this.historyLimit = historyLimit;
+    this.requestPolicy = normalizeRequestPolicy(requestPolicy);
     this.queue = [];
     this.currentTrack = null;
     this.stoppedTrack = null;
+    this.history = [];
     this.isAdvancing = false;
     this.isPlaybackPaused = false;
     this.playbackSuppressed = false;
     this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
     this.trackPlaybackListeners = new Set();
+    this.requestTimestampsByUser = new Map();
   }
 
   serializeTrack(track) {
@@ -40,7 +116,12 @@ export class PlayerController {
       currentTrack: this.serializeTrack(this.currentTrack),
       stoppedTrack: this.serializeTrack(this.stoppedTrack),
       playbackStatus: this.getPlaybackStatus(),
-      queue: this.queue.map((track) => this.serializeTrack(track))
+      queue: this.queue.map((track) => this.serializeTrack(track)),
+      history: this.history.map((entry) => ({
+        track: this.serializeTrack(entry.track),
+        status: entry.status,
+        completedAt: entry.completedAt
+      }))
     };
   }
 
@@ -79,7 +160,11 @@ export class PlayerController {
     });
   }
 
-  async addRequest(track) {
+  setRequestPolicy(requestPolicy = {}) {
+    this.requestPolicy = normalizeRequestPolicy(requestPolicy);
+  }
+
+  async addRequest(track, { bypassRequestLimits = false } = {}) {
     const duplicateMatch = this.findDuplicateTrack(track.key);
 
     if (duplicateMatch) {
@@ -97,6 +182,8 @@ export class PlayerController {
       };
     }
 
+    this.assertRequestAllowed(track, { bypassRequestLimits });
+
     const queueTrack = {
       ...track,
       id: crypto.randomUUID(),
@@ -104,10 +191,15 @@ export class PlayerController {
     };
 
     this.queue.push(queueTrack);
+    const requesterUsername = track.requestedBy?.username?.trim().toLowerCase();
+    if (!bypassRequestLimits && requesterUsername) {
+      this.requestTimestampsByUser.set(requesterUsername, Date.now());
+    }
     logInfo("Track queued", {
       track: formatTrack(queueTrack),
       queueLength: this.queue.length
     });
+    await this.persistRuntimeState();
     this.broadcastState();
     await this.ensurePlayback();
 
@@ -116,6 +208,64 @@ export class PlayerController {
       alreadyQueued: false,
       duplicateType: null
     };
+  }
+
+  assertRequestAllowed(track, { bypassRequestLimits = false } = {}) {
+    if (bypassRequestLimits) {
+      return;
+    }
+
+    const maxQueueLength = Number.isInteger(this.requestPolicy.maxQueueLength)
+      ? this.requestPolicy.maxQueueLength
+      : 0;
+    const maxRequestsPerUser = Number.isInteger(this.requestPolicy.maxRequestsPerUser)
+      ? this.requestPolicy.maxRequestsPerUser
+      : 0;
+    const cooldownSeconds = Number.isInteger(this.requestPolicy.cooldownSeconds)
+      ? this.requestPolicy.cooldownSeconds
+      : 0;
+
+    if (maxQueueLength > 0 && this.queue.length >= maxQueueLength) {
+      throw new Error("The request queue is full right now.");
+    }
+
+    const requesterUsername = track.requestedBy?.username?.trim().toLowerCase();
+    if (!requesterUsername) {
+      return;
+    }
+
+    if (cooldownSeconds > 0) {
+      const lastRequestedAt = this.requestTimestampsByUser.get(requesterUsername) ?? 0;
+      const cooldownMs = cooldownSeconds * 1000;
+      const remainingMs = lastRequestedAt + cooldownMs - Date.now();
+
+      if (remainingMs > 0) {
+        const remainingSeconds = Math.ceil(remainingMs / 1000);
+        throw new Error(
+          `You need to wait ${remainingSeconds} more second${remainingSeconds === 1 ? "" : "s"} before requesting another song.`
+        );
+      }
+    }
+
+    if (maxRequestsPerUser <= 0) {
+      return;
+    }
+
+    const activeRequestCount = [
+      ...this.queue,
+      this.currentTrack,
+      this.stoppedTrack
+    ].filter((candidate) => {
+      if (!candidate || candidate.origin !== "queue") {
+        return false;
+      }
+
+      return candidate.requestedBy?.username?.trim().toLowerCase() === requesterUsername;
+    }).length;
+
+    if (activeRequestCount >= maxRequestsPerUser) {
+      throw new Error("You already have too many active song requests.");
+    }
   }
 
   async removeQueuedTrack(trackId, triggeredBy) {
@@ -135,8 +285,40 @@ export class PlayerController {
       track: formatTrack(removedTrack),
       remainingQueue: this.queue.length
     });
+    await this.persistRuntimeState();
     this.broadcastState();
     return this.serializeTrack(removedTrack);
+  }
+
+  async moveQueuedTrack(trackId, offset, triggeredBy) {
+    const trackIndex = this.queue.findIndex((track) => track.id === trackId);
+
+    if (trackIndex < 0) {
+      logWarn("Requested queued-track move for an unknown track", {
+        triggeredBy,
+        trackId,
+        offset
+      });
+      return null;
+    }
+
+    const normalizedOffset = Number.isInteger(offset)
+      ? offset
+      : Number.parseInt(String(offset ?? 0), 10) || 0;
+    const nextIndex = Math.max(0, Math.min(this.queue.length - 1, trackIndex + normalizedOffset));
+    const [trackToMove] = this.queue.splice(trackIndex, 1);
+    this.queue.splice(nextIndex, 0, trackToMove);
+
+    logInfo("Moved queued track", {
+      triggeredBy,
+      track: formatTrack(trackToMove),
+      fromIndex: trackIndex,
+      toIndex: nextIndex,
+      queueLength: this.queue.length
+    });
+    await this.persistRuntimeState();
+    this.broadcastState();
+    return this.serializeTrack(trackToMove);
   }
 
   async promoteQueuedTrack(trackId, triggeredBy) {
@@ -157,6 +339,7 @@ export class PlayerController {
       track: formatTrack(trackToPromote),
       queueLength: this.queue.length
     });
+    await this.persistRuntimeState();
     this.broadcastState();
     return this.serializeTrack(trackToPromote);
   }
@@ -168,11 +351,66 @@ export class PlayerController {
       triggeredBy,
       clearedCount: clearedTracks.length
     });
+    await this.persistRuntimeState();
     this.broadcastState();
     return {
       clearedCount: clearedTracks.length,
       clearedTracks
     };
+  }
+
+  getQueueSummary(limit = 3) {
+    return this.queue.slice(0, Math.max(1, limit)).map((track) => this.serializeTrack(track));
+  }
+
+  getQueuePositionForRequester(username) {
+    const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
+    if (!normalizedUsername) {
+      return null;
+    }
+
+    const queueIndex = this.queue.findIndex((track) =>
+      track.requestedBy?.username?.trim().toLowerCase() === normalizedUsername
+    );
+
+    if (queueIndex < 0) {
+      return null;
+    }
+
+    return {
+      position: queueIndex + 1,
+      track: this.serializeTrack(this.queue[queueIndex])
+    };
+  }
+
+  async removeQueuedTrackByRequester(username, triggeredBy) {
+    const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
+    if (!normalizedUsername) {
+      return null;
+    }
+
+    const trackIndex = this.queue.findIndex((track) =>
+      track.requestedBy?.username?.trim().toLowerCase() === normalizedUsername
+    );
+
+    if (trackIndex < 0) {
+      logWarn("Requested own queued-track removal but nothing matched the requester", {
+        triggeredBy,
+        username: normalizedUsername
+      });
+      return null;
+    }
+
+    const [removedTrack] = this.queue.splice(trackIndex, 1);
+    logInfo("Removed queued track by requester", {
+      triggeredBy,
+      username: normalizedUsername,
+      track: formatTrack(removedTrack),
+      remainingQueue: this.queue.length
+    });
+    await this.persistRuntimeState();
+    this.broadcastState();
+    return this.serializeTrack(removedTrack);
   }
 
   findDuplicateTrack(trackKey) {
@@ -346,6 +584,33 @@ export class PlayerController {
     return this.serializeTrack(this.currentTrack);
   }
 
+  async restoreRuntimeState() {
+    if (!this.runtimeStateStore) {
+      return;
+    }
+
+    const persistedState = await this.runtimeStateStore.load();
+    this.queue = Array.isArray(persistedState.queue)
+      ? persistedState.queue.map((track) => ({ ...track }))
+      : [];
+    this.stoppedTrack = persistedState.stoppedTrack
+      ? { ...persistedState.stoppedTrack }
+      : null;
+    this.history = Array.isArray(persistedState.history)
+      ? persistedState.history.slice(0, this.historyLimit).map((entry) => ({
+          track: { ...entry.track },
+          status: entry.status,
+          completedAt: entry.completedAt
+        }))
+      : [];
+
+    logInfo("Restored runtime playback state", {
+      queueLength: this.queue.length,
+      hasStoppedTrack: Boolean(this.stoppedTrack),
+      historyLength: this.history.length
+    });
+  }
+
   async setPlaybackSuppressed(isSuppressed, { category = "" } = {}) {
     const nextSuppressed = Boolean(isSuppressed);
     const nextCategory = nextSuppressed ? category : "";
@@ -383,6 +648,7 @@ export class PlayerController {
 
         this.isPlaybackPaused = false;
         this.currentTrack = null;
+        await this.persistRuntimeState();
         this.broadcastState();
       }
 
@@ -456,6 +722,8 @@ export class PlayerController {
 
     this.currentTrack = null;
     this.isPlaybackPaused = false;
+    this.pushHistoryEntry(finishedTrack, payload.status);
+    await this.persistRuntimeState();
     this.broadcastState();
 
     if (payload.status === "ended" && finishedTrack.origin === "queue") {
@@ -508,6 +776,7 @@ export class PlayerController {
         logWarn("No track available for playback", {
           queueLength: this.queue.length
         });
+        await this.persistRuntimeState();
         this.broadcastState();
         return;
       }
@@ -546,6 +815,7 @@ export class PlayerController {
       }
     }
 
+    await this.persistRuntimeState();
     this.broadcastState();
     this.io.emit("player:load", {
       track: this.serializeTrack(this.currentTrack)
@@ -643,6 +913,8 @@ export class PlayerController {
       });
       this.currentTrack = null;
       this.isPlaybackPaused = false;
+      this.pushHistoryEntry(stoppedTrack, "stopped");
+      await this.persistRuntimeState();
       this.broadcastState();
 
       return this.serializeTrack(this.stoppedTrack);
@@ -660,5 +932,42 @@ export class PlayerController {
       triggeredBy
     });
     return null;
+  }
+
+  pushHistoryEntry(track, status) {
+    if (!track) {
+      return;
+    }
+
+    this.history.unshift({
+      track: {
+        id: track.id,
+        provider: track.provider,
+        url: track.url,
+        title: track.title,
+        key: track.key,
+        origin: track.origin,
+        artworkUrl: track.artworkUrl ?? "",
+        requestedBy: track.requestedBy ?? null
+      },
+      status,
+      completedAt: new Date().toISOString()
+    });
+
+    if (this.history.length > this.historyLimit) {
+      this.history.length = this.historyLimit;
+    }
+  }
+
+  async persistRuntimeState() {
+    if (!this.runtimeStateStore) {
+      return;
+    }
+
+    await this.runtimeStateStore.save({
+      queue: this.queue,
+      stoppedTrack: this.stoppedTrack,
+      history: this.history
+    });
   }
 }

@@ -18,6 +18,33 @@ const commandSpecs = [
     enabled: true
   },
   {
+    id: "queue_status",
+    label: "Queue status",
+    description: "Show a short summary of the live request queue.",
+    trigger: "!queue",
+    aliases: [],
+    permission: "everyone",
+    enabled: true
+  },
+  {
+    id: "queue_position",
+    label: "Queue position",
+    description: "Show where your next queued request sits in line.",
+    trigger: "!position",
+    aliases: [],
+    permission: "everyone",
+    enabled: true
+  },
+  {
+    id: "remove_own_request",
+    label: "Remove own request",
+    description: "Remove your earliest queued request from the queue.",
+    trigger: "!unrequest",
+    aliases: [],
+    permission: "everyone",
+    enabled: true
+  },
+  {
     id: "skip_current",
     label: "Skip current",
     description: "Skip the active track.",
@@ -58,6 +85,15 @@ const commandSpecs = [
     label: "Close requests",
     description: "Close viewer song requests.",
     trigger: "!srclose",
+    aliases: [],
+    permission: "moderator",
+    enabled: true
+  },
+  {
+    id: "clear_queue",
+    label: "Clear queue",
+    description: "Remove every queued request at once.",
+    trigger: "!clearqueue",
     aliases: [],
     permission: "moderator",
     enabled: true

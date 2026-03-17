@@ -11,6 +11,7 @@ import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { resolveSongRequest } from "./providers.js";
+import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
 
 const require = createRequire(import.meta.url);
@@ -156,11 +157,15 @@ export async function startAppServer({
     youtubeApiKey: currentSettings.youtubeApiKey
   });
   await playlistRepository.init();
+  const runtimeStateStore = new RuntimeStateStore(runtimeConfig.runtimeStatePath);
 
   const playerController = new PlayerController({
     io,
-    playlistRepository
+    playlistRepository,
+    runtimeStateStore,
+    requestPolicy: currentSettings.requestPolicy
   });
+  await playerController.restoreRuntimeState();
   const twitchBotService = new TwitchBotService({
     playerController,
     persistSettings: async (partialSettings) => {
@@ -240,11 +245,13 @@ export async function startAppServer({
     const query = typeof request.query.q === "string" ? request.query.q : "";
     const page = typeof request.query.page === "string" ? request.query.page : "1";
     const pageSize = typeof request.query.pageSize === "string" ? request.query.pageSize : "100";
+    const sortBy = typeof request.query.sortBy === "string" ? request.query.sortBy : "recent";
 
     response.json(playlistRepository.listTracks({
       query,
       page,
-      pageSize
+      pageSize,
+      sortBy
     }));
   });
 
@@ -259,13 +266,18 @@ export async function startAppServer({
         return;
       }
 
-      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey);
+      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey, {
+        allowSearchRequests: true,
+        youtubeSafeSearch: currentSettings.requestPolicy?.youtubeSafeSearch
+      });
       const queuedTrack = await playerController.addRequest({
         ...track,
         requestedBy: {
           username: "dashboard",
           displayName: "Dashboard"
         }
+      }, {
+        bypassRequestLimits: true
       });
 
       response.json({
@@ -286,6 +298,12 @@ export async function startAppServer({
   app.get("/api/queue", (_request, response) => {
     response.json({
       items: playerController.getPublicState().queue
+    });
+  });
+
+  app.get("/api/history", (_request, response) => {
+    response.json({
+      items: playerController.getPublicState().history
     });
   });
 
@@ -341,6 +359,37 @@ export async function startAppServer({
     }
   });
 
+  app.post("/api/queue/:trackId/move", async (request, response) => {
+    try {
+      const direction = request.body?.direction === "down" ? "down" : "up";
+      const movedTrack = await playerController.moveQueuedTrack(
+        request.params.trackId || "",
+        direction === "down" ? 1 : -1,
+        "dashboard"
+      );
+
+      if (!movedTrack) {
+        response.status(404).json({
+          error: "Queued track not found."
+        });
+        return;
+      }
+
+      response.json({
+        track: movedTrack,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to move queued track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to move queued track."
+      });
+    }
+  });
+
   app.post("/api/queue/clear", async (_request, response) => {
     try {
       const result = await playerController.clearQueue("dashboard");
@@ -370,7 +419,10 @@ export async function startAppServer({
         return;
       }
 
-      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey);
+      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey, {
+        allowSearchRequests: true,
+        youtubeSafeSearch: currentSettings.requestPolicy?.youtubeSafeSearch
+      });
       const added = await playlistRepository.appendTrack(track);
 
       response.json({
@@ -414,6 +466,83 @@ export async function startAppServer({
       });
       response.status(500).json({
         error: error?.message ?? "Failed to delete playlist track."
+      });
+    }
+  });
+
+  app.post("/api/playlist/bulk-delete", async (request, response) => {
+    try {
+      const trackKeys = Array.isArray(request.body?.trackKeys) ? request.body.trackKeys : [];
+      const result = await playlistRepository.removeTracksByKeys(trackKeys);
+
+      response.json({
+        result,
+        playlist: playlistRepository.listTracks()
+      });
+    } catch (error) {
+      logError("Failed to bulk delete playlist tracks", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to delete the selected playlist tracks."
+      });
+    }
+  });
+
+  app.post("/api/playlist/bulk-queue", async (request, response) => {
+    try {
+      const trackKeys = Array.isArray(request.body?.trackKeys) ? request.body.trackKeys : [];
+      const uniqueTrackKeys = Array.from(
+        new Set(
+          trackKeys
+            .map((trackKey) => typeof trackKey === "string" ? trackKey.trim() : "")
+            .filter(Boolean)
+        )
+      );
+      const queuedTracks = [];
+      let duplicateCount = 0;
+
+      for (const trackKey of uniqueTrackKeys) {
+        const track = playlistRepository.getTrackForKey(trackKey);
+        if (!track) {
+          continue;
+        }
+
+        const queuedTrack = await playerController.addRequest({
+          ...track,
+          requestedBy: {
+            username: "dashboard",
+            displayName: "Dashboard"
+          }
+        }, {
+          bypassRequestLimits: true
+        });
+
+        if (queuedTrack.alreadyQueued || queuedTrack.duplicateType) {
+          duplicateCount += 1;
+          continue;
+        }
+
+        queuedTracks.push(queuedTrack);
+      }
+
+      response.json({
+        result: {
+          requestedCount: uniqueTrackKeys.length,
+          queuedCount: queuedTracks.length,
+          duplicateCount
+        },
+        tracks: queuedTracks,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      logError("Failed to bulk queue playlist tracks", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Failed to queue the selected playlist tracks."
       });
     }
   });
@@ -463,6 +592,7 @@ export async function startAppServer({
 
       currentSettings = nextSettings;
       playlistRepository.setYoutubeApiKey(nextSettings.youtubeApiKey);
+      playerController.setRequestPolicy(nextSettings.requestPolicy);
 
       const botSettingsChanged = settingsChanged(previousSettings, nextSettings, [
         "twitchChannel",

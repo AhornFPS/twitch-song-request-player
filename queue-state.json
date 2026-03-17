@@ -1,0 +1,90 @@
+{
+  "queue": [],
+  "stoppedTrack": null,
+  "history": [
+    {
+      "track": {
+        "id": "3214d710-b14d-484a-88c3-2080fa7bffeb",
+        "provider": "youtube",
+        "url": "https://youtu.be/yU3HSdEF-os",
+        "title": "Bass Modulators - Limitless (Official Video)",
+        "key": "youtube:yU3HSdEF-os",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:28:36.663Z"
+    },
+    {
+      "track": {
+        "id": "1a87fde4-28eb-4faa-b5f4-2399f031b94a",
+        "provider": "youtube",
+        "url": "https://youtu.be/J5B4LrSlb1s",
+        "title": "VESTIGE - Elephant",
+        "key": "youtube:J5B4LrSlb1s",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:24:15.218Z"
+    },
+    {
+      "track": {
+        "id": "42b0b118-b7cd-4baa-9375-07061edc7039",
+        "provider": "youtube",
+        "url": "https://youtu.be/mFxr2_CRab4",
+        "title": "Element & Unload - Dopamine Addicted (Official Videoclip)",
+        "key": "youtube:mFxr2_CRab4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:21:36.785Z"
+    },
+    {
+      "track": {
+        "id": "72255f65-0b16-41df-b347-f80798a5819e",
+        "provider": "youtube",
+        "url": "https://youtu.be/iMHVfCyElW0",
+        "title": "Rick and Morty (Rameses B 'Psytrance' Remix)",
+        "key": "youtube:iMHVfCyElW0",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:19:28.977Z"
+    },
+    {
+      "track": {
+        "id": "73363939-46dd-4db1-ad77-a8826d201042",
+        "provider": "youtube",
+        "url": "https://youtu.be/Vz5H8bVSDmc",
+        "title": "Intelligent Manners - I Hope U Do",
+        "key": "youtube:Vz5H8bVSDmc",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:13:49.464Z"
+    },
+    {
+      "track": {
+        "id": "25319d2c-10d3-469b-893f-56e8ee102362",
+        "provider": "youtube",
+        "url": "https://youtu.be/Jm3gtx4PKT4",
+        "title": "Sparkz & Revelation - It's Always Been You",
+        "key": "youtube:Jm3gtx4PKT4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-03-17T22:07:08.711Z"
+    }
+  ]
+}

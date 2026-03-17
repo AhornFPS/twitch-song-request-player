@@ -541,6 +541,11 @@ a {
   font-size: 0.92rem;
 }
 
+.control-input--multiline {
+  min-height: 104px;
+  resize: vertical;
+}
+
 .field__hint {
   font-size: 0.84rem;
 }
@@ -561,6 +566,34 @@ a {
   gap: 14px;
 }
 
+.history-list {
+  display: grid;
+  gap: 10px;
+}
+
+.history-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.history-item__meta {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.history-item__time {
+  color: var(--muted);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
 .playlist-tools {
   display: grid;
   gap: 12px;
@@ -574,6 +607,11 @@ a {
 
 .library-toolbar {
   width: min(360px, 100%);
+}
+
+.library-toolbar__grid {
+  display: grid;
+  gap: 10px;
 }
 
 .playlist-table-wrap {
@@ -616,8 +654,18 @@ a {
   width: 112px;
 }
 
+.playlist-table__checkbox {
+  width: 44px;
+}
+
+.playlist-table__checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .queue-table__actions {
-  width: 240px;
+  width: 340px;
 }
 
 .playlist-link {
@@ -640,6 +688,35 @@ a {
 
 .request-policy-row {
   display: grid;
+}
+
+.request-limit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.fieldset-card {
+  min-width: 0;
+  margin: 0;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  display: grid;
+  gap: 10px;
+}
+
+.checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.checkbox-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
 }
 
 .toggle-card {
@@ -839,6 +916,10 @@ a {
   .panel__header--playlist {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  .request-limit-grid {
+    grid-template-columns: 1fr;
   }
 
   .playback-panel__header-actions {

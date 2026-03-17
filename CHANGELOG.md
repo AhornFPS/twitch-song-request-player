@@ -6,6 +6,14 @@ This file is maintained between releases and should be updated as work is comple
 
 - Added configurable Twitch chat commands so streamers can rename or disable the built-in request and moderation triggers from the dashboard.
 - Added dedicated Queue and Requests dashboard tabs with live queue management and request open/closed controls.
+- Added persistent queue, stopped-track, and recent playback history state so restarts no longer wipe the live request workflow.
+- Added request limit controls for queue size and per-user active requests so streamers can throttle song-request spam.
+- Added Enter-to-save support for the request limit fields so numeric caps can be updated without clicking the global save button.
+- Fixed the request limit inputs resetting back to the last saved values while you were still typing.
+- Added a dedicated Playback tab, moved desktop-player controls out of Overview, and added a one-click restart action for the last stopped track.
+- Added queue move up/down controls so moderators can fine-tune request order without only using Move to top.
+- Added request moderation controls for access level, per-user cooldowns, provider allowlists, and blocked usernames or phrases.
+- Added Library sorting plus bulk queue/delete actions so larger fallback playlists are easier to manage.
 
 ## 1.6.0 - 2026-03-17
 

@@ -255,7 +255,16 @@ test("request policy and chat commands are normalized with defaults", async (t) 
     path.join(runtimeDir, "settings.json"),
     `${JSON.stringify({
       requestPolicy: {
-        requestsEnabled: false
+        requestsEnabled: false,
+        accessLevel: "subscriber",
+        maxQueueLength: 12,
+        maxRequestsPerUser: 3,
+        cooldownSeconds: 45,
+        allowSearchRequests: false,
+        youtubeSafeSearch: "strict",
+        allowedProviders: ["youtube"],
+        blockedUsers: ["ViewerOne", "ViewerTwo"],
+        blockedPhrases: ["banned phrase", "another one"]
       },
       chatCommands: {
         song_request: {
@@ -279,8 +288,18 @@ test("request policy and chat commands are normalized with defaults", async (t) 
   const settings = await configStore.loadEffectiveSettings();
 
   assert.equal(settings.requestPolicy.requestsEnabled, false);
+  assert.equal(settings.requestPolicy.accessLevel, "subscriber");
+  assert.equal(settings.requestPolicy.maxQueueLength, 12);
+  assert.equal(settings.requestPolicy.maxRequestsPerUser, 3);
+  assert.equal(settings.requestPolicy.cooldownSeconds, 45);
+  assert.equal(settings.requestPolicy.allowSearchRequests, false);
+  assert.equal(settings.requestPolicy.youtubeSafeSearch, "strict");
+  assert.deepEqual(settings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(settings.requestPolicy.blockedUsers, ["viewerone", "viewertwo"]);
+  assert.deepEqual(settings.requestPolicy.blockedPhrases, ["banned phrase", "another one"]);
   assert.equal(settings.chatCommands.song_request.trigger, "!requestsong");
   assert.deepEqual(settings.chatCommands.song_request.aliases, ["!playsong"]);
   assert.equal(settings.chatCommands.skip_current.trigger, "!next");
   assert.equal(settings.chatCommands.current_song.trigger, "!currentsong");
+  assert.equal(settings.chatCommands.queue_status.trigger, "!queue");
 });

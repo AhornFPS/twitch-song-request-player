@@ -46,6 +46,10 @@ function parsePlaylistRows(csvText) {
     .filter(Boolean);
 }
 
+function normalizePlaylistSort(sortBy) {
+  return ["recent", "title", "provider"].includes(sortBy) ? sortBy : "recent";
+}
+
 export class PlaylistRepository {
   constructor(filePath, { youtubeApiKey = "", youtubeMetadataResolver = resolveYouTubeTrackFromApi } = {}) {
     this.filePath = filePath;
@@ -154,21 +158,45 @@ export class PlaylistRepository {
     return this.rows.find((row) => row.Key === trackKey) ?? null;
   }
 
-  listTracks({ query = "", page = 1, pageSize = 100 } = {}) {
+  listTracks({ query = "", page = 1, pageSize = 100, sortBy = "recent" } = {}) {
     const normalizedQuery = typeof query === "string" ? query.trim().toLowerCase() : "";
     const safePageSize = Math.min(Math.max(Number.parseInt(String(pageSize), 10) || 100, 1), 250);
     const safePage = Math.max(Number.parseInt(String(page), 10) || 1, 1);
+    const normalizedSort = normalizePlaylistSort(sortBy);
     const filteredRows = normalizedQuery
       ? this.rows.filter((row) => {
           const haystack = `${row.Title} ${row.Link} ${row.Provider}`.toLowerCase();
           return haystack.includes(normalizedQuery);
         })
       : this.rows;
-    const total = filteredRows.length;
+    const sortedRows = filteredRows
+      .map((row, index) => ({
+        row,
+        index: this.rows.indexOf(row),
+        filteredIndex: index
+      }))
+      .sort((left, right) => {
+        if (normalizedSort === "title") {
+          return (left.row.Title || left.row.Link).localeCompare(right.row.Title || right.row.Link);
+        }
+
+        if (normalizedSort === "provider") {
+          const providerComparison = left.row.Provider.localeCompare(right.row.Provider);
+          if (providerComparison !== 0) {
+            return providerComparison;
+          }
+
+          return (left.row.Title || left.row.Link).localeCompare(right.row.Title || right.row.Link);
+        }
+
+        return right.index - left.index;
+      })
+      .map(({ row }) => row);
+    const total = sortedRows.length;
     const totalPages = total === 0 ? 1 : Math.ceil(total / safePageSize);
     const normalizedPage = Math.min(safePage, totalPages);
     const start = (normalizedPage - 1) * safePageSize;
-    const items = filteredRows.slice(start, start + safePageSize).map((row) => ({
+    const items = sortedRows.slice(start, start + safePageSize).map((row) => ({
       key: row.Key,
       url: row.Link,
       title: row.Title || row.Link,
@@ -180,7 +208,26 @@ export class PlaylistRepository {
       total,
       page: normalizedPage,
       pageSize: safePageSize,
-      totalPages
+      totalPages,
+      sortBy: normalizedSort
+    };
+  }
+
+  getTrackForKey(trackKey) {
+    const row = this.findTrackByKey(trackKey);
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      provider: row.Provider,
+      url: row.Link,
+      title: row.Title || row.Link,
+      key: row.Key,
+      origin: "playlist",
+      requestedBy: null,
+      artworkUrl: ""
     };
   }
 
@@ -238,6 +285,42 @@ export class PlaylistRepository {
       url: track.url
     });
     return true;
+  }
+
+  async removeTracksByKeys(trackKeys) {
+    const uniqueTrackKeys = Array.from(
+      new Set(
+        Array.isArray(trackKeys)
+          ? trackKeys.map((trackKey) => typeof trackKey === "string" ? trackKey.trim() : "").filter(Boolean)
+          : []
+      )
+    );
+
+    if (uniqueTrackKeys.length === 0) {
+      return {
+        removedCount: 0,
+        removedKeys: []
+      };
+    }
+
+    const matchingKeys = uniqueTrackKeys.filter((trackKey) => this.findTrackByKey(trackKey));
+    if (matchingKeys.length === 0) {
+      return {
+        removedCount: 0,
+        removedKeys: []
+      };
+    }
+
+    this.rows = this.rows.filter((row) => !matchingKeys.includes(row.Key));
+    await this.persist();
+    logWarn("Removed multiple tracks from playlist", {
+      removedCount: matchingKeys.length
+    });
+
+    return {
+      removedCount: matchingKeys.length,
+      removedKeys: matchingKeys
+    };
   }
 
   exportCsv() {

@@ -213,7 +213,7 @@ export async function resolveTrackFromUrl(rawUrl) {
   };
 }
 
-export async function searchYouTubeMusic(query, youtubeApiKey) {
+export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "none" } = {}) {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
@@ -229,7 +229,7 @@ export async function searchYouTubeMusic(query, youtubeApiKey) {
   url.searchParams.set("type", "video");
   url.searchParams.set("maxResults", "1");
   url.searchParams.set("videoCategoryId", "10");
-  url.searchParams.set("safeSearch", "none");
+  url.searchParams.set("safeSearch", ["none", "moderate", "strict"].includes(safeSearch) ? safeSearch : "none");
   url.searchParams.set("q", trimmedQuery);
   url.searchParams.set("key", youtubeApiKey);
 
@@ -252,10 +252,16 @@ export async function searchYouTubeMusic(query, youtubeApiKey) {
   };
 }
 
-export async function resolveSongRequest(input, youtubeApiKey) {
+export async function resolveSongRequest(input, youtubeApiKey, options = {}) {
   if (isLikelyUrl(input)) {
     return resolveTrackFromUrl(input);
   }
 
-  return searchYouTubeMusic(input, youtubeApiKey);
+  if (options.allowSearchRequests === false) {
+    throw new Error("Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead.");
+  }
+
+  return searchYouTubeMusic(input, youtubeApiKey, {
+    safeSearch: options.youtubeSafeSearch
+  });
 }

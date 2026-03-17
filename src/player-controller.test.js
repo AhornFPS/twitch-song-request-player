@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PlayerController } from "./player-controller.js";
 
-function createController() {
+function createController({ runtimeStateStore = null } = {}) {
   const emittedEvents = [];
   const io = {
     emit(event, payload) {
@@ -26,7 +26,8 @@ function createController() {
   return {
     controller: new PlayerController({
       io,
-      playlistRepository
+      playlistRepository,
+      runtimeStateStore
     }),
     emittedEvents
   };
@@ -273,7 +274,7 @@ test("duplicate requests are ignored when the same track is stopped", async () =
   assert.equal(controller.getPublicState().queue.length, 0);
 });
 
-test("queue items can be promoted and removed from the dashboard queue", async () => {
+test("queue items can be moved, promoted, and removed from the dashboard queue", async () => {
   const { controller } = createController();
 
   await controller.addRequest({
@@ -319,6 +320,13 @@ test("queue items can be promoted and removed from the dashboard queue", async (
     ["Track Three", "Track Two"]
   );
 
+  const movedDown = await controller.moveQueuedTrack(thirdTrack.id, 1, "dashboard");
+  assert.equal(movedDown?.title, "Track Three");
+  assert.deepEqual(
+    controller.getPublicState().queue.map((track) => track.title),
+    ["Track Two", "Track Three"]
+  );
+
   const removed = await controller.removeQueuedTrack(secondTrack.id, "dashboard");
   assert.equal(removed?.title, "Track Two");
   assert.deepEqual(
@@ -359,4 +367,282 @@ test("queue can be cleared without interrupting the current track", async () => 
   assert.equal(result.clearedCount, 1);
   assert.equal(controller.getPublicState().currentTrack?.title, "Current Track");
   assert.equal(controller.getPublicState().queue.length, 0);
+});
+
+test("controller persists queue, stopped track, and history to the runtime state store", async () => {
+  let savedState = null;
+  const runtimeStateStore = {
+    async load() {
+      return {
+        queue: [],
+        stoppedTrack: null,
+        history: []
+      };
+    },
+    async save(state) {
+      savedState = JSON.parse(JSON.stringify(state));
+    }
+  };
+
+  const { controller } = createController({ runtimeStateStore });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/persist-me",
+    title: "Persist Me",
+    key: "youtube:persist-me",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/persist-next",
+    title: "Persist Next",
+    key: "youtube:persist-next",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+  await controller.stopPlayback("dashboard");
+
+  assert.equal(savedState.queue.length, 1);
+  assert.equal(savedState.stoppedTrack.title, "Persist Me");
+  assert.equal(savedState.history[0].status, "stopped");
+});
+
+test("controller restores queue, stopped track, and history from the runtime state store", async () => {
+  const runtimeStateStore = {
+    async load() {
+      return {
+        queue: [
+          {
+            id: "queued-one",
+            provider: "youtube",
+            url: "https://youtu.be/queued-one",
+            title: "Queued One",
+            key: "youtube:queued-one",
+            origin: "queue",
+            artworkUrl: "",
+            requestedBy: {
+              username: "viewerone",
+              displayName: "ViewerOne"
+            }
+          }
+        ],
+        stoppedTrack: {
+          id: "stopped-one",
+          provider: "youtube",
+          url: "https://youtu.be/stopped-one",
+          title: "Stopped One",
+          key: "youtube:stopped-one",
+          origin: "queue",
+          artworkUrl: "",
+          requestedBy: {
+            username: "viewerone",
+            displayName: "ViewerOne"
+          }
+        },
+        history: [
+          {
+            track: {
+              id: "history-one",
+              provider: "youtube",
+              url: "https://youtu.be/history-one",
+              title: "History One",
+              key: "youtube:history-one",
+              origin: "queue",
+              artworkUrl: "",
+              requestedBy: {
+                username: "viewerone",
+                displayName: "ViewerOne"
+              }
+            },
+            status: "skipped",
+            completedAt: "2026-03-17T12:00:00.000Z"
+          }
+        ]
+      };
+    },
+    async save() {
+    }
+  };
+
+  const { controller } = createController({ runtimeStateStore });
+  await controller.restoreRuntimeState();
+
+  const state = controller.getPublicState();
+  assert.equal(state.queue.length, 1);
+  assert.equal(state.queue[0].title, "Queued One");
+  assert.equal(state.stoppedTrack?.title, "Stopped One");
+  assert.equal(state.history.length, 1);
+  assert.equal(state.history[0].track?.title, "History One");
+  assert.equal(state.history[0].status, "skipped");
+});
+
+test("request policy enforces a max queue length for normal requests", async () => {
+  const { controller } = createController();
+  controller.setRequestPolicy({
+    requestsEnabled: true,
+    maxQueueLength: 1,
+    maxRequestsPerUser: 0
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/limit-one",
+    title: "Limit One",
+    key: "youtube:limit-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/limit-two",
+    title: "Limit Two",
+    key: "youtube:limit-two",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  await assert.rejects(
+    controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/limit-three",
+      title: "Limit Three",
+      key: "youtube:limit-three",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerthree",
+        displayName: "ViewerThree"
+      }
+    }),
+    /queue is full/i
+  );
+});
+
+test("request policy enforces per-user active request limits but allows bypassed requests", async () => {
+  const { controller } = createController();
+  controller.setRequestPolicy({
+    requestsEnabled: true,
+    maxQueueLength: 0,
+    maxRequestsPerUser: 1
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/user-limit-one",
+    title: "User Limit One",
+    key: "youtube:user-limit-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await assert.rejects(
+    controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/user-limit-two",
+      title: "User Limit Two",
+      key: "youtube:user-limit-two",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }),
+    /too many active song requests/i
+  );
+
+  const bypassedTrack = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/mod-bypass",
+    title: "Mod Bypass",
+    key: "youtube:mod-bypass",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  }, {
+    bypassRequestLimits: true
+  });
+
+  assert.equal(bypassedTrack.title, "Mod Bypass");
+});
+
+test("request policy enforces per-user cooldowns for normal requests", async (t) => {
+  const { controller } = createController();
+  const originalNow = Date.now;
+  let currentNow = 1_000_000;
+
+  Date.now = () => currentNow;
+  t.after(() => {
+    Date.now = originalNow;
+  });
+
+  controller.setRequestPolicy({
+    requestsEnabled: true,
+    maxQueueLength: 0,
+    maxRequestsPerUser: 0,
+    cooldownSeconds: 30
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/cooldown-one",
+    title: "Cooldown One",
+    key: "youtube:cooldown-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  currentNow += 10_000;
+
+  await assert.rejects(
+    controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/cooldown-two",
+      title: "Cooldown Two",
+      key: "youtube:cooldown-two",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }),
+    /wait 20 more seconds/i
+  );
+
+  currentNow += 21_000;
+
+  const acceptedTrack = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/cooldown-three",
+    title: "Cooldown Three",
+    key: "youtube:cooldown-three",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  assert.equal(acceptedTrack.title, "Cooldown Three");
 });
