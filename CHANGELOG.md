@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 1.5.0 - 2026-03-17
+
 - Simplified the desktop dashboard back to the Atlas layout and removed the GUI look switcher.
 - Added an in-app playlist library with search, paging, add, delete, CSV import, and CSV export controls.
 - Added a separate dashboard status badge for Twitch category lookup and OAuth health.
