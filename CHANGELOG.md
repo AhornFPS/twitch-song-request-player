@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.0.0 - 2026-03-17
+
 - Added configurable Twitch chat commands so streamers can rename or disable the built-in request and moderation triggers from the dashboard.
 - Added dedicated Queue and Requests dashboard tabs with live queue management and request open/closed controls.
 - Added persistent queue, stopped-track, and recent playback history state so restarts no longer wipe the live request workflow.
