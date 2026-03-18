@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.1.0 - 2026-03-18
+
 - Tightened the Library track list so row actions stay inline and the table wastes less vertical space.
 - Tightened the Library tab controls so the search and sort panel lines up with the playlist action buttons instead of leaving a large empty gap.
 - Added playlist title editing, metadata refresh, and selected-row CSV export tools in the Library tab.
