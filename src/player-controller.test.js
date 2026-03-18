@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PlayerController } from "./player-controller.js";
 
-function createController({ runtimeStateStore = null } = {}) {
+function createController({ runtimeStateStore = null, requestPolicy = {} } = {}) {
   const emittedEvents = [];
   const io = {
     emit(event, payload) {
@@ -27,7 +27,8 @@ function createController({ runtimeStateStore = null } = {}) {
     controller: new PlayerController({
       io,
       playlistRepository,
-      runtimeStateStore
+      runtimeStateStore,
+      requestPolicy
     }),
     emittedEvents
   };
@@ -274,6 +275,50 @@ test("duplicate requests are ignored when the same track is stopped", async () =
   assert.equal(controller.getPublicState().queue.length, 0);
 });
 
+test("duplicate requests can be blocked by recent playback history", async () => {
+  const { controller } = createController({
+    requestPolicy: {
+      duplicateHistoryCount: 2
+    }
+  });
+
+  controller.history = [
+    {
+      track: {
+        id: "history-1",
+        provider: "youtube",
+        url: "https://youtu.be/recent-duplicate",
+        title: "Recent Duplicate",
+        key: "youtube:recent-duplicate",
+        origin: "queue",
+        artworkUrl: "",
+        requestedBy: {
+          username: "viewerone",
+          displayName: "ViewerOne"
+        }
+      },
+      status: "ended",
+      completedAt: new Date().toISOString()
+    }
+  ];
+
+  const duplicateResult = await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/recent-duplicate",
+    title: "Recent Duplicate",
+    key: "youtube:recent-duplicate",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  assert.equal(duplicateResult.alreadyQueued, false);
+  assert.equal(duplicateResult.duplicateType, "history");
+  assert.equal(controller.getPublicState().queue.length, 0);
+});
+
 test("queue items can be moved, promoted, and removed from the dashboard queue", async () => {
   const { controller } = createController();
 
@@ -465,6 +510,17 @@ test("controller restores queue, stopped track, and history from the runtime sta
             status: "skipped",
             completedAt: "2026-03-17T12:00:00.000Z"
           }
+        ],
+        adminEvents: [
+          {
+            action: "queue_clear",
+            triggeredBy: "dashboard",
+            track: null,
+            details: {
+              clearedCount: 2
+            },
+            createdAt: "2026-03-17T12:05:00.000Z"
+          }
         ]
       };
     },
@@ -482,6 +538,8 @@ test("controller restores queue, stopped track, and history from the runtime sta
   assert.equal(state.history.length, 1);
   assert.equal(state.history[0].track?.title, "History One");
   assert.equal(state.history[0].status, "skipped");
+  assert.equal(state.adminEvents.length, 1);
+  assert.equal(state.adminEvents[0].action, "queue_clear");
 });
 
 test("request policy enforces a max queue length for normal requests", async () => {
@@ -645,4 +703,43 @@ test("request policy enforces per-user cooldowns for normal requests", async (t)
   });
 
   assert.equal(acceptedTrack.title, "Cooldown Three");
+});
+
+test("admin activity events are recorded and persisted with runtime state", async () => {
+  let savedState = null;
+  const runtimeStateStore = {
+    async load() {
+      return {
+        queue: [],
+        stoppedTrack: null,
+        history: [],
+        adminEvents: []
+      };
+    },
+    async save(state) {
+      savedState = JSON.parse(JSON.stringify(state));
+    }
+  };
+
+  const { controller } = createController({ runtimeStateStore });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/admin-track",
+    title: "Admin Track",
+    key: "youtube:admin-track",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.stopPlayback("dashboard");
+  await controller.clearQueue("dashboard");
+
+  assert.equal(controller.getPublicState().adminEvents.length >= 2, true);
+  assert.equal(controller.getPublicState().adminEvents[0].action, "queue_clear");
+  assert.equal(savedState.adminEvents[0].action, "queue_clear");
+  assert.equal(savedState.adminEvents[1].action, "stop_playback");
 });

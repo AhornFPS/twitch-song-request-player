@@ -65,15 +65,17 @@ test("saved GUI player state is preserved across reloads", async (t) => {
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ guiPlayerEnabled: true, guiPlayerVolume: 42 }, null, 2)}\n`,
+    `${JSON.stringify({ startWithWindows: true, guiPlayerEnabled: true, guiPlayerVolume: 42, playerStartupTimeoutSeconds: 9 }, null, 2)}\n`,
     "utf8"
   );
 
   const configStore = createConfigStore({ runtimeDir });
   const settings = await configStore.loadEffectiveSettings();
 
+  assert.equal(settings.startWithWindows, true);
   assert.equal(settings.guiPlayerEnabled, true);
   assert.equal(settings.guiPlayerVolume, 42);
+  assert.equal(settings.playerStartupTimeoutSeconds, 9);
 });
 
 test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {
@@ -259,11 +261,17 @@ test("request policy and chat commands are normalized with defaults", async (t) 
         accessLevel: "subscriber",
         maxQueueLength: 12,
         maxRequestsPerUser: 3,
+        duplicateHistoryCount: 4,
         cooldownSeconds: 45,
+        maxTrackDurationSeconds: 600,
+        rejectLiveStreams: true,
         allowSearchRequests: false,
         youtubeSafeSearch: "strict",
         allowedProviders: ["youtube"],
+        blockedYouTubeChannelIds: ["UCBlockedOne"],
+        blockedSoundCloudUsers: ["BannedArtist"],
         blockedUsers: ["ViewerOne", "ViewerTwo"],
+        blockedDomains: ["YouTube.com", "YOUTU.BE"],
         blockedPhrases: ["banned phrase", "another one"]
       },
       chatCommands: {
@@ -291,11 +299,17 @@ test("request policy and chat commands are normalized with defaults", async (t) 
   assert.equal(settings.requestPolicy.accessLevel, "subscriber");
   assert.equal(settings.requestPolicy.maxQueueLength, 12);
   assert.equal(settings.requestPolicy.maxRequestsPerUser, 3);
+  assert.equal(settings.requestPolicy.duplicateHistoryCount, 4);
   assert.equal(settings.requestPolicy.cooldownSeconds, 45);
+  assert.equal(settings.requestPolicy.maxTrackDurationSeconds, 600);
+  assert.equal(settings.requestPolicy.rejectLiveStreams, true);
   assert.equal(settings.requestPolicy.allowSearchRequests, false);
   assert.equal(settings.requestPolicy.youtubeSafeSearch, "strict");
   assert.deepEqual(settings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(settings.requestPolicy.blockedYouTubeChannelIds, ["ucblockedone"]);
+  assert.deepEqual(settings.requestPolicy.blockedSoundCloudUsers, ["bannedartist"]);
   assert.deepEqual(settings.requestPolicy.blockedUsers, ["viewerone", "viewertwo"]);
+  assert.deepEqual(settings.requestPolicy.blockedDomains, ["youtube.com", "youtu.be"]);
   assert.deepEqual(settings.requestPolicy.blockedPhrases, ["banned phrase", "another one"]);
   assert.equal(settings.chatCommands.song_request.trigger, "!requestsong");
   assert.deepEqual(settings.chatCommands.song_request.aliases, ["!playsong"]);

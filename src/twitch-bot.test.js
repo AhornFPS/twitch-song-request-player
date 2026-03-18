@@ -51,6 +51,8 @@ function createBotHarness({
     },
     async clearQueue() {
       return clearQueueResult;
+    },
+    recordAdminEvent() {
     }
   };
   const client = {
@@ -165,6 +167,47 @@ test("duplicate song requests send the queue warning to Twitch chat", async () =
     {
       channel: "#testchannel",
       message: "Song Duplicate Track already in the queue"
+    }
+  ]);
+});
+
+test("recent-history duplicate song requests send the played recently warning", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/recent-duplicate",
+      title: "Recent Duplicate Track",
+      key: "youtube:recent-duplicate",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://youtu.be/recent-duplicate",
+      title: "Recent Duplicate Track",
+      key: "youtube:recent-duplicate",
+      origin: "queue",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      isSaved: false,
+      alreadyQueued: false,
+      duplicateType: "history"
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr recent duplicate");
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Song Recent Duplicate Track was played recently"
     }
   ]);
 });
@@ -442,6 +485,158 @@ test("blocked phrases and provider restrictions reject chat requests with clear 
     {
       channel: "#testchannel",
       message: "soundcloud requests are currently disabled."
+    }
+  ]);
+});
+
+test("duration, live-stream, and blocked-source safety rules reject chat requests before queueing", async () => {
+  const durationHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      maxTrackDurationSeconds: 300
+    },
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/too-long",
+      title: "Too Long",
+      key: "youtube:too-long",
+      artworkUrl: "",
+      durationSeconds: 540
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for tracks over the duration limit");
+    }
+  });
+
+  await durationHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr too long", false);
+
+  assert.deepEqual(durationHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "That track is too long for requests. The limit is 300 seconds."
+    }
+  ]);
+
+  const liveHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      rejectLiveStreams: true
+    },
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/live-one",
+      title: "Live One",
+      key: "youtube:live-one",
+      artworkUrl: "",
+      isLive: true
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked live streams");
+    }
+  });
+
+  await liveHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr live one", false);
+
+  assert.deepEqual(liveHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Live streams are blocked from song requests right now."
+    }
+  ]);
+
+  const blockedDomainHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      blockedDomains: ["youtube.com"]
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked direct-link domains");
+    }
+  });
+
+  await blockedDomainHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr https://www.youtube.com/watch?v=blocked-domain", false);
+
+  assert.deepEqual(blockedDomainHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Direct links from that domain are blocked."
+    }
+  ]);
+
+  const youtubeSourceHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      blockedYouTubeChannelIds: ["@blockedhandle"]
+    },
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/source-blocked",
+      title: "Source Blocked",
+      key: "youtube:source-blocked",
+      artworkUrl: "",
+      sourceChannelId: "UCBlocked",
+      sourceName: "Blocked Handle",
+      sourceUrl: "https://www.youtube.com/@BlockedHandle"
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked YouTube channels");
+    }
+  });
+
+  await youtubeSourceHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr source blocked", false);
+
+  assert.deepEqual(youtubeSourceHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Requests from that YouTube channel are blocked."
+    }
+  ]);
+
+  const soundCloudSourceHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      blockedSoundCloudUsers: ["artistslug"]
+    },
+    resolvedTrack: {
+      provider: "soundcloud",
+      url: "https://soundcloud.com/artistslug/blocked-track",
+      title: "Blocked SoundCloud",
+      key: "soundcloud:https://soundcloud.com/artistslug/blocked-track",
+      artworkUrl: "",
+      sourceName: "ArtistSlug",
+      sourceUrl: "https://soundcloud.com/artistslug"
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked SoundCloud accounts");
+    }
+  });
+
+  await soundCloudSourceHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr blocked soundcloud", false);
+
+  assert.deepEqual(soundCloudSourceHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Requests from that SoundCloud account are blocked."
     }
   ]);
 });

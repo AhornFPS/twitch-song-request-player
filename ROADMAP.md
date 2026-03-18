@@ -1,6 +1,6 @@
 # Twitch Song Request Player Roadmap
 
-This roadmap turns the current feature gap list into an implementation plan that fits the existing app structure:
+This roadmap now treats the shipped queue/moderation/dashboard work as the completed first pass and turns the remaining gaps into a second-pass implementation plan that fits the existing app structure:
 
 - Node/Express API in `src/app-server.js`
 - Playback state machine in `src/player-controller.js`
@@ -8,7 +8,48 @@ This roadmap turns the current feature gap list into an implementation plan that
 - Runtime settings in `src/config.js`
 - Dashboard shell in `public/dashboard.js`
 
-The goal is to make the app production-ready for active streams without collapsing the dashboard into oversized tabs.
+The goal for the second pass is to harden the app for active streams with better repair workflows, safer imports, clearer failure handling, and tighter direct-link validation without collapsing the dashboard into oversized tabs.
+
+## Handoff Status
+
+Use this file as the fresh-context handoff source.
+
+- `Done`: shipped and not currently a second-pass priority.
+- `Partial`: the first-pass foundation shipped, but there is still meaningful second-pass work.
+- `Next`: the best active second-pass work for a new agent to pick up.
+- `Deferred`: intentionally not in second pass because the current embedded-player architecture makes it expensive or unreliable.
+
+### Current state summary
+
+- `Done`: top-level dashboard split into `Overview`, `Playback`, `Queue`, `Requests`, `Settings`, and `Library`
+- `Done`: live queue management from the dashboard
+- `Done`: queue persistence, stopped-track restore, and playback history
+- `Done`: configurable request policy and configurable chat commands
+- `Done`: expanded chat commands for queue, position, remove-own-request, open/close requests, and clear queue
+- `Done`: library sorting, bulk actions, metadata refresh, title editing, and selected export
+- `Done`: request safety controls for search safety, provider allowlists, blocked users/phrases, blocked sources, max duration, and live-stream blocking
+- `Done`: diagnostics export and recent admin activity log
+- `Done`: packaged Windows `Start with Windows` toggle
+- `Partial`: playback polish is limited to restart tools, saved GUI volume, and startup-timeout tuning
+
+## Second Pass Focus
+
+1. `Next` Build library health review tooling.
+   - Detect broken/unavailable tracks.
+   - Track repeated playback failures.
+   - Surface a repair/review queue in `Library`.
+2. `Next` Add playlist-import previews.
+   - Dry-run CSV import summary before apply.
+   - Duplicate preview before append/replace.
+3. `Next` Add optional source/domain blocking beyond the current provider/channel/account controls.
+   - Blocked URL domains for direct links.
+   - Optional stricter source validation for embeds.
+4. `Next` Improve failure surfacing.
+   - Make unavailable-track and queue-restore failures visible in the dashboard.
+   - Carry more actionable detail into diagnostics exports and repair flows.
+5. `Deferred` Do an architecture review before any deeper playback polish.
+   - Current embedded YouTube/SoundCloud approach is fine for moderation and queueing.
+   - It is not a clean base for true normalization or reliable crossfade.
 
 ## Planning Principles
 
@@ -17,8 +58,11 @@ The goal is to make the app production-ready for active streams without collapsi
 - Prefer incremental API additions over rewrites.
 - Preserve the current desktop-first workflow and OBS overlay compatibility.
 - Keep settings migrations explicit and test-backed.
+- Prefer repair/review workflows over broad new feature surface area in pass two.
 
 ## Proposed Main Tab Split
+
+Status: `Done`
 
 The current `Overview`, `Connection`, and `Playlist` tabs are already near the point where new work will make them too dense. Expand the dashboard into these top-level tabs:
 
@@ -62,6 +106,8 @@ This split keeps the app discoverable while leaving room for future features suc
 
 Priority: highest
 
+Status: `Done`
+
 ### User-facing goals
 
 - Let mods and the streamer manage the queue directly from the dashboard.
@@ -71,59 +117,59 @@ Priority: highest
 ### Features
 
 - Queue item actions:
-  - remove specific queued track
-  - move queued track to top
-  - move up/down
-  - clear full queue
-  - restart stopped track
+  - `Done` remove specific queued track
+  - `Done` move queued track to top
+  - `Done` move up/down
+  - `Done` clear full queue
+  - `Done` restart stopped track
 - Queue metadata:
-  - requester name
-  - provider badge
-  - saved/not-saved badge
-  - added-at timestamp
+  - `Done` requester name
+  - `Done` provider badge
+  - `Done` saved/not-saved badge
+  - `Not done` added-at timestamp
 - Playback history:
-  - recent played list
-  - status markers such as ended, skipped, deleted, errored
+  - `Done` recent played list
+  - `Done` status markers such as ended, skipped, deleted, errored
 - Persistence:
-  - persist `queue`, `currentTrack` recovery metadata if appropriate, `stoppedTrack`, and `history`
-  - restore persisted state on startup
+  - `Done` persist `queue`, `stoppedTrack`, `history`, and admin activity
+  - `Done` restore persisted state on startup
 
 ### Server and data changes
 
-- Add a runtime state store, for example `queue-state.json`, beside `settings.json` and `playlist.csv`.
-- Extend `PlayerController` with explicit queue mutation methods instead of only `addRequest`, `skip`, and `stop`.
-- Persist after every queue mutation and playback transition.
-- Restore state before `ensurePlayback()` runs on boot.
-- Decide one startup rule and document it:
-  - recommended: restore queue and stopped track, but do not auto-resume the interrupted track
+- `Done` runtime state store beside `settings.json` and `playlist.csv`
+- `Done` explicit queue mutation methods in `PlayerController`
+- `Done` persist after queue mutation and playback transition
+- `Done` restore state before `ensurePlayback()` runs on boot
+- `Done` startup rule: restore queue and stopped track, but do not auto-resume the interrupted track
 
 ### API work
 
-- Add endpoints for:
-  - `GET /api/queue`
-  - `DELETE /api/queue/:trackId`
-  - `POST /api/queue/:trackId/promote`
-  - `POST /api/queue/:trackId/move`
-  - `POST /api/queue/clear`
-  - `GET /api/history`
-- Keep `POST /api/queue` as the add endpoint.
+- `Done` `GET /api/queue`
+- `Done` `DELETE /api/queue/:trackId`
+- `Done` `POST /api/queue/:trackId/promote`
+- `Done` `POST /api/queue/:trackId/move`
+- `Done` `POST /api/queue/clear`
+- `Done` `GET /api/history`
+- `Done` `POST /api/queue` kept as the add endpoint
 
 ### Dashboard work
 
-- Create a dedicated `Queue` tab.
-- Move the full queue out of `Overview`.
-- Keep `Overview` limited to a short preview and quick actions.
-- Add optimistic UI feedback for queue mutations.
+- `Done` dedicated `Queue` tab
+- `Done` moved full queue out of `Overview`
+- `Done` kept `Overview` to preview + quick actions
+- `Done` immediate UI feedback for queue mutations
 
 ### Tests
 
-- `player-controller` tests for reorder, remove, clear, promote, and restore behavior
-- `app-server` tests for new queue endpoints
-- migration/loading tests for persisted runtime state
+- `Done` `player-controller` tests for reorder, remove, clear, promote, and restore behavior
+- `Done` `app-server` tests for queue endpoints
+- `Done` migration/loading tests for persisted runtime state
 
 ## Phase 2: Request Guardrails And Moderation Policy
 
 Priority: highest
+
+Status: `Done`
 
 ### User-facing goals
 
@@ -133,45 +179,48 @@ Priority: highest
 ### Features
 
 - Request availability:
-  - global requests on/off
-  - mod-only mode
-  - follower/subscriber-only mode if supported by tags
+  - `Done` global requests on/off
+  - `Done` mod-only mode through access levels
+  - `Done` subscriber/VIP/broadcaster gating from Twitch tags
 - Limits:
-  - per-user queued track cap
-  - per-user cooldown
-  - global queue length cap
-  - max track duration
+  - `Done` per-user queued track cap
+  - `Done` per-user cooldown
+  - `Done` global queue length cap
+  - `Done` max track duration
   - optional min account age is out of scope unless Twitch APIs make it cheap
 - Moderation lists:
-  - blocked users
-  - blocked phrases
-  - blocked domains or channels
-  - allowed providers toggle
+  - `Done` blocked users
+  - `Done` blocked phrases
+  - `Done` blocked channels/accounts
+  - `Done` blocked domains for direct links
+  - `Done` allowed providers toggle
 - Duplicate policy:
-  - keep current duplicate detection
-  - add configurable duplicate window for recent history if desired
+  - `Done` current duplicate detection
+  - `Done` configurable duplicate window for recent history
 
 ### Server and data changes
 
-- Extend settings schema with a `requestPolicy` object instead of scattering booleans and numbers at top level.
-- Validate limits centrally before queue insertion.
-- Resolve track metadata early enough to enforce duration and source rules before accepting the request.
+- `Done` settings schema uses `requestPolicy`
+- `Done` validate limits centrally before queue insertion
+- `Done` resolve enough metadata to enforce duration and source rules for chat requests
 
 ### Bot and dashboard behavior
 
-- When a request is denied, reply with a short specific reason.
-- Surface request-policy status in the `Requests` tab and in `Overview`.
-- Add a status pill for `Requests Open` or `Requests Closed`.
+- `Done` denial replies are short and specific
+- `Done` request-policy status is surfaced in `Requests` and `Overview`
+- `Done` request status pill exists
 
 ### Tests
 
-- command acceptance and rejection cases
-- per-user cap and cooldown tests
-- duration and provider restriction tests
+- `Done` command acceptance and rejection cases
+- `Done` per-user cap and cooldown tests
+- `Done` duration and provider restriction tests
 
 ## Phase 3: Configurable Chat Commands
 
 Priority: highest
+
+Status: `Done`
 
 This is additional scope requested for this roadmap and should ship with request-policy work, not after it.
 
@@ -217,20 +266,22 @@ This is additional scope requested for this roadmap and should ship with request
 
 ### Dashboard work
 
-- Add a `Requests` tab section for command configuration.
-- Show defaults, current trigger, aliases, enabled state, and permission level.
-- Include a reset-to-defaults action for commands only.
+- `Done` `Requests` tab section for command configuration
+- `Done` current trigger, aliases, enabled state, and permission level
+- `Not done` reset-to-defaults action for commands only
 
 ### Tests
 
-- command parsing with renamed triggers
-- alias matching
-- permission enforcement after rename
-- settings validation for collisions
+- `Done` command parsing with renamed triggers
+- `Done` alias matching
+- `Done` permission enforcement after rename
+- `Done` settings validation for collisions
 
 ## Phase 4: Viewer And Moderator Command Expansion
 
 Priority: high
+
+Status: `Done`
 
 ### User-facing goals
 
@@ -238,12 +289,12 @@ Priority: high
 
 ### New commands to add
 
-- queue display
-- requester queue position
-- remove own queued song
-- open requests
-- close requests
-- clear queue
+- `Done` queue display
+- `Done` requester queue position
+- `Done` remove own queued song
+- `Done` open requests
+- `Done` close requests
+- `Done` clear queue
 - maybe voteskip later, but only after request guardrails are stable
 
 ### Design notes
@@ -257,6 +308,8 @@ Priority: high
 
 Priority: high
 
+Status: `Next`
+
 ### User-facing goals
 
 - Make the fallback library manageable once it grows beyond a small CSV.
@@ -264,40 +317,48 @@ Priority: high
 ### Features
 
 - Sorting:
-  - title
-  - provider
-  - recently added
+  - `Done` title
+  - `Done` provider
+  - `Done` recently added
 - Bulk actions:
-  - multi-select delete
-  - export selected
-  - move selected to queue
+  - `Done` multi-select delete
+  - `Done` export selected
+  - `Done` move selected to queue
 - Metadata actions:
-  - repair missing title
-  - edit title
-  - inspect provider and key
+  - `Done` repair/refresh title
+  - `Done` edit title
+  - `Done` inspect provider and key
 - Import improvements:
-  - dry-run summary before replace
-  - duplicate preview
+  - `Not done` dry-run summary before replace
+  - `Not done` duplicate preview
   - import YouTube playlist URLs if feasible
   - import SoundCloud sets if feasible
 - Health review:
-  - detect broken or unavailable items
-  - mark items with repeated playback failures
+  - `Not done` detect broken or unavailable items
+  - `Not done` mark items with repeated playback failures
 
 ### Data and API changes
 
-- Consider moving library storage from raw CSV-only semantics to an internal JSON model that still imports/exports CSV for compatibility.
-- If CSV remains the source of truth, add supplemental metadata carefully and keep export backward-compatible.
+- `Not done` storage migration away from CSV-only semantics
+- `Current approach` CSV remains the source of truth and export stays backward-compatible
 
 ### Dashboard work
 
-- Keep `Library` as its own tab.
-- Add filters, sort controls, and bulk action toolbar.
-- Keep import/export visible but separate from destructive bulk actions.
+- `Done` `Library` as its own tab
+- `Done` search, sort controls, and bulk action toolbar
+- `Done` import/export kept visible and separate from destructive bulk actions
+
+### Second-pass focus
+
+- `Next` detect unavailable tracks and repeated playback failures without breaking CSV import/export compatibility
+- `Next` add a `Library` review queue for repair, retry, and cleanup workflows
+- `Next` add import dry runs that preview duplicates, invalid rows, and replace-vs-append impact before commit
 
 ## Phase 6: Content Safety Controls
 
 Priority: high
+
+Status: `Next`
 
 ### User-facing goals
 
@@ -306,18 +367,18 @@ Priority: high
 ### Features
 
 - Search safety:
-  - configurable YouTube `safeSearch`
-  - optional search disable while still allowing direct URLs
+  - `Done` configurable YouTube `safeSearch`
+  - `Done` optional search disable while still allowing direct URLs
 - Source safety:
-  - blocked YouTube channel ids
-  - blocked SoundCloud users
-  - provider allowlist
+  - `Done` blocked YouTube channel ids
+  - `Done` blocked SoundCloud users
+  - `Done` provider allowlist
 - Query safety:
-  - blocked keywords
+  - `Done` blocked keywords/phrases
   - blocked regex patterns only if the UI stays simple
 - Request acceptance policy:
-  - reject live streams if they create problems
-  - reject tracks over max duration
+  - `Done` reject live streams
+  - `Done` reject tracks over max duration
   - optionally reject tracks without embeddable metadata when detectable
 
 ### Design notes
@@ -326,9 +387,17 @@ Priority: high
 - Prefer a few predictable controls over a large moderation DSL.
 - Put these controls in the `Requests` tab, not in a generic settings dump.
 
+### Second-pass focus
+
+- `Next` add blocked direct-link domains for URL requests
+- `Next` centralize stricter direct-link validation so embeds and chat requests share the same checks
+- `Next` keep the safety model explicit instead of expanding into regex-heavy moderation rules
+
 ## Phase 7: Audio And Playback Polish
 
 Priority: medium
+
+Status: `Deferred pending architecture review`
 
 ### User-facing goals
 
@@ -336,11 +405,11 @@ Priority: medium
 
 ### Features
 
-- Fade in/fade out on track transitions where provider APIs allow it
-- Optional default volume per provider
-- Manual track restart
-- Remember last GUI player volume and expose it clearly
-- Optional silence timeout diagnostics if browser playback hangs
+- `Not done` fade in/fade out on track transitions
+- `Not done` optional default volume per provider
+- `Done` manual track restart
+- `Done` remember last GUI player volume and expose it clearly
+- `Done, practical equivalent` configurable embedded-player startup timeout for stuck loads
 
 ### Deferred unless architecture changes
 
@@ -350,100 +419,129 @@ Priority: medium
 
 These are harder with embedded YouTube and SoundCloud players and should not block the higher-value moderation and queue work.
 
+### Second-pass focus
+
+- `Deferred` do not start fades, normalization, or cross-provider polish until the playback architecture is reviewed
+- `Deferred` if audio work becomes important, decide first whether embedded players remain the long-term playback model
+
 ## Phase 8: Diagnostics And Admin Quality Of Life
 
 Priority: medium
 
+Status: `Next`
+
 ### Features
 
 - Admin activity log in dashboard:
-  - who skipped
-  - who deleted
-  - who closed requests
+  - `Done` who skipped
+  - `Done` who deleted
+  - `Done` who closed requests
 - Better surfaced error states:
-  - invalid token
-  - unavailable track
-  - queue restore failures
-- One-click export of logs and settings for debugging
+  - `Done` invalid token
+  - `Partial` unavailable track reporting
+  - `Partial` queue restore failures
+- `Done` one-click export of logs/settings/runtime state for debugging
+
+### Second-pass focus
+
+- `Next` surface unavailable-track details directly in dashboard and library repair flows
+- `Next` make queue-restore failures actionable instead of leaving them as low-context diagnostics
+- `Next` include failure reasons and review metadata in diagnostics exports where practical
 
 ## Recommended Delivery Order
 
-1. Dashboard tab split and underlying settings model cleanup
-2. Queue actions and queue persistence
-3. Request policy engine
-4. Configurable chat commands
-5. Expanded chat commands
-6. Library improvements
-7. Content safety controls
-8. Audio polish
-9. Diagnostics
+Status: `Active second-pass order`
+
+1. Library health review and repair queue
+2. CSV import dry-run and duplicate preview
+3. Direct-link domain blocking and shared URL validation
+4. Better unavailable-track and queue-restore diagnostics
+5. Optional command/settings polish such as command reset-to-defaults
+6. Playback architecture review before any deeper audio work
 
 ## Suggested Milestones
 
-### Milestone A: Queue Foundations
+### Milestone A: Library Health Review
 
-- New `Queue` and `Playback` tabs exist
-- queue remove/promote/reorder/clear works
-- runtime queue persistence works
-- recent history exists
+Status: `Next`
 
-### Milestone B: Requests Control
+- repeated playback failures are tracked per saved item
+- unavailable or broken tracks are visible in a repair/review view
+- moderators can retry, inspect, or remove flagged tracks quickly
 
-- New `Requests` tab exists
-- requests open/closed state exists
-- per-user and global limits work
-- max duration and provider restrictions work
+### Milestone B: Import Safety
 
-### Milestone C: Command Reconfiguration
+Status: `Next`
 
-- commands are no longer hardcoded
-- commands can be renamed, disabled, and permission-gated
-- collision validation exists
+- replace and append imports can run as a dry preview first
+- duplicate rows are summarized before commit
+- invalid rows are reported with actionable reasons
 
-### Milestone D: Library And Safety
+### Milestone C: Source Validation Hardening
 
-- library sorting and bulk actions exist
-- blocked users/phrases/sources exist
-- safer search configuration exists
+Status: `Next`
 
-### Milestone E: Playback Polish
+- blocked direct-link domains can be configured from the dashboard
+- URL parsing and validation happen in one shared path
+- denial replies stay short but explain whether the domain, provider, or metadata rule failed
 
-- better fade behavior or restart tools exist
-- diagnostics and admin log are visible
+### Milestone D: Failure Visibility
+
+Status: `Next`
+
+- unavailable-track details are visible outside exported diagnostics
+- queue-restore failures surface enough context for recovery
+- diagnostics exports include the data needed to explain recent failures
+
+### Milestone E: Playback Architecture Decision
+
+Status: `Deferred`
+
+- decide whether embedded players remain the long-term playback model
+- only schedule fade, normalization, or crossfade work if that review says the architecture can support it cleanly
 
 ## Implementation Notes By File
 
+Status: keep this section as a quick orientation map for the next agent doing second-pass work
+
 ### `src/player-controller.js`
 
-- Add queue mutation methods and history tracking.
-- Add persistence hooks.
-- Keep playback transition logic centralized here.
+- Track repeated playback failures and repair metadata here if the state needs playback-context awareness.
+- Keep playback transition logic and failure classification centralized here.
 
 ### `src/app-server.js`
 
-- Add queue/history/request-policy/command-config endpoints.
+- Add library health, import preview, and direct-link safety endpoints.
 - Keep the dashboard API thin and focused on explicit actions.
 
 ### `src/twitch-bot.js`
 
-- Replace hardcoded command literals with a command registry driven by settings.
-- Add permission-aware dispatch and clearer denial replies.
+- Reuse centralized URL/domain validation before accepting direct-link requests.
+- Keep denial replies short and specific when second-pass safety rules reject a request.
 
 ### `src/config.js`
 
-- Add typed settings sections:
-  - `requestPolicy`
-  - `chatCommands`
-  - maybe `safetyRules`
-- Handle defaults and migrations from older flat settings.
+- Extend typed settings carefully for blocked domains, repair preferences, and any second-pass safety toggles.
+- Keep defaults and migrations explicit.
+
+### `src/playlist-repository.js`
+
+- Store any supplemental library review metadata without breaking CSV as the user-facing import/export format.
+- Keep export backward-compatible even if repair metadata lives beside the CSV.
+
+### `src/providers.js`
+
+- Centralize URL parsing, direct-link domain extraction, and provider-specific validation here when possible.
+- Keep provider detection predictable so request-policy checks do not drift between chat and dashboard flows.
 
 ### `public/dashboard.js`
 
-- Split current views into smaller top-level tabs.
-- Keep `Overview` narrow and fast to scan.
-- Move advanced controls into `Playback`, `Queue`, `Requests`, `Library`, and `Settings`.
+- Add library repair/review surfaces and import-preview workflows without making the `Library` tab harder to scan.
+- Surface second-pass diagnostics where moderators can act on them immediately.
 
-## Non-Goals For The First Pass
+## Non-Goals Still Out Of Scope
+
+Status: still valid for second pass
 
 - Spotify playback support
 - web-hosted multi-user remote dashboard
@@ -451,14 +549,18 @@ Priority: medium
 - heavy role synchronization outside the Twitch tags already available
 - perfect audio normalization across providers
 
-## Definition Of Done For This Roadmap
+## Definition Of Done For The Second Pass
 
-The roadmap is complete when:
+The second pass is complete when:
 
-- queue operations are manageable from the dashboard
-- request abuse controls are configurable
-- chat commands are configurable instead of hardcoded
-- the dashboard has dedicated top-level tabs for queue and requests
-- the library can be managed at scale
-- safety controls exist for search and sources
-- the app remains test-covered and restart-safe
+- saved-library items can be reviewed for repeated playback failures and unavailable sources
+- imports can be previewed before append or replace, including duplicate and invalid-row summaries
+- direct-link requests can be blocked by domain and run through the same validation path everywhere
+- moderators can see actionable unavailable-track and queue-restore failures in the dashboard or diagnostics export
+- second-pass settings/data migrations stay explicit, restart-safe, and test-covered
+
+### Explicitly deferred from the second-pass definition of done
+
+- fades, normalization, and cross-provider audio polish without a prior architecture review
+- major new provider support
+- large multi-user or web-hosted dashboard expansion

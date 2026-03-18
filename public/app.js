@@ -70,9 +70,9 @@ let overlayBuildToken = typeof window.__overlayBuildToken === "string"
   ? window.__overlayBuildToken
   : "";
 let desiredPlayerVolume = 100;
+let startupTimeoutMs = 15000;
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
 const youtubeStartupRecoveryStorageKey = "youtube-startup-recovery";
-const youtubeStartupTimeoutMs = 15000;
 
 function applyOverlayTheme(themeId) {
   document.documentElement.dataset.theme = themeId || "aurora";
@@ -175,6 +175,20 @@ function normalizePlayerVolume(value) {
   }
 
   return Math.min(100, Math.max(0, Math.round(parsedValue)));
+}
+
+function normalizeStartupTimeoutSeconds(value) {
+  const parsedValue = Number.parseInt(String(value ?? 15), 10);
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return 15;
+  }
+
+  return parsedValue;
+}
+
+function applyStartupTimeoutSetting(value) {
+  const timeoutSeconds = normalizeStartupTimeoutSeconds(value);
+  startupTimeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1000 : 0;
 }
 
 function applyYouTubeVolume() {
@@ -326,6 +340,10 @@ function scheduleSoundCloudAutoplayRetry(trackId, attempt) {
 
 function scheduleSoundCloudLoadTimeout(track) {
   stopSoundCloudLoadTimeout();
+  if (startupTimeoutMs <= 0) {
+    return;
+  }
+
   soundCloudLoadTimeoutTimer = window.setTimeout(() => {
     if (
       !track?.id ||
@@ -345,7 +363,7 @@ function scheduleSoundCloudLoadTimeout(track) {
     });
     reportClientError("This SoundCloud track could not be played in the embedded player.");
     emitStatus("error", { reason: "soundcloud_load_timeout" });
-  }, 15000);
+  }, startupTimeoutMs);
 }
 
 function getPendingSoundCloudToYoutubeReloadTrackId() {
@@ -569,7 +587,7 @@ function startYouTubeStartupWatchdog(track, videoId) {
       return;
     }
 
-    if (Date.now() - startedAt < youtubeStartupTimeoutMs) {
+    if (startupTimeoutMs <= 0 || Date.now() - startedAt < startupTimeoutMs) {
       return;
     }
 
@@ -1026,6 +1044,10 @@ function updateState(state) {
     if (state.theme !== previousTheme) {
       scheduleTitleMarqueeUpdate();
     }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(state, "playerStartupTimeoutSeconds")) {
+    applyStartupTimeoutSetting(state.playerStartupTimeoutSeconds);
   }
 
   if (displayedTrackId !== null && currentTrack?.id !== displayedTrackId) {
@@ -1580,6 +1602,9 @@ if (socket) {
   });
   socket.on("app:settings", (payload) => {
     applyOverlayTheme(payload?.theme);
+    if (Object.prototype.hasOwnProperty.call(payload ?? {}, "playerStartupTimeoutSeconds")) {
+      applyStartupTimeoutSetting(payload.playerStartupTimeoutSeconds);
+    }
   });
 } else {
   sendClientLog("warn", "Socket.IO client was not available in the browser source");

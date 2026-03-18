@@ -53,13 +53,25 @@ function normalizeRequestPolicy(requestPolicy = {}) {
     accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
     maxQueueLength: Number.parseInt(String(requestPolicy.maxQueueLength ?? 0), 10) || 0,
     maxRequestsPerUser: Number.parseInt(String(requestPolicy.maxRequestsPerUser ?? 0), 10) || 0,
+    duplicateHistoryCount: Number.parseInt(String(requestPolicy.duplicateHistoryCount ?? 0), 10) || 0,
     cooldownSeconds: Number.parseInt(String(requestPolicy.cooldownSeconds ?? 0), 10) || 0,
+    maxTrackDurationSeconds: Number.parseInt(String(requestPolicy.maxTrackDurationSeconds ?? 0), 10) || 0,
+    rejectLiveStreams: requestPolicy.rejectLiveStreams === true,
     allowSearchRequests: requestPolicy.allowSearchRequests !== false,
     youtubeSafeSearch: typeof requestPolicy.youtubeSafeSearch === "string"
       ? requestPolicy.youtubeSafeSearch
       : "none",
     allowedProviders: normalizeAllowedProviders(requestPolicy.allowedProviders),
+    blockedYouTubeChannelIds: normalizeRequestPolicyList(requestPolicy.blockedYouTubeChannelIds, {
+      lowerCase: true
+    }),
+    blockedSoundCloudUsers: normalizeRequestPolicyList(requestPolicy.blockedSoundCloudUsers, {
+      lowerCase: true
+    }),
     blockedUsers: normalizeRequestPolicyList(requestPolicy.blockedUsers, {
+      lowerCase: true
+    }),
+    blockedDomains: normalizeRequestPolicyList(requestPolicy.blockedDomains, {
       lowerCase: true
     }),
     blockedPhrases: normalizeRequestPolicyList(requestPolicy.blockedPhrases)
@@ -83,6 +95,7 @@ export class PlayerController {
     this.currentTrack = null;
     this.stoppedTrack = null;
     this.history = [];
+    this.adminEvents = [];
     this.isAdvancing = false;
     this.isPlaybackPaused = false;
     this.playbackSuppressed = false;
@@ -121,6 +134,13 @@ export class PlayerController {
         track: this.serializeTrack(entry.track),
         status: entry.status,
         completedAt: entry.completedAt
+      })),
+      adminEvents: this.adminEvents.map((entry) => ({
+        action: entry.action,
+        triggeredBy: entry.triggeredBy,
+        track: this.serializeTrack(entry.track),
+        details: entry.details,
+        createdAt: entry.createdAt
       }))
     };
   }
@@ -162,6 +182,37 @@ export class PlayerController {
 
   setRequestPolicy(requestPolicy = {}) {
     this.requestPolicy = normalizeRequestPolicy(requestPolicy);
+  }
+
+  recordAdminEvent(action, {
+    triggeredBy = "unknown",
+    track = null,
+    details = null
+  } = {}) {
+    this.adminEvents.unshift({
+      action,
+      triggeredBy,
+      track: track
+        ? {
+            id: track.id ?? "",
+            provider: track.provider ?? "",
+            url: track.url ?? "",
+            title: track.title ?? "",
+            key: track.key ?? "",
+            origin: track.origin ?? "queue",
+            artworkUrl: track.artworkUrl ?? "",
+            requestedBy: track.requestedBy ?? null
+          }
+        : null,
+      details: details && typeof details === "object"
+        ? details
+        : null,
+      createdAt: new Date().toISOString()
+    });
+
+    if (this.adminEvents.length > 50) {
+      this.adminEvents.length = 50;
+    }
   }
 
   async addRequest(track, { bypassRequestLimits = false } = {}) {
@@ -280,6 +331,10 @@ export class PlayerController {
     }
 
     const [removedTrack] = this.queue.splice(trackIndex, 1);
+    this.recordAdminEvent("queue_remove", {
+      triggeredBy,
+      track: removedTrack
+    });
     logInfo("Removed queued track", {
       triggeredBy,
       track: formatTrack(removedTrack),
@@ -308,6 +363,14 @@ export class PlayerController {
     const nextIndex = Math.max(0, Math.min(this.queue.length - 1, trackIndex + normalizedOffset));
     const [trackToMove] = this.queue.splice(trackIndex, 1);
     this.queue.splice(nextIndex, 0, trackToMove);
+    this.recordAdminEvent("queue_move", {
+      triggeredBy,
+      track: trackToMove,
+      details: {
+        fromIndex: trackIndex + 1,
+        toIndex: nextIndex + 1
+      }
+    });
 
     logInfo("Moved queued track", {
       triggeredBy,
@@ -334,6 +397,10 @@ export class PlayerController {
 
     const [trackToPromote] = this.queue.splice(trackIndex, 1);
     this.queue.unshift(trackToPromote);
+    this.recordAdminEvent("queue_promote", {
+      triggeredBy,
+      track: trackToPromote
+    });
     logInfo("Promoted queued track", {
       triggeredBy,
       track: formatTrack(trackToPromote),
@@ -347,6 +414,12 @@ export class PlayerController {
   async clearQueue(triggeredBy) {
     const clearedTracks = this.queue.map((track) => this.serializeTrack(track));
     this.queue = [];
+    this.recordAdminEvent("queue_clear", {
+      triggeredBy,
+      details: {
+        clearedCount: clearedTracks.length
+      }
+    });
     logInfo("Cleared queue", {
       triggeredBy,
       clearedCount: clearedTracks.length
@@ -402,6 +475,10 @@ export class PlayerController {
     }
 
     const [removedTrack] = this.queue.splice(trackIndex, 1);
+    this.recordAdminEvent("queue_remove_own", {
+      triggeredBy,
+      track: removedTrack
+    });
     logInfo("Removed queued track by requester", {
       triggeredBy,
       username: normalizedUsername,
@@ -433,6 +510,22 @@ export class PlayerController {
           track: this.stoppedTrack,
           type: "stopped"
         };
+      }
+
+      const duplicateHistoryCount = Number.isInteger(this.requestPolicy.duplicateHistoryCount)
+        ? this.requestPolicy.duplicateHistoryCount
+        : 0;
+      if (duplicateHistoryCount > 0) {
+        const historyMatch = this.history
+          .slice(0, duplicateHistoryCount)
+          .find((entry) => entry?.track?.key === trackKey);
+
+        if (historyMatch?.track) {
+          return {
+            track: historyMatch.track,
+            type: "history"
+          };
+        }
       }
 
       return null;
@@ -469,6 +562,10 @@ export class PlayerController {
     }
 
     const skippedTrack = this.currentTrack;
+    this.recordAdminEvent("skip_current", {
+      triggeredBy,
+      track: skippedTrack
+    });
 
     logInfo("Skipping current track", {
       triggeredBy,
@@ -532,6 +629,10 @@ export class PlayerController {
     }
 
     const trackToDelete = this.currentTrack;
+    this.recordAdminEvent("delete_current", {
+      triggeredBy,
+      track: trackToDelete
+    });
 
     logInfo("Deleting current track", {
       triggeredBy,
@@ -571,6 +672,14 @@ export class PlayerController {
       track: formatTrack(track)
     });
 
+    this.recordAdminEvent("save_current", {
+      triggeredBy,
+      track,
+      details: {
+        alreadySaved: !saved
+      }
+    });
+    await this.persistRuntimeState();
     this.broadcastState();
 
     return {
@@ -603,11 +712,21 @@ export class PlayerController {
           completedAt: entry.completedAt
         }))
       : [];
+    this.adminEvents = Array.isArray(persistedState.adminEvents)
+      ? persistedState.adminEvents.slice(0, 50).map((entry) => ({
+          action: entry.action,
+          triggeredBy: entry.triggeredBy,
+          track: entry.track ? { ...entry.track } : null,
+          details: entry.details ?? null,
+          createdAt: entry.createdAt
+        }))
+      : [];
 
     logInfo("Restored runtime playback state", {
       queueLength: this.queue.length,
       hasStoppedTrack: Boolean(this.stoppedTrack),
-      historyLength: this.history.length
+      historyLength: this.history.length,
+      adminEventCount: this.adminEvents.length
     });
   }
 
@@ -869,6 +988,10 @@ export class PlayerController {
         triggeredBy,
         track: formatTrack(this.stoppedTrack)
       });
+      this.recordAdminEvent("restart_stopped", {
+        triggeredBy,
+        track: this.stoppedTrack
+      });
       await this.startTrackPlayback(this.stoppedTrack, {
         notifyTrackStartListeners: false
       });
@@ -907,6 +1030,10 @@ export class PlayerController {
       });
 
       this.stoppedTrack = stoppedTrack;
+      this.recordAdminEvent("stop_playback", {
+        triggeredBy,
+        track: stoppedTrack
+      });
       this.io.emit("player:stop", {
         reason: "manual_stop",
         triggeredBy
@@ -967,7 +1094,8 @@ export class PlayerController {
     await this.runtimeStateStore.save({
       queue: this.queue,
       stoppedTrack: this.stoppedTrack,
-      history: this.history
+      history: this.history,
+      adminEvents: this.adminEvents
     });
   }
 }

@@ -112,3 +112,48 @@ test("playlist repository lists, imports, exports, and deletes playlist rows", a
   assert.deepEqual(bulkRemoval.removedKeys, ["youtube:dQw4w9WgXcQ"]);
   assert.equal(repository.listTracks().total, 1);
 });
+
+test("playlist repository can edit titles, refresh metadata, and export selected rows", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
+  const playlistPath = path.join(runtimeDir, "playlist.csv");
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    playlistPath,
+    [
+      "Link,Title",
+      "https://youtu.be/dQw4w9WgXcQ,Old Title",
+      "https://soundcloud.com/artist/track,Club Mix"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const repository = new PlaylistRepository(playlistPath, {
+    youtubeApiKey: "api-key",
+    youtubeMetadataResolver: async () => ({
+      title: "Refreshed Title"
+    }),
+    metadataResolver: async (url) => ({
+      title: url.includes("soundcloud") ? "Refreshed SoundCloud Title" : "Fallback Title"
+    })
+  });
+  await repository.init();
+
+  const updatedTrack = await repository.updateTrackTitleByKey("youtube:dQw4w9WgXcQ", "Manual Title");
+  assert.equal(updatedTrack?.title, "Manual Title");
+
+  const refreshedTrack = await repository.refreshTrackMetadataByKey("youtube:dQw4w9WgXcQ");
+  assert.equal(refreshedTrack?.title, "Refreshed Title");
+
+  const exportedCsv = repository.exportSelectedCsv([
+    "soundcloud:https://soundcloud.com/artist/track"
+  ]);
+  assert.match(exportedCsv, /Club Mix/);
+  assert.doesNotMatch(exportedCsv, /Refreshed Title/);
+});

@@ -111,6 +111,111 @@ function normalizeRequestList(value, { lowerCase = false } = {}) {
     .filter(Boolean);
 }
 
+function normalizeLimit(value) {
+  const parsedValue = Number.parseInt(String(value ?? 0), 10);
+  if (!Number.isFinite(parsedValue) || parsedValue < 0) {
+    return 0;
+  }
+
+  return parsedValue;
+}
+
+function normalizeBlockedDomain(value) {
+  const trimmedValue = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!trimmedValue) {
+    return "";
+  }
+
+  try {
+    return new URL(trimmedValue).hostname.toLowerCase();
+  } catch {
+    return trimmedValue.replace(/^[./]+/, "").split("/")[0] ?? "";
+  }
+}
+
+function findBlockedDomainMatch(rawUrl, blockedDomains) {
+  if (typeof rawUrl !== "string" || !rawUrl.trim() || !Array.isArray(blockedDomains) || blockedDomains.length === 0) {
+    return "";
+  }
+
+  try {
+    const hostname = new URL(rawUrl.trim()).hostname.toLowerCase();
+    return blockedDomains.find((domain) => hostname === domain || hostname.endsWith(`.${domain}`)) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function getYouTubeSourceCandidates(track) {
+  const candidates = new Set();
+
+  if (typeof track?.sourceChannelId === "string" && track.sourceChannelId.trim()) {
+    candidates.add(track.sourceChannelId.trim().toLowerCase());
+  }
+
+  if (typeof track?.sourceName === "string" && track.sourceName.trim()) {
+    candidates.add(track.sourceName.trim().toLowerCase());
+  }
+
+  if (typeof track?.sourceUrl === "string" && track.sourceUrl.trim()) {
+    const normalizedUrl = track.sourceUrl.trim().toLowerCase();
+    candidates.add(normalizedUrl);
+
+    try {
+      const parsedUrl = new URL(track.sourceUrl);
+      candidates.add(`${parsedUrl.hostname.toLowerCase()}${parsedUrl.pathname.toLowerCase()}`);
+      const pathParts = parsedUrl.pathname.split("/").filter(Boolean).map((value) => value.trim().toLowerCase());
+      const channelIndex = pathParts.findIndex((segment) => segment === "channel");
+
+      if (channelIndex !== -1 && pathParts[channelIndex + 1]) {
+        candidates.add(pathParts[channelIndex + 1]);
+      }
+
+      if (pathParts[0]?.startsWith("@")) {
+        candidates.add(pathParts[0]);
+        candidates.add(pathParts[0].slice(1));
+      }
+
+      if (pathParts[0] === "user" && pathParts[1]) {
+        candidates.add(pathParts[1]);
+      }
+
+      if (pathParts[0] === "c" && pathParts[1]) {
+        candidates.add(pathParts[1]);
+      }
+    } catch {
+    }
+  }
+
+  return candidates;
+}
+
+function getSoundCloudSourceCandidates(track) {
+  const candidates = new Set();
+
+  if (typeof track?.sourceName === "string" && track.sourceName.trim()) {
+    candidates.add(track.sourceName.trim().toLowerCase());
+  }
+
+  if (typeof track?.sourceUrl === "string" && track.sourceUrl.trim()) {
+    const normalizedUrl = track.sourceUrl.trim().toLowerCase();
+    candidates.add(normalizedUrl);
+
+    try {
+      const parsedUrl = new URL(track.sourceUrl);
+      candidates.add(`${parsedUrl.hostname.toLowerCase()}${parsedUrl.pathname.toLowerCase()}`);
+      const pathParts = parsedUrl.pathname.split("/").filter(Boolean);
+      const username = pathParts[0]?.trim().toLowerCase();
+      if (username) {
+        candidates.add(username);
+      }
+    } catch {
+    }
+  }
+
+  return candidates;
+}
+
 export class TwitchBot {
   constructor({
     config,
@@ -268,9 +373,19 @@ export class TwitchBot {
         return;
       }
 
+      const blockedDomains = normalizeRequestList(this.config.requestPolicy?.blockedDomains, {
+        lowerCase: true
+      }).map((domain) => normalizeBlockedDomain(domain)).filter(Boolean);
+      const blockedInputDomain = findBlockedDomainMatch(query, blockedDomains);
+      if (blockedInputDomain) {
+        await this.reply(channel, "Direct links from that domain are blocked.");
+        return;
+      }
+
       const resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey, {
         allowSearchRequests: this.config.requestPolicy?.allowSearchRequests,
-        youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch
+        youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch,
+        preferYouTubeApiMetadata: true
       });
       const allowedProviders = Array.isArray(this.config.requestPolicy?.allowedProviders)
         ? normalizeRequestList(this.config.requestPolicy.allowedProviders, {
@@ -282,6 +397,62 @@ export class TwitchBot {
         await this.reply(channel, `${resolvedTrack.provider} requests are currently disabled.`);
         return;
       }
+
+      const maxTrackDurationSeconds = normalizeLimit(this.config.requestPolicy?.maxTrackDurationSeconds);
+      if (
+        maxTrackDurationSeconds > 0 &&
+        Number.isFinite(resolvedTrack.durationSeconds) &&
+        resolvedTrack.durationSeconds > maxTrackDurationSeconds
+      ) {
+        await this.reply(
+          channel,
+          `That track is too long for requests. The limit is ${maxTrackDurationSeconds} seconds.`
+        );
+        return;
+      }
+
+      if (this.config.requestPolicy?.rejectLiveStreams === true && resolvedTrack.isLive) {
+        await this.reply(channel, "Live streams are blocked from song requests right now.");
+        return;
+      }
+
+      const blockedTrackDomain = findBlockedDomainMatch(resolvedTrack.url, blockedDomains);
+      if (blockedTrackDomain) {
+        await this.reply(channel, "Direct links from that domain are blocked.");
+        return;
+      }
+
+      const blockedYouTubeChannels = normalizeRequestList(
+        this.config.requestPolicy?.blockedYouTubeChannelIds,
+        {
+          lowerCase: true
+        }
+      );
+      if (
+        resolvedTrack.provider === "youtube" &&
+        blockedYouTubeChannels.length > 0
+      ) {
+        const sourceCandidates = getYouTubeSourceCandidates(resolvedTrack);
+        if (blockedYouTubeChannels.some((blockedChannel) => sourceCandidates.has(blockedChannel))) {
+          await this.reply(channel, "Requests from that YouTube channel are blocked.");
+          return;
+        }
+      }
+
+      const blockedSoundCloudUsers = normalizeRequestList(
+        this.config.requestPolicy?.blockedSoundCloudUsers,
+        {
+          lowerCase: true
+        }
+      );
+      if (resolvedTrack.provider === "soundcloud" && blockedSoundCloudUsers.length > 0) {
+        const sourceCandidates = getSoundCloudSourceCandidates(resolvedTrack);
+        if (blockedSoundCloudUsers.some((blockedUser) => sourceCandidates.has(blockedUser))) {
+          await this.reply(channel, "Requests from that SoundCloud account are blocked.");
+          return;
+        }
+      }
+
       const queueTrack = await this.playerController.addRequest({
         ...resolvedTrack,
         requestedBy: {
@@ -294,6 +465,11 @@ export class TwitchBot {
 
       if (queueTrack.duplicateType === "playing") {
         await this.reply(channel, `Song ${queueTrack.title} is already playing`);
+        return;
+      }
+
+      if (queueTrack.duplicateType === "history") {
+        await this.reply(channel, `Song ${queueTrack.title} was played recently`);
         return;
       }
 
@@ -419,6 +595,11 @@ export class TwitchBot {
           requestsEnabled: true
         }
       });
+      this.playerController.recordAdminEvent?.("open_requests", {
+        triggeredBy: tags.username ?? "unknown"
+      });
+      await this.playerController.persistRuntimeState?.();
+      this.playerController.broadcastState?.();
       await this.reply(channel, "Song requests are now open.");
       return;
     }
@@ -437,6 +618,11 @@ export class TwitchBot {
           requestsEnabled: false
         }
       });
+      this.playerController.recordAdminEvent?.("close_requests", {
+        triggeredBy: tags.username ?? "unknown"
+      });
+      await this.playerController.persistRuntimeState?.();
+      this.playerController.broadcastState?.();
       await this.reply(channel, "Song requests are now closed.");
       return;
     }

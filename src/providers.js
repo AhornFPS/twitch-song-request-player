@@ -111,6 +111,43 @@ function normalizeTrackTitle(value, fallback) {
   return fallback;
 }
 
+function extractYouTubeChannelIdFromUrl(rawUrl) {
+  if (typeof rawUrl !== "string" || !rawUrl.trim()) {
+    return "";
+  }
+
+  try {
+    const url = normalizeUrl(rawUrl);
+    const pathParts = url.pathname.split("/").filter(Boolean);
+    const channelIndex = pathParts.findIndex((segment) => segment === "channel");
+
+    if (channelIndex !== -1) {
+      return pathParts[channelIndex + 1]?.trim() ?? "";
+    }
+  } catch {
+  }
+
+  return "";
+}
+
+function parseIso8601DurationToSeconds(duration) {
+  if (typeof duration !== "string" || !duration.trim()) {
+    return null;
+  }
+
+  const match = duration.trim().match(/^P(?:(\d+)D)?T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/i);
+  if (!match) {
+    return null;
+  }
+
+  const days = Number.parseInt(match[1] || "0", 10) || 0;
+  const hours = Number.parseInt(match[2] || "0", 10) || 0;
+  const minutes = Number.parseInt(match[3] || "0", 10) || 0;
+  const seconds = Number.parseInt(match[4] || "0", 10) || 0;
+
+  return (days * 86400) + (hours * 3600) + (minutes * 60) + seconds;
+}
+
 async function fetchJson(url) {
   const response = await fetch(url);
 
@@ -140,7 +177,7 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
   }
 
   const apiUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-  apiUrl.searchParams.set("part", "snippet");
+  apiUrl.searchParams.set("part", "snippet,contentDetails,liveStreamingDetails");
   apiUrl.searchParams.set("id", videoId);
   apiUrl.searchParams.set("key", youtubeApiKey);
 
@@ -153,6 +190,10 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
 
   const snippet = item.snippet ?? {};
   const thumbnails = snippet.thumbnails ?? {};
+  const contentDetails = item.contentDetails ?? {};
+  const liveBroadcastContent = typeof snippet.liveBroadcastContent === "string"
+    ? snippet.liveBroadcastContent.trim().toLowerCase()
+    : "none";
 
   return {
     provider: "youtube",
@@ -165,11 +206,18 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
       thumbnails.high?.url ??
       thumbnails.medium?.url ??
       thumbnails.default?.url ??
-      ""
+      "",
+    durationSeconds: parseIso8601DurationToSeconds(contentDetails.duration),
+    sourceChannelId: typeof snippet.channelId === "string" ? snippet.channelId.trim() : "",
+    sourceName: typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "",
+    sourceUrl: typeof snippet.channelId === "string" && snippet.channelId.trim()
+      ? `https://www.youtube.com/channel/${snippet.channelId.trim()}`
+      : "",
+    isLive: liveBroadcastContent === "live" || liveBroadcastContent === "upcoming"
   };
 }
 
-export async function resolveTrackFromUrl(rawUrl) {
+export async function resolveTrackFromUrl(rawUrl, { youtubeApiKey = "" } = {}) {
   const provider = detectProvider(rawUrl);
 
   if (!provider) {
@@ -183,6 +231,10 @@ export async function resolveTrackFromUrl(rawUrl) {
   const url = normalizeUrl(rawUrl).toString();
 
   if (provider === "youtube") {
+    if (youtubeApiKey) {
+      return resolveYouTubeTrackFromApi(url, youtubeApiKey);
+    }
+
     const videoId = extractYouTubeVideoId(url);
 
     if (!videoId) {
@@ -197,7 +249,12 @@ export async function resolveTrackFromUrl(rawUrl) {
       url,
       title: normalizeTrackTitle(metadata.title, `YouTube video ${videoId}`),
       key: `youtube:${videoId}`,
-      artworkUrl: metadata.thumbnail_url ?? ""
+      artworkUrl: metadata.thumbnail_url ?? "",
+      durationSeconds: null,
+      sourceChannelId: extractYouTubeChannelIdFromUrl(metadata.author_url),
+      sourceName: typeof metadata.author_name === "string" ? metadata.author_name.trim() : "",
+      sourceUrl: typeof metadata.author_url === "string" ? metadata.author_url.trim() : "",
+      isLive: false
     };
   }
 
@@ -209,7 +266,12 @@ export async function resolveTrackFromUrl(rawUrl) {
     url,
     title: normalizeTrackTitle(metadata.title, "SoundCloud track"),
     key: getTrackKey(provider, url),
-    artworkUrl: metadata.thumbnail_url ?? ""
+    artworkUrl: metadata.thumbnail_url ?? "",
+    durationSeconds: null,
+    sourceChannelId: "",
+    sourceName: typeof metadata.author_name === "string" ? metadata.author_name.trim() : "",
+    sourceUrl: typeof metadata.author_url === "string" ? metadata.author_url.trim() : "",
+    isLive: false
   };
 }
 
@@ -242,19 +304,24 @@ export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "n
 
   const videoId = item.id.videoId;
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
+  const detailedTrack = await resolveYouTubeTrackFromApi(videoUrl, youtubeApiKey);
 
   return {
-    provider: "youtube",
-    url: videoUrl,
-    title: normalizeTrackTitle(item.snippet?.title, trimmedQuery),
-    key: `youtube:${videoId}`,
-    artworkUrl: item.snippet?.thumbnails?.high?.url ?? item.snippet?.thumbnails?.default?.url ?? ""
+    ...detailedTrack,
+    title: normalizeTrackTitle(detailedTrack.title, normalizeTrackTitle(item.snippet?.title, trimmedQuery)),
+    artworkUrl:
+      detailedTrack.artworkUrl ||
+      item.snippet?.thumbnails?.high?.url ||
+      item.snippet?.thumbnails?.default?.url ||
+      ""
   };
 }
 
 export async function resolveSongRequest(input, youtubeApiKey, options = {}) {
   if (isLikelyUrl(input)) {
-    return resolveTrackFromUrl(input);
+    return resolveTrackFromUrl(input, {
+      youtubeApiKey: options.preferYouTubeApiMetadata ? youtubeApiKey : ""
+    });
   }
 
   if (options.allowSearchRequests === false) {

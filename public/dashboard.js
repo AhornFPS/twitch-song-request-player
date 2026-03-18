@@ -201,6 +201,13 @@ function renderDashboard() {
                   ></iframe>
                 </div>
               </section>
+              <div class="request-limit-grid">
+                <label class="field">
+                  <span class="field__label">Player startup timeout (seconds)</span>
+                  <input id="playback-startup-timeout-seconds" class="control-input" type="number" min="0" step="1" />
+                  <span class="field__hint">If YouTube or SoundCloud never actually starts, the embedded player reports an error after this many seconds. Set to 0 to disable the timeout.</span>
+                </label>
+              </div>
             </div>
           </section>
 
@@ -212,6 +219,16 @@ function renderDashboard() {
               </div>
             </div>
             <div id="history-list" class="history-list"></div>
+          </section>
+
+          <section class="panel card-panel queue-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Admin</p>
+                <h2>Recent control activity</h2>
+              </div>
+            </div>
+            <div id="admin-event-list" class="history-list"></div>
           </section>
         </div>
       </section>
@@ -288,6 +305,11 @@ function renderDashboard() {
                 <input id="requests-max-per-user" class="control-input" type="number" min="0" step="1" />
                 <span class="field__hint">Counts queued, playing, and stopped queue tracks. Set to 0 for no per-user cap.</span>
               </label>
+              <label class="field">
+                <span class="field__label">Recent duplicate window (tracks)</span>
+                <input id="requests-duplicate-history-count" class="control-input" type="number" min="0" step="1" />
+                <span class="field__hint">Set to 0 to allow repeats from history. Higher values reject tracks that appeared in the most recent playback history entries.</span>
+              </label>
             </div>
             <div class="request-limit-grid">
               <label class="field">
@@ -295,12 +317,26 @@ function renderDashboard() {
                 <input id="requests-cooldown-seconds" class="control-input" type="number" min="0" step="1" />
                 <span class="field__hint">Set to 0 to disable the cooldown between successful requests from the same viewer.</span>
               </label>
+              <label class="field">
+                <span class="field__label">Max track duration (seconds)</span>
+                <input id="requests-max-duration-seconds" class="control-input" type="number" min="0" step="1" />
+                <span class="field__hint">Set to 0 for no duration cap. Duration checks apply when provider metadata exposes a track length.</span>
+              </label>
               <label class="toggle-card" for="requests-allow-search-toggle">
                 <span class="toggle-card__copy">
                   <span class="toggle-card__title">Allow text-search requests</span>
                   <span class="toggle-card__body">If disabled, chat requests must use direct YouTube or SoundCloud links.</span>
                 </span>
                 <input id="requests-allow-search-toggle" type="checkbox" />
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <label class="toggle-card" for="requests-reject-live-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Block live streams</span>
+                  <span class="toggle-card__body">Reject live or upcoming YouTube streams before they can enter the request queue.</span>
+                </span>
+                <input id="requests-reject-live-toggle" type="checkbox" />
               </label>
               <label class="field">
                 <span class="field__label">YouTube safe search</span>
@@ -332,6 +368,23 @@ function renderDashboard() {
               </label>
             </div>
             <div class="request-limit-grid">
+              <label class="field">
+                <span class="field__label">Blocked YouTube channels</span>
+                <textarea id="requests-blocked-youtube-channels" class="control-input control-input--multiline" rows="4" placeholder="UC1234567890abcdef&#10;@channelhandle&#10;https://www.youtube.com/@channelhandle"></textarea>
+                <span class="field__hint">Use a channel ID, handle, custom path, or channel URL. Matching is case-insensitive.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Blocked SoundCloud users</span>
+                <textarea id="requests-blocked-soundcloud-users" class="control-input control-input--multiline" rows="4" placeholder="artistname&#10;https://soundcloud.com/artistname"></textarea>
+                <span class="field__hint">Use the profile URL, username slug, or author name you want to block.</span>
+              </label>
+            </div>
+            <div class="request-limit-grid">
+              <label class="field">
+                <span class="field__label">Blocked direct-link domains</span>
+                <textarea id="requests-blocked-domains" class="control-input control-input--multiline" rows="4" placeholder="youtube.com&#10;youtu.be"></textarea>
+                <span class="field__hint">Use one hostname per line. Direct links from matching domains or subdomains are rejected before they can be queued.</span>
+              </label>
               <label class="field field--full">
                 <span class="field__label">Blocked phrases</span>
                 <textarea id="requests-blocked-phrases" class="control-input control-input--multiline" rows="4" placeholder="artist name&#10;banned phrase"></textarea>
@@ -471,6 +524,34 @@ function renderDashboard() {
               </div>
             </section>
           </div>
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Desktop</p>
+                <h2>Windows startup</h2>
+              </div>
+            </div>
+            <div class="request-policy-row">
+              <label class="toggle-card" for="start-with-windows-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Start with Windows</span>
+                  <span id="start-with-windows-copy" class="toggle-card__body">Launch the desktop app automatically when you sign in to Windows.</span>
+                </span>
+                <input id="start-with-windows-toggle" type="checkbox" />
+              </label>
+            </div>
+            <p id="start-with-windows-note" class="panel-note">Only available in the packaged Windows desktop app.</p>
+          </section>
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Diagnostics</p>
+                <h2>Export a runtime snapshot</h2>
+              </div>
+              <button id="export-diagnostics-button" class="secondary-button" type="button">Export diagnostics</button>
+            </div>
+            <p class="panel-note">Downloads the current settings, runtime status, playback state, history, and admin activity as JSON for debugging.</p>
+          </section>
         </form>
       </section>
 
@@ -481,36 +562,41 @@ function renderDashboard() {
               <p class="panel__eyebrow">Playlist</p>
               <h2>Fallback track library</h2>
             </div>
-            <div class="library-toolbar">
-              <div class="library-toolbar__grid">
-                <label class="control-field">
-                  <span class="control-field__label">Search</span>
-                  <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
-                </label>
-                <label class="control-field">
-                  <span class="control-field__label">Sort</span>
-                  <select id="playlist-sort-select" class="control-input">
-                    <option value="recent">Recently added</option>
-                    <option value="title">Title</option>
-                    <option value="provider">Provider</option>
-                  </select>
-                </label>
-              </div>
-            </div>
           </div>
           <div class="playlist-tools">
             <form id="playlist-add-form" class="playlist-add-form">
               <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud URL or search text" autocomplete="off" />
               <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
             </form>
-            <div class="button-row button-row--wrap">
-              <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
-              <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
-              <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
-            </div>
-            <div class="button-row button-row--wrap">
-              <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
-              <button id="playlist-bulk-delete-button" class="ghost-button ghost-button--danger" type="button">Delete selected</button>
+            <div class="playlist-tools__body">
+              <div class="playlist-tools__actions">
+                <div class="button-row button-row--wrap">
+                  <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
+                  <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
+                  <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
+                </div>
+                <div class="button-row button-row--wrap">
+                  <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
+                  <button id="playlist-export-selected-button" class="secondary-button" type="button">Export selected</button>
+                  <button id="playlist-bulk-delete-button" class="ghost-button ghost-button--danger" type="button">Delete selected</button>
+                </div>
+              </div>
+              <div class="library-toolbar library-toolbar--right">
+                <div class="library-toolbar__grid">
+                  <label class="control-field">
+                    <span class="control-field__label">Search</span>
+                    <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
+                  </label>
+                  <label class="control-field">
+                    <span class="control-field__label">Sort</span>
+                    <select id="playlist-sort-select" class="control-input">
+                      <option value="recent">Recently added</option>
+                      <option value="title">Title</option>
+                      <option value="provider">Provider</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
           <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -686,11 +772,17 @@ function getRequestPolicy() {
     accessLevel: "everyone",
     maxQueueLength: 0,
     maxRequestsPerUser: 0,
+    duplicateHistoryCount: 0,
     cooldownSeconds: 0,
+    maxTrackDurationSeconds: 0,
+    rejectLiveStreams: false,
     allowSearchRequests: true,
     youtubeSafeSearch: "none",
     allowedProviders: ["youtube", "soundcloud"],
+    blockedYouTubeChannelIds: [],
+    blockedSoundCloudUsers: [],
     blockedUsers: [],
+    blockedDomains: [],
     blockedPhrases: []
   };
 }
@@ -704,7 +796,10 @@ function getDraftRequestPolicy() {
         : "everyone",
       maxQueueLength: Number.parseInt(String(requestPolicyDraft.maxQueueLength ?? 0), 10) || 0,
       maxRequestsPerUser: Number.parseInt(String(requestPolicyDraft.maxRequestsPerUser ?? 0), 10) || 0,
+      duplicateHistoryCount: Number.parseInt(String(requestPolicyDraft.duplicateHistoryCount ?? 0), 10) || 0,
       cooldownSeconds: Number.parseInt(String(requestPolicyDraft.cooldownSeconds ?? 0), 10) || 0,
+      maxTrackDurationSeconds: Number.parseInt(String(requestPolicyDraft.maxTrackDurationSeconds ?? 0), 10) || 0,
+      rejectLiveStreams: requestPolicyDraft.rejectLiveStreams === true,
       allowSearchRequests: requestPolicyDraft.allowSearchRequests !== false,
       youtubeSafeSearch: typeof requestPolicyDraft.youtubeSafeSearch === "string"
         ? requestPolicyDraft.youtubeSafeSearch
@@ -712,8 +807,17 @@ function getDraftRequestPolicy() {
       allowedProviders: Array.isArray(requestPolicyDraft.allowedProviders)
         ? requestPolicyDraft.allowedProviders.filter(Boolean)
         : ["youtube", "soundcloud"],
+      blockedYouTubeChannelIds: Array.isArray(requestPolicyDraft.blockedYouTubeChannelIds)
+        ? requestPolicyDraft.blockedYouTubeChannelIds.filter(Boolean)
+        : [],
+      blockedSoundCloudUsers: Array.isArray(requestPolicyDraft.blockedSoundCloudUsers)
+        ? requestPolicyDraft.blockedSoundCloudUsers.filter(Boolean)
+        : [],
       blockedUsers: Array.isArray(requestPolicyDraft.blockedUsers)
         ? requestPolicyDraft.blockedUsers.filter(Boolean)
+        : [],
+      blockedDomains: Array.isArray(requestPolicyDraft.blockedDomains)
+        ? requestPolicyDraft.blockedDomains.filter(Boolean)
         : [],
       blockedPhrases: Array.isArray(requestPolicyDraft.blockedPhrases)
         ? requestPolicyDraft.blockedPhrases.filter(Boolean)
@@ -729,8 +833,13 @@ function syncRequestPolicyDraftFromInputs() {
   const accessLevelSelect = el("requests-access-level");
   const maxQueueLengthInput = el("requests-max-queue-length");
   const maxPerUserInput = el("requests-max-per-user");
+  const duplicateHistoryInput = el("requests-duplicate-history-count");
   const cooldownInput = el("requests-cooldown-seconds");
+  const maxDurationInput = el("requests-max-duration-seconds");
+  const blockedYoutubeChannelsInput = el("requests-blocked-youtube-channels");
+  const blockedSoundCloudUsersInput = el("requests-blocked-soundcloud-users");
   const blockedUsersInput = el("requests-blocked-users");
+  const blockedDomainsInput = el("requests-blocked-domains");
   const blockedPhrasesInput = el("requests-blocked-phrases");
 
   requestPolicyDraft = {
@@ -740,7 +849,12 @@ function syncRequestPolicyDraftFromInputs() {
       : (getRequestPolicy().accessLevel || "everyone"),
     maxQueueLength: Number.parseInt(maxQueueLengthInput?.value || "0", 10) || 0,
     maxRequestsPerUser: Number.parseInt(maxPerUserInput?.value || "0", 10) || 0,
+    duplicateHistoryCount: Number.parseInt(duplicateHistoryInput?.value || "0", 10) || 0,
     cooldownSeconds: Number.parseInt(cooldownInput?.value || "0", 10) || 0,
+    maxTrackDurationSeconds: Number.parseInt(maxDurationInput?.value || "0", 10) || 0,
+    rejectLiveStreams: el("requests-reject-live-toggle") instanceof HTMLInputElement
+      ? el("requests-reject-live-toggle").checked
+      : getRequestPolicy().rejectLiveStreams === true,
     allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
       ? el("requests-allow-search-toggle").checked
       : getRequestPolicy().allowSearchRequests !== false,
@@ -755,9 +869,18 @@ function syncRequestPolicyDraftFromInputs() {
         ? "soundcloud"
         : ""
     ].filter(Boolean),
+    blockedYouTubeChannelIds: blockedYoutubeChannelsInput instanceof HTMLTextAreaElement
+      ? parseRequestPolicyList(blockedYoutubeChannelsInput.value.toLowerCase())
+      : [...(getRequestPolicy().blockedYouTubeChannelIds || [])],
+    blockedSoundCloudUsers: blockedSoundCloudUsersInput instanceof HTMLTextAreaElement
+      ? parseRequestPolicyList(blockedSoundCloudUsersInput.value.toLowerCase())
+      : [...(getRequestPolicy().blockedSoundCloudUsers || [])],
     blockedUsers: blockedUsersInput instanceof HTMLTextAreaElement
       ? parseRequestPolicyList(blockedUsersInput.value.toLowerCase())
       : [...(getRequestPolicy().blockedUsers || [])],
+    blockedDomains: blockedDomainsInput instanceof HTMLTextAreaElement
+      ? parseRequestPolicyList(blockedDomainsInput.value.toLowerCase())
+      : [...(getRequestPolicy().blockedDomains || [])],
     blockedPhrases: blockedPhrasesInput instanceof HTMLTextAreaElement
       ? parseRequestPolicyList(blockedPhrasesInput.value)
       : [...(getRequestPolicy().blockedPhrases || [])]
@@ -790,13 +913,19 @@ function applyRequestPolicyState() {
   const statusCopy = el("requests-status-copy");
   const maxQueueLengthInput = el("requests-max-queue-length");
   const maxPerUserInput = el("requests-max-per-user");
+  const duplicateHistoryInput = el("requests-duplicate-history-count");
   const accessLevelSelect = el("requests-access-level");
   const cooldownInput = el("requests-cooldown-seconds");
+  const maxDurationInput = el("requests-max-duration-seconds");
+  const rejectLiveToggle = el("requests-reject-live-toggle");
   const allowSearchToggle = el("requests-allow-search-toggle");
   const safeSearchSelect = el("requests-safe-search");
   const youtubeProviderToggle = el("requests-provider-youtube");
   const soundCloudProviderToggle = el("requests-provider-soundcloud");
+  const blockedYoutubeChannelsInput = el("requests-blocked-youtube-channels");
+  const blockedSoundCloudUsersInput = el("requests-blocked-soundcloud-users");
   const blockedUsersInput = el("requests-blocked-users");
+  const blockedDomainsInput = el("requests-blocked-domains");
   const blockedPhrasesInput = el("requests-blocked-phrases");
 
   if (headerPill) {
@@ -829,8 +958,20 @@ function applyRequestPolicyState() {
     maxPerUserInput.value = String(requestPolicy.maxRequestsPerUser ?? 0);
   }
 
+  if (duplicateHistoryInput instanceof HTMLInputElement) {
+    duplicateHistoryInput.value = String(requestPolicy.duplicateHistoryCount ?? 0);
+  }
+
   if (cooldownInput instanceof HTMLInputElement) {
     cooldownInput.value = String(requestPolicy.cooldownSeconds ?? 0);
+  }
+
+  if (maxDurationInput instanceof HTMLInputElement) {
+    maxDurationInput.value = String(requestPolicy.maxTrackDurationSeconds ?? 0);
+  }
+
+  if (rejectLiveToggle instanceof HTMLInputElement) {
+    rejectLiveToggle.checked = requestPolicy.rejectLiveStreams === true;
   }
 
   if (allowSearchToggle instanceof HTMLInputElement) {
@@ -849,8 +990,20 @@ function applyRequestPolicyState() {
     soundCloudProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("soundcloud");
   }
 
+  if (blockedYoutubeChannelsInput instanceof HTMLTextAreaElement) {
+    blockedYoutubeChannelsInput.value = (requestPolicy.blockedYouTubeChannelIds || []).join("\n");
+  }
+
+  if (blockedSoundCloudUsersInput instanceof HTMLTextAreaElement) {
+    blockedSoundCloudUsersInput.value = (requestPolicy.blockedSoundCloudUsers || []).join("\n");
+  }
+
   if (blockedUsersInput instanceof HTMLTextAreaElement) {
     blockedUsersInput.value = (requestPolicy.blockedUsers || []).join("\n");
+  }
+
+  if (blockedDomainsInput instanceof HTMLTextAreaElement) {
+    blockedDomainsInput.value = (requestPolicy.blockedDomains || []).join("\n");
   }
 
   if (blockedPhrasesInput instanceof HTMLTextAreaElement) {
@@ -932,8 +1085,12 @@ function collectSettingsPayload() {
     twitchOauthToken: el("twitchOauthToken")?.value.trim() || "",
     youtubeApiKey: el("youtubeApiKey")?.value.trim() || "",
     port: Number.parseInt(el("port")?.value || "3000", 10) || 3000,
+    startWithWindows: el("start-with-windows-toggle") instanceof HTMLInputElement
+      ? el("start-with-windows-toggle").checked
+      : false,
     guiPlayerEnabled: settingsPayload?.settings?.guiPlayerEnabled === true,
     guiPlayerVolume,
+    playerStartupTimeoutSeconds: Number.parseInt(el("playback-startup-timeout-seconds")?.value || "15", 10) || 0,
     requestPolicy: {
       requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement
         ? el("requests-enabled-toggle").checked
@@ -943,7 +1100,12 @@ function collectSettingsPayload() {
         : "everyone",
       maxQueueLength: Number.parseInt(el("requests-max-queue-length")?.value || "0", 10) || 0,
       maxRequestsPerUser: Number.parseInt(el("requests-max-per-user")?.value || "0", 10) || 0,
+      duplicateHistoryCount: Number.parseInt(el("requests-duplicate-history-count")?.value || "0", 10) || 0,
       cooldownSeconds: Number.parseInt(el("requests-cooldown-seconds")?.value || "0", 10) || 0,
+      maxTrackDurationSeconds: Number.parseInt(el("requests-max-duration-seconds")?.value || "0", 10) || 0,
+      rejectLiveStreams: el("requests-reject-live-toggle") instanceof HTMLInputElement
+        ? el("requests-reject-live-toggle").checked
+        : false,
       allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
         ? el("requests-allow-search-toggle").checked
         : true,
@@ -958,7 +1120,10 @@ function collectSettingsPayload() {
           ? "soundcloud"
           : ""
       ].filter(Boolean),
+      blockedYouTubeChannelIds: parseRequestPolicyList(el("requests-blocked-youtube-channels")?.value || "").map((value) => value.toLowerCase()),
+      blockedSoundCloudUsers: parseRequestPolicyList(el("requests-blocked-soundcloud-users")?.value || "").map((value) => value.toLowerCase()),
       blockedUsers: parseRequestPolicyList(el("requests-blocked-users")?.value || "").map((value) => value.toLowerCase()),
+      blockedDomains: parseRequestPolicyList(el("requests-blocked-domains")?.value || "").map((value) => value.toLowerCase()),
       blockedPhrases: parseRequestPolicyList(el("requests-blocked-phrases")?.value || "")
     },
     chatCommands: collectChatCommandsPayload(),
@@ -1026,6 +1191,14 @@ function applySettingsPayload() {
   renderCategorySelect("chat-category-select", chatSuppressedCategories);
   renderCategorySelect("playback-category-select", playbackSuppressedCategories);
   renderChatCommandRows(settingsPayload.settings.chatCommands || {});
+  const startWithWindowsToggle = el("start-with-windows-toggle");
+  if (startWithWindowsToggle instanceof HTMLInputElement) {
+    startWithWindowsToggle.checked = settingsPayload.settings.startWithWindows === true;
+  }
+  setValue(
+    "playback-startup-timeout-seconds",
+    settingsPayload.settings.playerStartupTimeoutSeconds ?? 15
+  );
   applyRequestPolicyState();
   applyRuntimeState();
   applyGuiPlayerState();
@@ -1076,7 +1249,7 @@ function applyRuntimeState() {
     return;
   }
 
-  const { runtime, twitchStatus, twitchAuthStatus } = settingsPayload;
+  const { runtime, twitchStatus, twitchAuthStatus, desktopIntegration } = settingsPayload;
   const statusState = twitchStatus?.state || "needs_configuration";
   const twitchPill = el("twitch-status-pill");
   const categoryPill = el("twitch-category-pill");
@@ -1144,6 +1317,28 @@ function applyRuntimeState() {
     void loadSettings().catch(() => {});
   }
   lastTwitchAuthState = twitchAuthStatus?.state || "";
+
+  const startWithWindowsToggle = el("start-with-windows-toggle");
+  const startWithWindowsCopy = el("start-with-windows-copy");
+  const startWithWindowsNote = el("start-with-windows-note");
+  if (startWithWindowsToggle instanceof HTMLInputElement) {
+    startWithWindowsToggle.disabled = isSavingSettings || desktopIntegration?.supported !== true;
+  }
+  if (startWithWindowsCopy) {
+    startWithWindowsCopy.textContent = desktopIntegration?.supported === true
+      ? "Launch the desktop app automatically when you sign in to Windows."
+      : (desktopIntegration?.reason || "Only available in the packaged Windows desktop app.");
+  }
+  if (startWithWindowsNote) {
+    startWithWindowsNote.textContent = desktopIntegration?.supported === true
+      ? (
+          desktopIntegration.enabled === true
+            ? "Windows will launch the desktop app automatically at sign-in."
+            : "Disabled. Turn this on and save settings to register the app with Windows startup."
+        )
+      : (desktopIntegration?.reason || "Only available in the packaged Windows desktop app.");
+  }
+
   applyRequestPolicyState();
   applyGuiPlayerState();
 }
@@ -1449,6 +1644,97 @@ function renderHistory(history) {
   });
 }
 
+function adminEventLabel(action) {
+  if (action === "queue_remove") {
+    return "Removed from queue";
+  }
+
+  if (action === "queue_remove_own") {
+    return "Removed own request";
+  }
+
+  if (action === "queue_move") {
+    return "Moved in queue";
+  }
+
+  if (action === "queue_promote") {
+    return "Moved to top";
+  }
+
+  if (action === "queue_clear") {
+    return "Cleared queue";
+  }
+
+  if (action === "skip_current") {
+    return "Skipped track";
+  }
+
+  if (action === "delete_current") {
+    return "Deleted track";
+  }
+
+  if (action === "save_current") {
+    return "Saved track";
+  }
+
+  if (action === "stop_playback") {
+    return "Stopped playback";
+  }
+
+  if (action === "restart_stopped") {
+    return "Restarted stopped track";
+  }
+
+  if (action === "open_requests") {
+    return "Opened requests";
+  }
+
+  if (action === "close_requests") {
+    return "Closed requests";
+  }
+
+  return action;
+}
+
+function renderAdminEvents(adminEvents) {
+  const eventList = el("admin-event-list");
+  if (!eventList) {
+    return;
+  }
+
+  eventList.innerHTML = "";
+
+  if (!adminEvents.length) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state";
+    emptyState.textContent = "Moderator and dashboard actions will appear here.";
+    eventList.appendChild(emptyState);
+    return;
+  }
+
+  adminEvents.slice(0, 12).forEach((entry) => {
+    const item = document.createElement("article");
+    item.className = "history-item";
+    const trackTitle = entry.track?.title ? ` • ${entry.track.title}` : "";
+    const detailText = entry.details?.clearedCount
+      ? ` • ${entry.details.clearedCount} cleared`
+      : entry.details?.fromIndex && entry.details?.toIndex
+        ? ` • ${entry.details.fromIndex} -> ${entry.details.toIndex}`
+        : "";
+    item.innerHTML = `
+      <div class="history-item__main">
+        <strong>${htmlEscape(adminEventLabel(entry.action))}</strong>
+        <div class="command-table__description">${htmlEscape(entry.triggeredBy || "unknown")}${htmlEscape(trackTitle)}${htmlEscape(detailText)}</div>
+      </div>
+      <div class="history-item__meta">
+        <span class="provider-chip">${htmlEscape(entry.action)}</span>
+        <time class="history-item__time" datetime="${htmlEscape(entry.createdAt || "")}">${htmlEscape(new Date(entry.createdAt || Date.now()).toLocaleString())}</time>
+      </div>
+    `;
+    eventList.appendChild(item);
+  });
+}
+
 async function loadPlaybackState() {
   playbackState = await fetchJson("/api/state");
   applyPlaybackState();
@@ -1459,6 +1745,7 @@ function applyPlaybackState() {
   const stoppedTrack = playbackState?.stoppedTrack;
   const queue = playbackState?.queue || [];
   const history = playbackState?.history || [];
+  const adminEvents = playbackState?.adminEvents || [];
   const playbackStatus = playbackState?.playbackStatus || "idle";
   const visibleTrack = currentTrack || stoppedTrack;
   const playbackPill = el("playback-state-pill");
@@ -1544,6 +1831,7 @@ function applyPlaybackState() {
 
   renderFullQueue(queue);
   renderHistory(history);
+  renderAdminEvents(adminEvents);
 }
 
 async function loadPlaylist() {
@@ -1574,6 +1862,7 @@ function applyPlaylistState() {
   const prevButton = el("playlist-prev-page");
   const nextButton = el("playlist-next-page");
   const bulkQueueButton = el("playlist-bulk-queue-button");
+  const exportSelectedButton = el("playlist-export-selected-button");
   const bulkDeleteButton = el("playlist-bulk-delete-button");
   const selectPageCheckbox = el("playlist-select-page");
   const sortSelect = el("playlist-sort-select");
@@ -1588,6 +1877,9 @@ function applyPlaylistState() {
   }
   if (bulkQueueButton) {
     bulkQueueButton.disabled = playlistSelectedKeys.size === 0;
+  }
+  if (exportSelectedButton) {
+    exportSelectedButton.disabled = playlistSelectedKeys.size === 0;
   }
   if (bulkDeleteButton) {
     bulkDeleteButton.disabled = playlistSelectedKeys.size === 0;
@@ -1615,10 +1907,19 @@ function applyPlaylistState() {
       <td class="playlist-table__checkbox">
         <input type="checkbox" data-playlist-select-key="${htmlEscape(track.key)}" ${playlistSelectedKeys.has(track.key) ? "checked" : ""} />
       </td>
-      <td>${htmlEscape(track.title)}</td>
+      <td>
+        <strong>${htmlEscape(track.title)}</strong>
+        <div class="command-table__description">${htmlEscape(track.key)}</div>
+      </td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
       <td><a class="playlist-link" href="${htmlEscape(track.url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(track.url)}</a></td>
-      <td class="playlist-table__actions"><button class="ghost-button ghost-button--danger" type="button" data-playlist-delete-key="${htmlEscape(track.key)}">Delete</button></td>
+      <td class="playlist-table__actions playlist-table__actions--wide">
+        <div class="button-row button-row--compact playlist-row-actions">
+          <button class="ghost-button" type="button" data-playlist-edit-key="${htmlEscape(track.key)}" data-playlist-title="${htmlEscape(track.title)}">Edit</button>
+          <button class="ghost-button" type="button" data-playlist-refresh-key="${htmlEscape(track.key)}">Refresh</button>
+          <button class="ghost-button ghost-button--danger" type="button" data-playlist-delete-key="${htmlEscape(track.key)}">Delete</button>
+        </div>
+      </td>
     `;
     tableBody.appendChild(row);
   });
@@ -1921,6 +2222,8 @@ async function addOverviewQueueTrack(event) {
       setOverviewFeedback(`Track is already queued: ${payload.track.title}`, "warning");
     } else if (duplicateType === "stopped") {
       setOverviewFeedback(`Track is stopped and ready to restart: ${payload.track.title}`, "warning");
+    } else if (duplicateType === "history") {
+      setOverviewFeedback(`Track was played recently: ${payload.track.title}`, "warning");
     } else {
       setOverviewFeedback(`Added ${payload.track.title} to the queue.`, "success");
     }
@@ -2143,6 +2446,107 @@ async function exportPlaylist() {
   }
 }
 
+async function exportSelectedPlaylistTracks() {
+  if (playlistSelectedKeys.size === 0) {
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/playlist/export-selected", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trackKeys: Array.from(playlistSelectedKeys)
+      })
+    });
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "playlist-selected-export.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setPlaylistFeedback("Selected playlist tracks exported.", "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not export the selected playlist tracks.", "error");
+  }
+}
+
+async function editPlaylistTrackTitle(trackKey, currentTitle) {
+  if (!trackKey) {
+    return;
+  }
+
+  const nextTitle = window.prompt("Edit playlist title", currentTitle || "");
+  if (nextTitle === null) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(`/api/playlist/tracks/${encodeURIComponent(trackKey)}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        title: nextTitle
+      })
+    });
+    await loadPlaylist();
+    setPlaylistFeedback(`Updated title: ${payload.track.title}`, "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not update the playlist title.", "error");
+  }
+}
+
+async function refreshPlaylistTrackMetadata(trackKey) {
+  if (!trackKey) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson(`/api/playlist/tracks/${encodeURIComponent(trackKey)}/refresh-metadata`, {
+      method: "POST"
+    });
+    await loadPlaylist();
+    setPlaylistFeedback(`Refreshed metadata: ${payload.track.title}`, "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not refresh playlist metadata.", "error");
+  }
+}
+
+async function exportDiagnostics() {
+  try {
+    const response = await fetch("/api/diagnostics/export", {
+      cache: "no-store"
+    });
+    if (!response.ok) {
+      throw new Error(`Request failed: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = objectUrl;
+    anchor.download = "diagnostics-export.json";
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(objectUrl);
+    setFeedback("Diagnostics exported.", "success");
+  } catch (error) {
+    setFeedback(error?.message || "Could not export diagnostics.", "error");
+  }
+}
+
 async function importPlaylist(csvText) {
   try {
     const payload = await fetchJson("/api/playlist/import", {
@@ -2262,6 +2666,21 @@ root.addEventListener("click", (event) => {
     return;
   }
 
+  const editButton = event.target.closest("[data-playlist-edit-key]");
+  if (editButton) {
+    void editPlaylistTrackTitle(
+      editButton.getAttribute("data-playlist-edit-key"),
+      editButton.getAttribute("data-playlist-title")
+    );
+    return;
+  }
+
+  const refreshButton = event.target.closest("[data-playlist-refresh-key]");
+  if (refreshButton) {
+    void refreshPlaylistTrackMetadata(refreshButton.getAttribute("data-playlist-refresh-key"));
+    return;
+  }
+
   const copyButton = event.target.closest("[data-copy-target]");
   if (copyButton) {
     void copyFieldValue(copyButton.getAttribute("data-copy-target"));
@@ -2304,6 +2723,8 @@ root.addEventListener("click", (event) => {
     void saveSettings();
   } else if (event.target.id === "open-appdata-button") {
     fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
+  } else if (event.target.id === "export-diagnostics-button") {
+    void exportDiagnostics();
   } else if (event.target.id === "twitch-auth-start") {
     void startTwitchAuth();
   } else if (event.target.id === "twitch-auth-cancel") {
@@ -2348,6 +2769,8 @@ root.addEventListener("click", (event) => {
     }
   } else if (event.target.id === "playlist-export-button") {
     void exportPlaylist();
+  } else if (event.target.id === "playlist-export-selected-button") {
+    void exportSelectedPlaylistTracks();
   } else if (event.target.id === "playlist-bulk-queue-button") {
     void bulkQueuePlaylistTracks();
   } else if (event.target.id === "playlist-bulk-delete-button") {
@@ -2409,6 +2832,11 @@ root.addEventListener("change", async (event) => {
   }
 
   if (target.id === "requests-allow-search-toggle" && target instanceof HTMLInputElement) {
+    syncRequestPolicyDraftFromInputs();
+    applyRequestPolicyState();
+  }
+
+  if (target.id === "requests-reject-live-toggle" && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
   }
@@ -2495,14 +2923,22 @@ root.addEventListener("input", (event) => {
     (
       target.id === "requests-max-queue-length" ||
       target.id === "requests-max-per-user" ||
-      target.id === "requests-cooldown-seconds"
+      target.id === "requests-duplicate-history-count" ||
+      target.id === "requests-cooldown-seconds" ||
+      target.id === "requests-max-duration-seconds"
     ) &&
     target instanceof HTMLInputElement
   ) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
   } else if (
-    (target.id === "requests-blocked-users" || target.id === "requests-blocked-phrases") &&
+    (
+      target.id === "requests-blocked-users" ||
+      target.id === "requests-blocked-domains" ||
+      target.id === "requests-blocked-phrases" ||
+      target.id === "requests-blocked-youtube-channels" ||
+      target.id === "requests-blocked-soundcloud-users"
+    ) &&
     target instanceof HTMLTextAreaElement
   ) {
     syncRequestPolicyDraftFromInputs();
@@ -2539,7 +2975,10 @@ root.addEventListener("keydown", (event) => {
     (
       target.id === "requests-max-queue-length" ||
       target.id === "requests-max-per-user" ||
-      target.id === "requests-cooldown-seconds"
+      target.id === "requests-duplicate-history-count" ||
+      target.id === "requests-cooldown-seconds" ||
+      target.id === "requests-max-duration-seconds" ||
+      target.id === "playback-startup-timeout-seconds"
     )
   ) {
     event.preventDefault();
@@ -2581,7 +3020,8 @@ window.setInterval(() => {
           ...settingsPayload,
           runtime: payload.runtime,
           twitchStatus: payload.twitchStatus,
-          twitchAuthStatus: payload.twitchAuthStatus
+          twitchAuthStatus: payload.twitchAuthStatus,
+          desktopIntegration: payload.desktopIntegration
         };
         applyRuntimeState();
       })

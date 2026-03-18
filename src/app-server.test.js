@@ -399,9 +399,12 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
+  const originalFetch = global.fetch;
   let appServer = null;
 
   t.after(async () => {
+    global.fetch = originalFetch;
+
     if (appServer) {
       await appServer.close().catch(() => {});
     }
@@ -429,6 +432,18 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
     "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Rick Roll\n",
     "utf8"
   );
+
+  global.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url.startsWith("https://soundcloud.com/oembed")) {
+      return createJsonResponse({
+        title: "Refreshed Club Mix",
+        thumbnail_url: ""
+      });
+    }
+
+    return originalFetch(input, init);
+  };
 
   appServer = await startAppServer({
     noBrowser: true,
@@ -471,6 +486,46 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
   const bulkQueuePayload = await bulkQueueResponse.json();
   assert.equal(bulkQueuePayload.result.queuedCount, 1);
   assert.equal(bulkQueuePayload.state.queue[0].title, "Club Mix");
+
+  const updateTitleResponse = await fetch(
+    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}`, appServer.urls.dashboardUrl),
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        title: "Edited Club Mix"
+      })
+    }
+  );
+  assert.equal(updateTitleResponse.ok, true);
+  const updateTitlePayload = await updateTitleResponse.json();
+  assert.equal(updateTitlePayload.track.title, "Edited Club Mix");
+
+  const refreshResponse = await fetch(
+    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}/refresh-metadata`, appServer.urls.dashboardUrl),
+    {
+      method: "POST"
+    }
+  );
+  assert.equal(refreshResponse.ok, true);
+  const refreshPayload = await refreshResponse.json();
+  assert.equal(refreshPayload.track.title, "Refreshed Club Mix");
+
+  const exportSelectedResponse = await fetch(new URL("/api/playlist/export-selected", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+    })
+  });
+  assert.equal(exportSelectedResponse.ok, true);
+  const exportSelectedText = await exportSelectedResponse.text();
+  assert.match(exportSelectedText, /Refreshed Club Mix/);
+  assert.doesNotMatch(exportSelectedText, /Rick Roll/);
 
   const bulkDeleteResponse = await fetch(new URL("/api/playlist/bulk-delete", appServer.urls.dashboardUrl), {
     method: "POST",
@@ -625,6 +680,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   const originalEnv = snapshotEnv(isolatedEnvKeys);
   const originalCwd = process.cwd();
   let appServer = null;
+  const desktopIntegrationCalls = [];
 
   t.after(async () => {
     if (appServer) {
@@ -661,7 +717,26 @@ test("settings API persists request policy and configurable chat commands", asyn
       rootDir: appRootDir,
       runtimeDir,
       publicDir: path.join(appRootDir, "public")
-    })
+    }),
+    desktopIntegration: {
+      async getState() {
+        return {
+          supported: true,
+          enabled: desktopIntegrationCalls.length > 0
+            ? desktopIntegrationCalls[desktopIntegrationCalls.length - 1]
+            : false,
+          reason: ""
+        };
+      },
+      async setEnabled(enabled) {
+        desktopIntegrationCalls.push(enabled === true);
+        return {
+          supported: true,
+          enabled: enabled === true,
+          reason: ""
+        };
+      }
+    }
   });
 
   const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
@@ -670,16 +745,24 @@ test("settings API persists request policy and configurable chat commands", asyn
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
+      startWithWindows: true,
+      playerStartupTimeoutSeconds: 8,
       requestPolicy: {
         requestsEnabled: false,
         accessLevel: "subscriber",
         maxQueueLength: 7,
         maxRequestsPerUser: 2,
+        duplicateHistoryCount: 5,
         cooldownSeconds: 90,
+        maxTrackDurationSeconds: 420,
+        rejectLiveStreams: true,
         allowSearchRequests: false,
         youtubeSafeSearch: "strict",
         allowedProviders: ["youtube"],
+        blockedYouTubeChannelIds: ["ucblocked"],
+        blockedSoundCloudUsers: ["blockedartist"],
         blockedUsers: ["viewerone"],
+        blockedDomains: ["youtube.com", "youtu.be"],
         blockedPhrases: ["blocked phrase"]
       },
       chatCommands: {
@@ -755,15 +838,25 @@ test("settings API persists request policy and configurable chat commands", asyn
 
   assert.equal(response.ok, true);
   const payload = await response.json();
+  assert.equal(payload.settings.startWithWindows, true);
+  assert.equal(payload.desktopIntegration.supported, true);
+  assert.equal(payload.desktopIntegration.enabled, true);
+  assert.equal(payload.settings.playerStartupTimeoutSeconds, 8);
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
   assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
   assert.equal(payload.settings.requestPolicy.maxQueueLength, 7);
   assert.equal(payload.settings.requestPolicy.maxRequestsPerUser, 2);
+  assert.equal(payload.settings.requestPolicy.duplicateHistoryCount, 5);
   assert.equal(payload.settings.requestPolicy.cooldownSeconds, 90);
+  assert.equal(payload.settings.requestPolicy.maxTrackDurationSeconds, 420);
+  assert.equal(payload.settings.requestPolicy.rejectLiveStreams, true);
   assert.equal(payload.settings.requestPolicy.allowSearchRequests, false);
   assert.equal(payload.settings.requestPolicy.youtubeSafeSearch, "strict");
   assert.deepEqual(payload.settings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(payload.settings.requestPolicy.blockedYouTubeChannelIds, ["ucblocked"]);
+  assert.deepEqual(payload.settings.requestPolicy.blockedSoundCloudUsers, ["blockedartist"]);
   assert.deepEqual(payload.settings.requestPolicy.blockedUsers, ["viewerone"]);
+  assert.deepEqual(payload.settings.requestPolicy.blockedDomains, ["youtube.com", "youtu.be"]);
   assert.deepEqual(payload.settings.requestPolicy.blockedPhrases, ["blocked phrase"]);
   assert.equal(payload.settings.chatCommands.song_request.trigger, "!song");
   assert.deepEqual(payload.settings.chatCommands.song_request.aliases, ["!req"]);
@@ -773,18 +866,27 @@ test("settings API persists request policy and configurable chat commands", asyn
   const persistedSettings = JSON.parse(
     await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
   );
+  assert.equal(persistedSettings.startWithWindows, true);
+  assert.equal(persistedSettings.playerStartupTimeoutSeconds, 8);
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
   assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");
   assert.equal(persistedSettings.requestPolicy.maxQueueLength, 7);
   assert.equal(persistedSettings.requestPolicy.maxRequestsPerUser, 2);
+  assert.equal(persistedSettings.requestPolicy.duplicateHistoryCount, 5);
   assert.equal(persistedSettings.requestPolicy.cooldownSeconds, 90);
+  assert.equal(persistedSettings.requestPolicy.maxTrackDurationSeconds, 420);
+  assert.equal(persistedSettings.requestPolicy.rejectLiveStreams, true);
   assert.equal(persistedSettings.requestPolicy.allowSearchRequests, false);
   assert.equal(persistedSettings.requestPolicy.youtubeSafeSearch, "strict");
   assert.deepEqual(persistedSettings.requestPolicy.allowedProviders, ["youtube"]);
+  assert.deepEqual(persistedSettings.requestPolicy.blockedYouTubeChannelIds, ["ucblocked"]);
+  assert.deepEqual(persistedSettings.requestPolicy.blockedSoundCloudUsers, ["blockedartist"]);
   assert.deepEqual(persistedSettings.requestPolicy.blockedUsers, ["viewerone"]);
+  assert.deepEqual(persistedSettings.requestPolicy.blockedDomains, ["youtube.com", "youtu.be"]);
   assert.deepEqual(persistedSettings.requestPolicy.blockedPhrases, ["blocked phrase"]);
   assert.equal(persistedSettings.chatCommands.current_song.trigger, "!np");
   assert.equal(persistedSettings.chatCommands.remove_own_request.trigger, "!unrequest");
+  assert.deepEqual(desktopIntegrationCalls, [true]);
 });
 
 test("queue API supports listing, moving, promoting, removing, and clearing queued tracks", async (t) => {
@@ -1028,4 +1130,60 @@ test("history API returns recent playback events and runtime state restores on s
   const historyPayload = await historyResponse.json();
   assert.equal(historyPayload.items.length, 1);
   assert.equal(historyPayload.items[0].track.title, "History Restore");
+});
+
+test("diagnostics export returns the current runtime snapshot as downloadable JSON", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port, twitchChannel: "streamer" }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Rick Roll\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/diagnostics/export", appServer.urls.dashboardUrl));
+  assert.equal(response.ok, true);
+  assert.match(response.headers.get("content-disposition") || "", /diagnostics-export\.json/);
+
+  const payload = await response.json();
+  assert.equal(payload.settings.port, port);
+  assert.equal(typeof payload.exportedAt, "string");
+  assert.equal(payload.state.playbackStatus, "playing");
+  assert.equal(Array.isArray(payload.state.adminEvents), true);
+  assert.equal(payload.runtime.runtime.activePort, port);
 });

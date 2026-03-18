@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { logInfo, logWarn } from "./logger.js";
-import { detectProvider, getTrackKey, resolveYouTubeTrackFromApi } from "./providers.js";
+import { detectProvider, getTrackKey, resolveTrackFromUrl, resolveYouTubeTrackFromApi } from "./providers.js";
 
 function normalizePlaylistTitle(value) {
   const title = typeof value === "string" ? value.trim() : "";
@@ -51,10 +51,15 @@ function normalizePlaylistSort(sortBy) {
 }
 
 export class PlaylistRepository {
-  constructor(filePath, { youtubeApiKey = "", youtubeMetadataResolver = resolveYouTubeTrackFromApi } = {}) {
+  constructor(filePath, {
+    youtubeApiKey = "",
+    youtubeMetadataResolver = resolveYouTubeTrackFromApi,
+    metadataResolver = resolveTrackFromUrl
+  } = {}) {
     this.filePath = filePath;
     this.youtubeApiKey = youtubeApiKey;
     this.youtubeMetadataResolver = youtubeMetadataResolver;
+    this.metadataResolver = metadataResolver;
     this.rows = [];
   }
 
@@ -231,6 +236,55 @@ export class PlaylistRepository {
     };
   }
 
+  async updateTrackTitleByKey(trackKey, nextTitle) {
+    const row = this.findTrackByKey(trackKey);
+
+    if (!row) {
+      return null;
+    }
+
+    const normalizedTitle = normalizePlaylistTitle(nextTitle);
+    if (!normalizedTitle) {
+      throw new Error("Title is required.");
+    }
+
+    row.Title = normalizedTitle;
+    await this.persist();
+
+    return {
+      key: row.Key,
+      url: row.Link,
+      title: row.Title,
+      provider: row.Provider
+    };
+  }
+
+  async refreshTrackMetadataByKey(trackKey) {
+    const row = this.findTrackByKey(trackKey);
+
+    if (!row) {
+      return null;
+    }
+
+    let refreshedTrack = null;
+    if (row.Provider === "youtube" && this.youtubeApiKey) {
+      refreshedTrack = await this.youtubeMetadataResolver(row.Link, this.youtubeApiKey);
+    } else {
+      refreshedTrack = await this.metadataResolver(row.Link);
+    }
+
+    const refreshedTitle = normalizePlaylistTitle(refreshedTrack?.title) || row.Title || row.Link;
+    row.Title = refreshedTitle;
+    await this.persist();
+
+    return {
+      key: row.Key,
+      url: row.Link,
+      title: row.Title || row.Link,
+      provider: row.Provider
+    };
+  }
+
   async appendTrack(track) {
     if (this.hasTrack(track)) {
       return false;
@@ -326,6 +380,26 @@ export class PlaylistRepository {
   exportCsv() {
     return stringify(
       this.rows.map((row) => ({
+        Link: row.Link,
+        Title: row.Title
+      })),
+      {
+        header: true,
+        columns: ["Link", "Title"]
+      }
+    );
+  }
+
+  exportSelectedCsv(trackKeys) {
+    const uniqueTrackKeys = new Set(
+      Array.isArray(trackKeys)
+        ? trackKeys.map((trackKey) => typeof trackKey === "string" ? trackKey.trim() : "").filter(Boolean)
+        : []
+    );
+    const selectedRows = this.rows.filter((row) => uniqueTrackKeys.has(row.Key));
+
+    return stringify(
+      selectedRows.map((row) => ({
         Link: row.Link,
         Title: row.Title
       })),

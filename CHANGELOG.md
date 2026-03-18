@@ -4,6 +4,13 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Tightened the Library track list so row actions stay inline and the table wastes less vertical space.
+- Tightened the Library tab controls so the search and sort panel lines up with the playlist action buttons instead of leaving a large empty gap.
+- Added playlist title editing, metadata refresh, and selected-row CSV export tools in the Library tab.
+- Expanded request safety controls with max track duration, live-stream blocking, blocked direct-link domains, recent-playback duplicate blocking, and broader YouTube channel/account matching.
+- Added a configurable embedded-player startup timeout so stuck YouTube or SoundCloud loads can be tuned or disabled from the Playback tab.
+- Added a Start with Windows option in the desktop Settings tab so packaged Windows builds can launch automatically at sign-in.
+
 ## 2.0.0 - 2026-03-17
 
 - Added configurable Twitch chat commands so streamers can rename or disable the built-in request and moderation triggers from the dashboard.
@@ -16,6 +23,8 @@ This file is maintained between releases and should be updated as work is comple
 - Added queue move up/down controls so moderators can fine-tune request order without only using Move to top.
 - Added request moderation controls for access level, per-user cooldowns, provider allowlists, and blocked usernames or phrases.
 - Added Library sorting plus bulk queue/delete actions so larger fallback playlists are easier to manage.
+- Added a recent admin activity log in the dashboard so skips, queue changes, request toggles, and other control actions are visible.
+- Added a diagnostics export download with the current settings, runtime status, playback state, history, and admin activity snapshot.
 
 ## 1.6.0 - 2026-03-17
 

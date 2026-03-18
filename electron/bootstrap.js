@@ -124,6 +124,43 @@ export async function bootstrapDesktopApp(electron) {
     return appRootDir;
   }
 
+  function isStartWithWindowsSupported() {
+    return process.platform === "win32" && app.isPackaged;
+  }
+
+  function getStartWithWindowsState() {
+    if (!isStartWithWindowsSupported()) {
+      return {
+        supported: false,
+        enabled: false,
+        reason: process.platform !== "win32"
+          ? "This option is only available on Windows."
+          : "This option is only available in packaged desktop builds."
+      };
+    }
+
+    const loginItemSettings = app.getLoginItemSettings();
+    return {
+      supported: true,
+      enabled: loginItemSettings.openAtLogin === true,
+      reason: ""
+    };
+  }
+
+  function setStartWithWindowsEnabled(enabled) {
+    if (!isStartWithWindowsSupported()) {
+      return getStartWithWindowsState();
+    }
+
+    app.setLoginItemSettings({
+      openAtLogin: enabled === true,
+      openAsHidden: false,
+      path: process.execPath
+    });
+
+    return getStartWithWindowsState();
+  }
+
   async function ensureServer() {
     if (appServer) {
       return appServer;
@@ -150,7 +187,15 @@ export async function bootstrapDesktopApp(electron) {
     appServer = await startAppServer({
       noBrowser: true,
       configStore,
-      updateService
+      updateService,
+      desktopIntegration: {
+        async getState() {
+          return getStartWithWindowsState();
+        },
+        async setEnabled(enabled) {
+          return setStartWithWindowsEnabled(enabled);
+        }
+      }
     });
 
     return appServer;
@@ -285,6 +330,16 @@ export async function bootstrapDesktopApp(electron) {
   });
 
   await app.whenReady();
+  try {
+    const configStore = createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir: getRuntimeDir(),
+      publicDir: path.join(appRootDir, "public")
+    });
+    const effectiveSettings = await configStore.loadEffectiveSettings();
+    setStartWithWindowsEnabled(effectiveSettings.startWithWindows === true);
+  } catch {
+  }
   registerMediaShortcuts();
   await bootstrap();
 

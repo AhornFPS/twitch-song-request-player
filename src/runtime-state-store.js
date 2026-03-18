@@ -43,10 +43,25 @@ function normalizeHistoryEntry(entry) {
   };
 }
 
+function normalizeAdminEvent(entry) {
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return {
+    action: typeof entry.action === "string" ? entry.action : "unknown",
+    triggeredBy: typeof entry.triggeredBy === "string" ? entry.triggeredBy : "unknown",
+    track: normalizeTrack(entry.track),
+    details: entry.details && typeof entry.details === "object" ? entry.details : null,
+    createdAt: typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString()
+  };
+}
+
 export class RuntimeStateStore {
-  constructor(filePath, { historyLimit = 25 } = {}) {
+  constructor(filePath, { historyLimit = 25, adminEventLimit = 50 } = {}) {
     this.filePath = filePath;
     this.historyLimit = historyLimit;
+    this.adminEventLimit = adminEventLimit;
   }
 
   async load() {
@@ -60,6 +75,9 @@ export class RuntimeStateStore {
         stoppedTrack: normalizeTrack(parsed.stoppedTrack),
         history: Array.isArray(parsed.history)
           ? parsed.history.map((entry) => normalizeHistoryEntry(entry)).filter(Boolean).slice(0, this.historyLimit)
+          : [],
+        adminEvents: Array.isArray(parsed.adminEvents)
+          ? parsed.adminEvents.map((entry) => normalizeAdminEvent(entry)).filter(Boolean).slice(0, this.adminEventLimit)
           : []
       };
     } catch (error) {
@@ -67,7 +85,8 @@ export class RuntimeStateStore {
         return {
           queue: [],
           stoppedTrack: null,
-          history: []
+          history: [],
+          adminEvents: []
         };
       }
 
@@ -83,6 +102,9 @@ export class RuntimeStateStore {
       stoppedTrack: normalizeTrack(state.stoppedTrack),
       history: Array.isArray(state.history)
         ? state.history.map((entry) => normalizeHistoryEntry(entry)).filter(Boolean).slice(0, this.historyLimit)
+        : [],
+      adminEvents: Array.isArray(state.adminEvents)
+        ? state.adminEvents.map((entry) => normalizeAdminEvent(entry)).filter(Boolean).slice(0, this.adminEventLimit)
         : []
     };
 

@@ -205,13 +205,25 @@ function normalizeRequestPolicy(value) {
     accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
     maxQueueLength: normalizeLimit(rawValue.maxQueueLength, 0),
     maxRequestsPerUser: normalizeLimit(rawValue.maxRequestsPerUser, 0),
+    duplicateHistoryCount: normalizeLimit(rawValue.duplicateHistoryCount, 0),
     cooldownSeconds: normalizeLimit(rawValue.cooldownSeconds, 0),
+    maxTrackDurationSeconds: normalizeLimit(rawValue.maxTrackDurationSeconds, 0),
+    rejectLiveStreams: normalizeBoolean(rawValue.rejectLiveStreams, false),
     allowSearchRequests: normalizeBoolean(rawValue.allowSearchRequests, true),
     youtubeSafeSearch: ["none", "moderate", "strict"].includes(youtubeSafeSearch)
       ? youtubeSafeSearch
       : "none",
     allowedProviders,
+    blockedYouTubeChannelIds: normalizeStringList(rawValue.blockedYouTubeChannelIds, [], {
+      lowerCase: true
+    }),
+    blockedSoundCloudUsers: normalizeStringList(rawValue.blockedSoundCloudUsers, [], {
+      lowerCase: true
+    }),
     blockedUsers: normalizeStringList(rawValue.blockedUsers, [], {
+      lowerCase: true
+    }),
+    blockedDomains: normalizeStringList(rawValue.blockedDomains, [], {
       lowerCase: true
     }),
     blockedPhrases: normalizeStringList(rawValue.blockedPhrases)
@@ -235,8 +247,10 @@ function normalizeSettings(raw) {
     ),
     youtubeApiKey: trimValue(raw.youtubeApiKey ?? raw.YOUTUBE_API_KEY),
     port: normalizePort(raw.port ?? raw.PORT ?? "3000"),
+    startWithWindows: normalizeBoolean(raw.startWithWindows, false),
     guiPlayerEnabled: normalizeBoolean(raw.guiPlayerEnabled, false),
     guiPlayerVolume: normalizePercent(raw.guiPlayerVolume, 100),
+    playerStartupTimeoutSeconds: normalizeLimit(raw.playerStartupTimeoutSeconds, 15),
     requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
     chatCommands: normalizeChatCommands(raw.chatCommands),
     theme: normalizeTheme(raw.theme ?? raw.THEME),
@@ -308,6 +322,14 @@ function normalizeOverrideSettings(raw) {
     overrides.port = normalizePort(raw.port ?? raw.PORT);
   }
 
+  if (Object.prototype.hasOwnProperty.call(raw, "startWithWindows")) {
+    overrides.startWithWindows = normalizeBoolean(raw.startWithWindows, false);
+  }
+
+  if (Object.prototype.hasOwnProperty.call(raw, "playerStartupTimeoutSeconds")) {
+    overrides.playerStartupTimeoutSeconds = normalizeLimit(raw.playerStartupTimeoutSeconds, 15);
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, "requestPolicy")) {
     overrides.requestPolicy = normalizeRequestPolicy(raw.requestPolicy);
   }
@@ -341,6 +363,10 @@ function mergeSettings(baseSettings, overridingSettings) {
       overridingSettings.playbackSuppressedCategories || baseSettings.playbackSuppressedCategories || [],
     youtubeApiKey: overridingSettings.youtubeApiKey || baseSettings.youtubeApiKey,
     port: overridingSettings.port || baseSettings.port || 3000,
+    startWithWindows:
+      typeof overridingSettings.startWithWindows === "boolean"
+        ? overridingSettings.startWithWindows
+        : (baseSettings.startWithWindows ?? false),
     guiPlayerEnabled:
       typeof overridingSettings.guiPlayerEnabled === "boolean"
         ? overridingSettings.guiPlayerEnabled
@@ -349,6 +375,10 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.guiPlayerVolume === "number"
         ? normalizePercent(overridingSettings.guiPlayerVolume, baseSettings.guiPlayerVolume ?? 100)
         : (baseSettings.guiPlayerVolume ?? 100),
+    playerStartupTimeoutSeconds:
+      typeof overridingSettings.playerStartupTimeoutSeconds === "number"
+        ? normalizeLimit(overridingSettings.playerStartupTimeoutSeconds, baseSettings.playerStartupTimeoutSeconds ?? 15)
+        : (baseSettings.playerStartupTimeoutSeconds ?? 15),
     requestPolicy: overridingSettings.requestPolicy || baseSettings.requestPolicy || normalizeRequestPolicy(),
     chatCommands: overridingSettings.chatCommands || baseSettings.chatCommands || normalizeChatCommands(),
     theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id,
@@ -384,8 +414,10 @@ function normalizeBundledSettings(raw) {
     playbackSuppressedCategories: [],
     youtubeApiKey: "",
     port: 3000,
+    startWithWindows: false,
     guiPlayerEnabled: false,
     guiPlayerVolume: 100,
+    playerStartupTimeoutSeconds: 15,
     requestPolicy: normalizeRequestPolicy(),
     chatCommands: normalizeChatCommands(),
     theme: themeOptions[0].id,
@@ -503,8 +535,10 @@ export function toRuntimeAppConfig(runtimeConfig) {
       playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },
     youtubeApiKey: runtimeConfig.settings.youtubeApiKey,
+    startWithWindows: runtimeConfig.settings.startWithWindows,
     guiPlayerEnabled: runtimeConfig.settings.guiPlayerEnabled,
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
+    playerStartupTimeoutSeconds: runtimeConfig.settings.playerStartupTimeoutSeconds,
     requestPolicy: runtimeConfig.settings.requestPolicy,
     chatCommands: runtimeConfig.settings.chatCommands,
     theme: runtimeConfig.settings.theme,

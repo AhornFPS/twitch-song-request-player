@@ -44,7 +44,8 @@ function buildSettingsPayload({
   themeOptions,
   dashboardLayoutOptions,
   twitchStatus,
-  twitchAuthStatus
+  twitchAuthStatus,
+  desktopIntegration
 }) {
   const urls = buildRuntimeUrls(activePort);
 
@@ -54,6 +55,7 @@ function buildSettingsPayload({
     dashboardLayoutOptions,
     twitchStatus,
     twitchAuthStatus,
+    desktopIntegration,
     runtime: {
       activePort,
       configuredPort: settings.port,
@@ -65,12 +67,20 @@ function buildSettingsPayload({
   };
 }
 
-function buildRuntimeStatusPayload({ settings, activePort, usingFallbackPort, twitchStatus, twitchAuthStatus }) {
+function buildRuntimeStatusPayload({
+  settings,
+  activePort,
+  usingFallbackPort,
+  twitchStatus,
+  twitchAuthStatus,
+  desktopIntegration
+}) {
   const urls = buildRuntimeUrls(activePort);
 
   return {
     twitchStatus,
     twitchAuthStatus,
+    desktopIntegration,
     runtime: {
       activePort,
       configuredPort: settings.port,
@@ -79,6 +89,31 @@ function buildRuntimeStatusPayload({ settings, activePort, usingFallbackPort, tw
       configured: hasRequiredSettings(settings),
       ...urls
     }
+  };
+}
+
+function buildDiagnosticsExportPayload({
+  settings,
+  activePort,
+  usingFallbackPort,
+  twitchStatus,
+  twitchAuthStatus,
+  playerState,
+  desktopIntegration
+}) {
+  return {
+    exportedAt: new Date().toISOString(),
+    appVersion: packageJson.version,
+    settings: toClientSettings(settings),
+    runtime: buildRuntimeStatusPayload({
+      settings,
+      activePort,
+      usingFallbackPort,
+      twitchStatus,
+      twitchAuthStatus,
+      desktopIntegration
+    }),
+    state: playerState
   };
 }
 
@@ -136,13 +171,26 @@ export async function startAppServer({
   forceSetup = false,
   noBrowser = false,
   configStore = createConfigStore(),
-  updateService = null
+  updateService = null,
+  desktopIntegration = null
 } = {}) {
   const runtimeConfig = await configStore.loadRuntimeConfig();
   const overlayBuildToken = `${packageJson.version}-${Date.now().toString(36)}`;
   let currentSettings = runtimeConfig.settings;
   let activePort = currentSettings.port;
   let usingFallbackPort = false;
+
+  async function getDesktopIntegrationState() {
+    if (!desktopIntegration?.getState) {
+      return {
+        supported: false,
+        enabled: false,
+        reason: "This option is only available in the packaged Windows desktop app."
+      };
+    }
+
+    return await desktopIntegration.getState();
+  }
 
   const app = express();
   const server = http.createServer(app);
@@ -211,12 +259,14 @@ export async function startAppServer({
     response.json({
       ...playerController.getPublicState(),
       theme: currentSettings.theme,
-      overlayBuildToken
+      overlayBuildToken,
+      playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
     });
   });
 
   app.get("/api/settings", (_request, response) => {
-    response.json(
+    void getDesktopIntegrationState().then((desktopIntegrationState) => {
+      response.json(
       buildSettingsPayload({
         settings: currentSettings,
         activePort,
@@ -224,21 +274,68 @@ export async function startAppServer({
         themeOptions: configStore.getThemeOptions(),
         dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
         twitchStatus: twitchBotService.getStatus(),
-        twitchAuthStatus: twitchBotService.getAuthStatus()
+        twitchAuthStatus: twitchBotService.getAuthStatus(),
+        desktopIntegration: desktopIntegrationState
       })
-    );
+      );
+    }).catch((error) => {
+      logError("Failed to read desktop integration state", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: "Failed to read desktop integration state."
+      });
+    });
   });
 
   app.get("/api/runtime-status", (_request, response) => {
-    response.json(
+    void getDesktopIntegrationState().then((desktopIntegrationState) => {
+      response.json(
       buildRuntimeStatusPayload({
         settings: currentSettings,
         activePort,
         usingFallbackPort,
         twitchStatus: twitchBotService.getStatus(),
-        twitchAuthStatus: twitchBotService.getAuthStatus()
+        twitchAuthStatus: twitchBotService.getAuthStatus(),
+        desktopIntegration: desktopIntegrationState
       })
-    );
+      );
+    }).catch((error) => {
+      logError("Failed to read desktop integration state", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: "Failed to read desktop integration state."
+      });
+    });
+  });
+
+  app.get("/api/diagnostics/export", (_request, response) => {
+    void getDesktopIntegrationState().then((desktopIntegrationState) => {
+      const payload = buildDiagnosticsExportPayload({
+        settings: currentSettings,
+        activePort,
+        usingFallbackPort,
+        twitchStatus: twitchBotService.getStatus(),
+        twitchAuthStatus: twitchBotService.getAuthStatus(),
+        playerState: playerController.getPublicState(),
+        desktopIntegration: desktopIntegrationState
+      });
+
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.setHeader("Content-Disposition", 'attachment; filename="diagnostics-export.json"');
+      response.send(`${JSON.stringify(payload, null, 2)}\n`);
+    }).catch((error) => {
+      logError("Failed to read desktop integration state", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: "Failed to build diagnostics export."
+      });
+    });
   });
 
   app.get("/api/playlist/tracks", (request, response) => {
@@ -470,6 +567,58 @@ export async function startAppServer({
     }
   });
 
+  app.patch("/api/playlist/tracks/:trackKey", async (request, response) => {
+    try {
+      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const updatedTrack = await playlistRepository.updateTrackTitleByKey(trackKey, request.body?.title);
+
+      if (!updatedTrack) {
+        response.status(404).json({
+          error: "Track not found in playlist."
+        });
+        return;
+      }
+
+      response.json({
+        track: updatedTrack
+      });
+    } catch (error) {
+      logError("Failed to update playlist track title", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to update the playlist track title."
+      });
+    }
+  });
+
+  app.post("/api/playlist/tracks/:trackKey/refresh-metadata", async (request, response) => {
+    try {
+      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const refreshedTrack = await playlistRepository.refreshTrackMetadataByKey(trackKey);
+
+      if (!refreshedTrack) {
+        response.status(404).json({
+          error: "Track not found in playlist."
+        });
+        return;
+      }
+
+      response.json({
+        track: refreshedTrack
+      });
+    } catch (error) {
+      logError("Failed to refresh playlist track metadata", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to refresh playlist metadata."
+      });
+    }
+  });
+
   app.post("/api/playlist/bulk-delete", async (request, response) => {
     try {
       const trackKeys = Array.isArray(request.body?.trackKeys) ? request.body.trackKeys : [];
@@ -571,6 +720,13 @@ export async function startAppServer({
     response.send(playlistRepository.exportCsv());
   });
 
+  app.post("/api/playlist/export-selected", (request, response) => {
+    const trackKeys = Array.isArray(request.body?.trackKeys) ? request.body.trackKeys : [];
+    response.setHeader("Content-Type", "text/csv; charset=utf-8");
+    response.setHeader("Content-Disposition", 'attachment; filename="playlist-selected-export.csv"');
+    response.send(playlistRepository.exportSelectedCsv(trackKeys));
+  });
+
   app.put("/api/settings", async (request, response) => {
     try {
       if (request.body?.chatCommands) {
@@ -593,6 +749,19 @@ export async function startAppServer({
       currentSettings = nextSettings;
       playlistRepository.setYoutubeApiKey(nextSettings.youtubeApiKey);
       playerController.setRequestPolicy(nextSettings.requestPolicy);
+
+      if (
+        Object.prototype.hasOwnProperty.call(request.body ?? {}, "startWithWindows") &&
+        desktopIntegration?.setEnabled
+      ) {
+        const desktopIntegrationState = await desktopIntegration.setEnabled(nextSettings.startWithWindows);
+        if (desktopIntegrationState.supported && desktopIntegrationState.enabled !== nextSettings.startWithWindows) {
+          currentSettings = await configStore.saveSettings({
+            ...nextSettings,
+            startWithWindows: desktopIntegrationState.enabled
+          });
+        }
+      }
 
       const botSettingsChanged = settingsChanged(previousSettings, nextSettings, [
         "twitchChannel",
@@ -623,6 +792,13 @@ export async function startAppServer({
         });
       }
 
+      if (previousSettings.playerStartupTimeoutSeconds !== nextSettings.playerStartupTimeoutSeconds) {
+        io.emit("app:settings", {
+          theme: currentSettings.theme,
+          playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
+        });
+      }
+
       response.json({
         ...buildSettingsPayload({
           settings: currentSettings,
@@ -631,7 +807,8 @@ export async function startAppServer({
           themeOptions: configStore.getThemeOptions(),
           dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus,
-          twitchAuthStatus: twitchBotService.getAuthStatus()
+          twitchAuthStatus: twitchBotService.getAuthStatus(),
+          desktopIntegration: await getDesktopIntegrationState()
         }),
         saveSummary: {
           themeChanged,
@@ -669,7 +846,8 @@ export async function startAppServer({
           themeOptions: configStore.getThemeOptions(),
           dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus: twitchBotService.getStatus(),
-          twitchAuthStatus: twitchBotService.getAuthStatus()
+          twitchAuthStatus: twitchBotService.getAuthStatus(),
+          desktopIntegration: await getDesktopIntegrationState()
         })
       );
     } catch (error) {
