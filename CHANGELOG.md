@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.2.0 - 2026-03-19
+
 - Added a persistent request audit log with per-requester totals so accepted, duplicate, and rejected song requests can be reviewed later or exported for future tools.
 - Added a Requests-tab autosave toggle so request policy changes can save automatically or stay on manual save.
 
