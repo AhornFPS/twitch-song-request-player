@@ -78,24 +78,36 @@ function normalizeRequestPolicy(requestPolicy = {}) {
   };
 }
 
+function createRequestPolicyError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
 export class PlayerController {
   constructor({
     io,
     playlistRepository,
     runtimeStateStore = null,
+    requestAuditStore = null,
     historyLimit = 25,
+    requestAuditLimit = 1000,
     requestPolicy = {}
   }) {
     this.io = io;
     this.playlistRepository = playlistRepository;
     this.runtimeStateStore = runtimeStateStore;
+    this.requestAuditStore = requestAuditStore;
     this.historyLimit = historyLimit;
+    this.requestAuditLimit = requestAuditLimit;
     this.requestPolicy = normalizeRequestPolicy(requestPolicy);
     this.queue = [];
     this.currentTrack = null;
     this.stoppedTrack = null;
     this.history = [];
     this.adminEvents = [];
+    this.requestEvents = [];
+    this.requesterStatsByUser = new Map();
     this.isAdvancing = false;
     this.isPlaybackPaused = false;
     this.playbackSuppressed = false;
@@ -143,6 +155,273 @@ export class PlayerController {
         createdAt: entry.createdAt
       }))
     };
+  }
+
+  serializeRequester(requester) {
+    if (!requester || typeof requester !== "object") {
+      return null;
+    }
+
+    const username = typeof requester.username === "string" ? requester.username : "";
+    const displayName = typeof requester.displayName === "string" ? requester.displayName : "";
+
+    if (!username && !displayName) {
+      return null;
+    }
+
+    return {
+      username,
+      displayName
+    };
+  }
+
+  serializeRequestAuditTrack(track) {
+    if (!track || typeof track !== "object") {
+      return null;
+    }
+
+    const provider = typeof track.provider === "string" ? track.provider : "";
+    const url = typeof track.url === "string" ? track.url : "";
+    const title = typeof track.title === "string" ? track.title : "";
+    const key = typeof track.key === "string" ? track.key : "";
+
+    if (!provider && !url && !title && !key) {
+      return null;
+    }
+
+    return {
+      id: typeof track.id === "string" ? track.id : "",
+      provider,
+      url,
+      title,
+      key,
+      origin: typeof track.origin === "string" ? track.origin : "",
+      artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
+      durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
+      isLive: track.isLive === true,
+      sourceName: typeof track.sourceName === "string" ? track.sourceName : "",
+      sourceChannelId: typeof track.sourceChannelId === "string" ? track.sourceChannelId : "",
+      sourceUrl: typeof track.sourceUrl === "string" ? track.sourceUrl : ""
+    };
+  }
+
+  getRequesterAuditKey(requester) {
+    const username = requester?.username?.trim().toLowerCase();
+    if (username) {
+      return username;
+    }
+
+    const displayName = requester?.displayName?.trim().toLowerCase();
+    if (displayName) {
+      return displayName;
+    }
+
+    return "";
+  }
+
+  buildRequestAuditQueueState() {
+    return {
+      playbackStatus: this.getPlaybackStatus(),
+      queueLength: this.queue.length,
+      currentTrackId: this.currentTrack?.id ?? "",
+      stoppedTrackId: this.stoppedTrack?.id ?? ""
+    };
+  }
+
+  cloneRequesterStatsEntry(entry) {
+    if (!entry) {
+      return null;
+    }
+
+    return {
+      requester: entry.requester ? { ...entry.requester } : null,
+      totalRequests: entry.totalRequests,
+      acceptedRequests: entry.acceptedRequests,
+      duplicateRequests: entry.duplicateRequests,
+      rejectedRequests: entry.rejectedRequests,
+      youtubeRequests: entry.youtubeRequests,
+      soundcloudRequests: entry.soundcloudRequests,
+      lastRequestedAt: entry.lastRequestedAt,
+      lastAcceptedAt: entry.lastAcceptedAt,
+      lastOutcome: entry.lastOutcome,
+      lastSource: entry.lastSource,
+      lastInput: entry.lastInput,
+      lastTrackKey: entry.lastTrackKey,
+      lastTrackTitle: entry.lastTrackTitle
+    };
+  }
+
+  getRequestAuditState() {
+    return {
+      events: this.requestEvents.map((event) => ({
+        ...event,
+        requester: event.requester ? { ...event.requester } : null,
+        track: event.track ? { ...event.track } : null,
+        queueState: event.queueState ? { ...event.queueState } : null,
+        requesterStats: event.requesterStats
+          ? this.cloneRequesterStatsEntry(event.requesterStats)
+          : null,
+        details: event.details && typeof event.details === "object"
+          ? JSON.parse(JSON.stringify(event.details))
+          : null
+      })),
+      requesterStats: Array.from(this.requesterStatsByUser.values())
+        .map((entry) => this.cloneRequesterStatsEntry(entry))
+        .sort((left, right) => {
+          const totalDifference = right.totalRequests - left.totalRequests;
+          if (totalDifference !== 0) {
+            return totalDifference;
+          }
+
+          return String(right.lastRequestedAt ?? "").localeCompare(String(left.lastRequestedAt ?? ""));
+        })
+    };
+  }
+
+  getActiveRequestCountForRequester(username) {
+    const normalizedUsername = typeof username === "string" ? username.trim().toLowerCase() : "";
+    if (!normalizedUsername) {
+      return 0;
+    }
+
+    return [
+      ...this.queue,
+      this.currentTrack,
+      this.stoppedTrack
+    ].filter((candidate) => {
+      if (!candidate || candidate.origin !== "queue") {
+        return false;
+      }
+
+      return candidate.requestedBy?.username?.trim().toLowerCase() === normalizedUsername;
+    }).length;
+  }
+
+  buildRequestAuditDetails(details) {
+    if (!details || typeof details !== "object") {
+      return null;
+    }
+
+    return JSON.parse(JSON.stringify(details));
+  }
+
+  updateRequesterStats({
+    requester,
+    track = null,
+    outcome = "rejected",
+    source = "unknown",
+    input = "",
+    createdAt
+  }) {
+    const requesterIdentity = this.serializeRequester(requester);
+    if (!requesterIdentity) {
+      return null;
+    }
+
+    const requesterKey = this.getRequesterAuditKey(requesterIdentity);
+    if (!requesterKey) {
+      return null;
+    }
+
+    const existingEntry = this.requesterStatsByUser.get(requesterKey) ?? {
+      requester: requesterIdentity,
+      totalRequests: 0,
+      acceptedRequests: 0,
+      duplicateRequests: 0,
+      rejectedRequests: 0,
+      youtubeRequests: 0,
+      soundcloudRequests: 0,
+      lastRequestedAt: null,
+      lastAcceptedAt: null,
+      lastOutcome: "",
+      lastSource: "",
+      lastInput: "",
+      lastTrackKey: "",
+      lastTrackTitle: ""
+    };
+
+    existingEntry.requester = requesterIdentity;
+    existingEntry.totalRequests += 1;
+    existingEntry.lastRequestedAt = createdAt;
+    existingEntry.lastOutcome = outcome;
+    existingEntry.lastSource = source;
+    existingEntry.lastInput = typeof input === "string" ? input : "";
+    existingEntry.lastTrackKey = typeof track?.key === "string" ? track.key : "";
+    existingEntry.lastTrackTitle = typeof track?.title === "string" ? track.title : "";
+
+    if (track?.provider === "youtube") {
+      existingEntry.youtubeRequests += 1;
+    } else if (track?.provider === "soundcloud") {
+      existingEntry.soundcloudRequests += 1;
+    }
+
+    if (outcome === "accepted") {
+      existingEntry.acceptedRequests += 1;
+      existingEntry.lastAcceptedAt = createdAt;
+    } else if (outcome === "duplicate") {
+      existingEntry.duplicateRequests += 1;
+    } else {
+      existingEntry.rejectedRequests += 1;
+    }
+
+    this.requesterStatsByUser.set(requesterKey, existingEntry);
+    return this.cloneRequesterStatsEntry(existingEntry);
+  }
+
+  async recordRequestOutcome({
+    source = "unknown",
+    outcome = "rejected",
+    reason = "",
+    message = "",
+    input = "",
+    requestedBy = null,
+    track = null,
+    bypassRequestLimits = false,
+    details = null
+  } = {}) {
+    const createdAt = new Date().toISOString();
+    const serializedRequester = this.serializeRequester(requestedBy);
+    const serializedTrack = this.serializeRequestAuditTrack(track);
+    const requesterStats = this.updateRequesterStats({
+      requester: serializedRequester,
+      track: serializedTrack,
+      outcome,
+      source,
+      input,
+      createdAt
+    });
+
+    this.requestEvents.unshift({
+      id: crypto.randomUUID(),
+      createdAt,
+      source,
+      outcome,
+      reason,
+      message,
+      input,
+      bypassRequestLimits: Boolean(bypassRequestLimits),
+      requester: serializedRequester,
+      track: serializedTrack,
+      queueState: this.buildRequestAuditQueueState(),
+      requesterStats,
+      details: this.buildRequestAuditDetails(details)
+    });
+
+    if (this.requestEvents.length > this.requestAuditLimit) {
+      this.requestEvents.length = this.requestAuditLimit;
+    }
+
+    logInfo("Recorded request audit event", {
+      source,
+      outcome,
+      reason,
+      requester: serializedRequester,
+      track: formatTrack(serializedTrack),
+      queueLength: this.queue.length
+    });
+
+    await this.persistRequestAuditState();
+    return this.requestEvents[0];
   }
 
   getPlaybackStatus() {
@@ -215,7 +494,12 @@ export class PlayerController {
     }
   }
 
-  async addRequest(track, { bypassRequestLimits = false } = {}) {
+  async addRequest(track, {
+    bypassRequestLimits = false,
+    requestSource = "unknown",
+    requestInput = "",
+    requestContext = null
+  } = {}) {
     const duplicateMatch = this.findDuplicateTrack(track.key);
 
     if (duplicateMatch) {
@@ -226,6 +510,21 @@ export class PlayerController {
         queueLength: this.queue.length
       });
 
+      await this.recordRequestOutcome({
+        source: requestSource,
+        outcome: "duplicate",
+        reason: `duplicate_${duplicateMatch.type}`,
+        input: requestInput,
+        requestedBy: track.requestedBy,
+        track,
+        bypassRequestLimits,
+        details: {
+          duplicateType: duplicateMatch.type,
+          matchedTrack: this.serializeRequestAuditTrack(duplicateMatch.track),
+          requestContext
+        }
+      });
+
       return {
         ...this.serializeTrack(duplicateMatch.track),
         alreadyQueued: duplicateMatch.type === "queue",
@@ -233,7 +532,24 @@ export class PlayerController {
       };
     }
 
-    this.assertRequestAllowed(track, { bypassRequestLimits });
+    try {
+      this.assertRequestAllowed(track, { bypassRequestLimits });
+    } catch (error) {
+      await this.recordRequestOutcome({
+        source: requestSource,
+        outcome: "rejected",
+        reason: error?.code ?? "request_rejected",
+        message: error?.message ?? String(error),
+        input: requestInput,
+        requestedBy: track.requestedBy,
+        track,
+        bypassRequestLimits,
+        details: {
+          requestContext
+        }
+      });
+      throw error;
+    }
 
     const queueTrack = {
       ...track,
@@ -249,6 +565,20 @@ export class PlayerController {
     logInfo("Track queued", {
       track: formatTrack(queueTrack),
       queueLength: this.queue.length
+    });
+    await this.recordRequestOutcome({
+      source: requestSource,
+      outcome: "accepted",
+      reason: "queued",
+      input: requestInput,
+      requestedBy: queueTrack.requestedBy,
+      track: queueTrack,
+      bypassRequestLimits,
+      details: {
+        queuePosition: this.queue.length,
+        activeRequestsForRequester: this.getActiveRequestCountForRequester(requesterUsername),
+        requestContext
+      }
     });
     await this.persistRuntimeState();
     this.broadcastState();
@@ -277,7 +607,7 @@ export class PlayerController {
       : 0;
 
     if (maxQueueLength > 0 && this.queue.length >= maxQueueLength) {
-      throw new Error("The request queue is full right now.");
+      throw createRequestPolicyError("queue_full", "The request queue is full right now.");
     }
 
     const requesterUsername = track.requestedBy?.username?.trim().toLowerCase();
@@ -292,7 +622,8 @@ export class PlayerController {
 
       if (remainingMs > 0) {
         const remainingSeconds = Math.ceil(remainingMs / 1000);
-        throw new Error(
+        throw createRequestPolicyError(
+          "cooldown_active",
           `You need to wait ${remainingSeconds} more second${remainingSeconds === 1 ? "" : "s"} before requesting another song.`
         );
       }
@@ -302,20 +633,10 @@ export class PlayerController {
       return;
     }
 
-    const activeRequestCount = [
-      ...this.queue,
-      this.currentTrack,
-      this.stoppedTrack
-    ].filter((candidate) => {
-      if (!candidate || candidate.origin !== "queue") {
-        return false;
-      }
-
-      return candidate.requestedBy?.username?.trim().toLowerCase() === requesterUsername;
-    }).length;
+    const activeRequestCount = this.getActiveRequestCountForRequester(requesterUsername);
 
     if (activeRequestCount >= maxRequestsPerUser) {
-      throw new Error("You already have too many active song requests.");
+      throw createRequestPolicyError("too_many_active_requests", "You already have too many active song requests.");
     }
   }
 
@@ -695,38 +1016,67 @@ export class PlayerController {
 
   async restoreRuntimeState() {
     if (!this.runtimeStateStore) {
-      return;
+      if (!this.requestAuditStore) {
+        return;
+      }
     }
 
-    const persistedState = await this.runtimeStateStore.load();
-    this.queue = Array.isArray(persistedState.queue)
-      ? persistedState.queue.map((track) => ({ ...track }))
-      : [];
-    this.stoppedTrack = persistedState.stoppedTrack
-      ? { ...persistedState.stoppedTrack }
-      : null;
-    this.history = Array.isArray(persistedState.history)
-      ? persistedState.history.slice(0, this.historyLimit).map((entry) => ({
-          track: { ...entry.track },
-          status: entry.status,
-          completedAt: entry.completedAt
-        }))
-      : [];
-    this.adminEvents = Array.isArray(persistedState.adminEvents)
-      ? persistedState.adminEvents.slice(0, 50).map((entry) => ({
-          action: entry.action,
-          triggeredBy: entry.triggeredBy,
-          track: entry.track ? { ...entry.track } : null,
-          details: entry.details ?? null,
-          createdAt: entry.createdAt
-        }))
-      : [];
+    if (this.runtimeStateStore) {
+      const persistedState = await this.runtimeStateStore.load();
+      this.queue = Array.isArray(persistedState.queue)
+        ? persistedState.queue.map((track) => ({ ...track }))
+        : [];
+      this.stoppedTrack = persistedState.stoppedTrack
+        ? { ...persistedState.stoppedTrack }
+        : null;
+      this.history = Array.isArray(persistedState.history)
+        ? persistedState.history.slice(0, this.historyLimit).map((entry) => ({
+            track: { ...entry.track },
+            status: entry.status,
+            completedAt: entry.completedAt
+          }))
+        : [];
+      this.adminEvents = Array.isArray(persistedState.adminEvents)
+        ? persistedState.adminEvents.slice(0, 50).map((entry) => ({
+            action: entry.action,
+            triggeredBy: entry.triggeredBy,
+            track: entry.track ? { ...entry.track } : null,
+            details: entry.details ?? null,
+            createdAt: entry.createdAt
+          }))
+        : [];
+    }
+
+    if (this.requestAuditStore) {
+      const persistedAudit = await this.requestAuditStore.load();
+      this.requestEvents = Array.isArray(persistedAudit.events)
+        ? persistedAudit.events.slice(0, this.requestAuditLimit).map((entry) => ({
+            ...entry,
+            requester: entry.requester ? { ...entry.requester } : null,
+            track: entry.track ? { ...entry.track } : null,
+            queueState: entry.queueState ? { ...entry.queueState } : null,
+            requesterStats: entry.requesterStats ? { ...entry.requesterStats } : null,
+            details: entry.details ?? null
+          }))
+        : [];
+      this.requesterStatsByUser = new Map(
+        Object.entries(persistedAudit.requesterStats ?? {}).map(([key, value]) => [
+          key,
+          {
+            ...value,
+            requester: value.requester ? { ...value.requester } : null
+          }
+        ])
+      );
+    }
 
     logInfo("Restored runtime playback state", {
       queueLength: this.queue.length,
       hasStoppedTrack: Boolean(this.stoppedTrack),
       historyLength: this.history.length,
-      adminEventCount: this.adminEvents.length
+      adminEventCount: this.adminEvents.length,
+      requestEventCount: this.requestEvents.length,
+      requesterStatCount: this.requesterStatsByUser.size
     });
   }
 
@@ -1088,6 +1438,7 @@ export class PlayerController {
 
   async persistRuntimeState() {
     if (!this.runtimeStateStore) {
+      await this.persistRequestAuditState();
       return;
     }
 
@@ -1096,6 +1447,18 @@ export class PlayerController {
       stoppedTrack: this.stoppedTrack,
       history: this.history,
       adminEvents: this.adminEvents
+    });
+    await this.persistRequestAuditState();
+  }
+
+  async persistRequestAuditState() {
+    if (!this.requestAuditStore) {
+      return;
+    }
+
+    await this.requestAuditStore.save({
+      events: this.requestEvents,
+      requesterStats: Object.fromEntries(this.requesterStatsByUser.entries())
     });
   }
 }

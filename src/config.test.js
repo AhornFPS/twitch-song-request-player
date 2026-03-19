@@ -65,7 +65,13 @@ test("saved GUI player state is preserved across reloads", async (t) => {
 
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
-    `${JSON.stringify({ startWithWindows: true, guiPlayerEnabled: true, guiPlayerVolume: 42, playerStartupTimeoutSeconds: 9 }, null, 2)}\n`,
+    `${JSON.stringify({
+      startWithWindows: true,
+      guiPlayerEnabled: true,
+      guiPlayerVolume: 42,
+      playerStartupTimeoutSeconds: 9,
+      requestPolicyAutosaveEnabled: true
+    }, null, 2)}\n`,
     "utf8"
   );
 
@@ -76,6 +82,7 @@ test("saved GUI player state is preserved across reloads", async (t) => {
   assert.equal(settings.guiPlayerEnabled, true);
   assert.equal(settings.guiPlayerVolume, 42);
   assert.equal(settings.playerStartupTimeoutSeconds, 9);
+  assert.equal(settings.requestPolicyAutosaveEnabled, true);
 });
 
 test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {
@@ -305,6 +312,7 @@ test("request policy and chat commands are normalized with defaults", async (t) 
   assert.equal(settings.requestPolicy.rejectLiveStreams, true);
   assert.equal(settings.requestPolicy.allowSearchRequests, false);
   assert.equal(settings.requestPolicy.youtubeSafeSearch, "strict");
+  assert.equal(settings.requestPolicyAutosaveEnabled, false);
   assert.deepEqual(settings.requestPolicy.allowedProviders, ["youtube"]);
   assert.deepEqual(settings.requestPolicy.blockedYouTubeChannelIds, ["ucblockedone"]);
   assert.deepEqual(settings.requestPolicy.blockedSoundCloudUsers, ["bannedartist"]);

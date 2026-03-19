@@ -23,6 +23,7 @@ function createBotHarness({
 }) {
   let playbackListener = null;
   const sentMessages = [];
+  const requestAuditEvents = [];
   const playerController = {
     onTrackPlayback(listener) {
       playbackListener = listener;
@@ -51,6 +52,9 @@ function createBotHarness({
     },
     async clearQueue() {
       return clearQueueResult;
+    },
+    async recordRequestOutcome(event) {
+      requestAuditEvents.push(event);
     },
     recordAdminEvent() {
     }
@@ -90,6 +94,7 @@ function createBotHarness({
   return {
     bot,
     sentMessages,
+    requestAuditEvents,
     async emitPlayback() {
       await playbackListener?.(currentTrack);
     }
@@ -341,6 +346,8 @@ test("request access level and blocked users are enforced before a chat request 
       message: "Song requests are currently limited to subscribers, VIPs, moderators, and the broadcaster."
     }
   ]);
+  assert.equal(subscriberHarness.requestAuditEvents.length, 1);
+  assert.equal(subscriberHarness.requestAuditEvents[0].reason, "access_level_blocked");
 
   const blockedUserHarness = createBotHarness({
     requestPolicy: {
@@ -368,6 +375,8 @@ test("request access level and blocked users are enforced before a chat request 
       message: "You are not allowed to send song requests in this channel."
     }
   ]);
+  assert.equal(blockedUserHarness.requestAuditEvents.length, 1);
+  assert.equal(blockedUserHarness.requestAuditEvents[0].reason, "blocked_user");
 });
 
 test("viewer request limits surface a chat error while moderator requests can bypass limits", async () => {

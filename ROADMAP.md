@@ -1,6 +1,6 @@
 # Twitch Song Request Player Roadmap
 
-This roadmap now treats the shipped queue/moderation/dashboard work as the completed first pass and turns the remaining gaps into a second-pass implementation plan that fits the existing app structure:
+This roadmap now treats the shipped queue, moderation, request-policy, and dashboard work as the completed first pass and turns the remaining gaps into a second-pass implementation plan that fits the existing app structure:
 
 - Node/Express API in `src/app-server.js`
 - Playback state machine in `src/player-controller.js`
@@ -8,7 +8,7 @@ This roadmap now treats the shipped queue/moderation/dashboard work as the compl
 - Runtime settings in `src/config.js`
 - Dashboard shell in `public/dashboard.js`
 
-The goal for the second pass is to harden the app for active streams with better repair workflows, safer imports, clearer failure handling, and tighter direct-link validation without collapsing the dashboard into oversized tabs.
+The goal for the second pass is to harden the app for active streams with better repair workflows, safer imports, clearer failure handling, and shared URL-validation hardening without collapsing the dashboard into oversized tabs.
 
 ## Handoff Status
 
@@ -41,9 +41,9 @@ Use this file as the fresh-context handoff source.
 2. `Next` Add playlist-import previews.
    - Dry-run CSV import summary before apply.
    - Duplicate preview before append/replace.
-3. `Next` Add optional source/domain blocking beyond the current provider/channel/account controls.
-   - Blocked URL domains for direct links.
-   - Optional stricter source validation for embeds.
+3. `Next` Harden shared source/domain validation beyond the shipped request-policy controls.
+   - Keep blocked URL domains aligned across chat, dashboard adds, and direct links.
+   - Optional stricter source validation for embeds and manual queue flows.
 4. `Next` Improve failure surfacing.
    - Make unavailable-track and queue-restore failures visible in the dashboard.
    - Carry more actionable detail into diagnostics exports and repair flows.
@@ -170,6 +170,8 @@ Status: `Done`
 Priority: highest
 
 Status: `Done`
+
+Phase 2 is shipped. Any later roadmap items that mention request validation are follow-up hardening work, not unfinished Phase 2 scope.
 
 ### User-facing goals
 
@@ -358,7 +360,7 @@ Status: `Next`
 
 Priority: high
 
-Status: `Next`
+Status: `Partial`
 
 ### User-facing goals
 
@@ -373,6 +375,7 @@ Status: `Next`
   - `Done` blocked YouTube channel ids
   - `Done` blocked SoundCloud users
   - `Done` provider allowlist
+  - `Done` blocked direct-link domains for URL requests
 - Query safety:
   - `Done` blocked keywords/phrases
   - blocked regex patterns only if the UI stays simple
@@ -389,8 +392,7 @@ Status: `Next`
 
 ### Second-pass focus
 
-- `Next` add blocked direct-link domains for URL requests
-- `Next` centralize stricter direct-link validation so embeds and chat requests share the same checks
+- `Next` centralize stricter direct-link validation so embeds, chat requests, and manual queue flows share the same checks
 - `Next` keep the safety model explicit instead of expanding into regex-heavy moderation rules
 
 ## Phase 7: Audio And Playback Polish
@@ -454,7 +456,7 @@ Status: `Active second-pass order`
 
 1. Library health review and repair queue
 2. CSV import dry-run and duplicate preview
-3. Direct-link domain blocking and shared URL validation
+3. Shared URL validation hardening
 4. Better unavailable-track and queue-restore diagnostics
 5. Optional command/settings polish such as command reset-to-defaults
 6. Playback architecture review before any deeper audio work
@@ -479,11 +481,11 @@ Status: `Next`
 
 ### Milestone C: Source Validation Hardening
 
-Status: `Next`
+Status: `Partial`
 
-- blocked direct-link domains can be configured from the dashboard
-- URL parsing and validation happen in one shared path
-- denial replies stay short but explain whether the domain, provider, or metadata rule failed
+- `Done` blocked direct-link domains can be configured from the dashboard
+- `Next` URL parsing and validation happen in one shared path
+- `Next` denial replies stay short but explain whether the domain, provider, or metadata rule failed
 
 ### Milestone D: Failure Visibility
 

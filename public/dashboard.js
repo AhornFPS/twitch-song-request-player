@@ -38,6 +38,9 @@ let guiPlayerVolumeSaveTimer = null;
 let isGuiPlayerVolumeSaving = false;
 let queueActionTrackId = "";
 let requestPolicyDraft = null;
+let requestPolicyAutosaveTimer = null;
+let isRequestPolicyAutosaveSaving = false;
+let hasPendingRequestPolicyAutosave = false;
 
 function el(id) {
   return document.getElementById(id);
@@ -272,7 +275,17 @@ function renderDashboard() {
                 <p class="panel__eyebrow">Requests</p>
                 <h2>Viewer request controls</h2>
               </div>
-              <span id="requests-tab-pill" class="status-pill status-pill--idle">Requests loading</span>
+              <div class="button-row button-row--compact request-header-actions">
+                <span id="requests-tab-pill" class="status-pill status-pill--idle">Requests loading</span>
+                <button
+                  id="requests-autosave-button"
+                  class="ghost-button request-autosave-button"
+                  type="button"
+                  aria-pressed="false"
+                >
+                  Autosave Off
+                </button>
+              </div>
             </div>
             <div class="request-policy-row">
               <label class="toggle-card" for="requests-enabled-toggle">
@@ -787,6 +800,17 @@ function getRequestPolicy() {
   };
 }
 
+function getRequestPolicyAutosaveEnabled() {
+  return settingsPayload?.settings?.requestPolicyAutosaveEnabled === true;
+}
+
+function clearRequestPolicyAutosaveTimer() {
+  if (requestPolicyAutosaveTimer) {
+    window.clearTimeout(requestPolicyAutosaveTimer);
+    requestPolicyAutosaveTimer = null;
+  }
+}
+
 function getDraftRequestPolicy() {
   if (requestPolicyDraft && typeof requestPolicyDraft === "object") {
     return {
@@ -885,6 +909,61 @@ function syncRequestPolicyDraftFromInputs() {
       ? parseRequestPolicyList(blockedPhrasesInput.value)
       : [...(getRequestPolicy().blockedPhrases || [])]
   };
+}
+
+function collectRequestPolicyPayload() {
+  return {
+    requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement
+      ? el("requests-enabled-toggle").checked
+      : true,
+    accessLevel: el("requests-access-level") instanceof HTMLSelectElement
+      ? el("requests-access-level").value
+      : "everyone",
+    maxQueueLength: Number.parseInt(el("requests-max-queue-length")?.value || "0", 10) || 0,
+    maxRequestsPerUser: Number.parseInt(el("requests-max-per-user")?.value || "0", 10) || 0,
+    duplicateHistoryCount: Number.parseInt(el("requests-duplicate-history-count")?.value || "0", 10) || 0,
+    cooldownSeconds: Number.parseInt(el("requests-cooldown-seconds")?.value || "0", 10) || 0,
+    maxTrackDurationSeconds: Number.parseInt(el("requests-max-duration-seconds")?.value || "0", 10) || 0,
+    rejectLiveStreams: el("requests-reject-live-toggle") instanceof HTMLInputElement
+      ? el("requests-reject-live-toggle").checked
+      : false,
+    allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
+      ? el("requests-allow-search-toggle").checked
+      : true,
+    youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement
+      ? el("requests-safe-search").value
+      : "none",
+    allowedProviders: [
+      el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked
+        ? "youtube"
+        : "",
+      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked
+        ? "soundcloud"
+        : ""
+    ].filter(Boolean),
+    blockedYouTubeChannelIds: parseRequestPolicyList(el("requests-blocked-youtube-channels")?.value || "").map((value) => value.toLowerCase()),
+    blockedSoundCloudUsers: parseRequestPolicyList(el("requests-blocked-soundcloud-users")?.value || "").map((value) => value.toLowerCase()),
+    blockedUsers: parseRequestPolicyList(el("requests-blocked-users")?.value || "").map((value) => value.toLowerCase()),
+    blockedDomains: parseRequestPolicyList(el("requests-blocked-domains")?.value || "").map((value) => value.toLowerCase()),
+    blockedPhrases: parseRequestPolicyList(el("requests-blocked-phrases")?.value || "")
+  };
+}
+
+function requestPoliciesEqual(leftPolicy, rightPolicy) {
+  return JSON.stringify(leftPolicy ?? {}) === JSON.stringify(rightPolicy ?? {});
+}
+
+function applyRequestAutosaveState() {
+  const autosaveButton = el("requests-autosave-button");
+  if (!(autosaveButton instanceof HTMLButtonElement)) {
+    return;
+  }
+
+  const isEnabled = getRequestPolicyAutosaveEnabled();
+  autosaveButton.textContent = isEnabled ? "Autosave On" : "Autosave Off";
+  autosaveButton.className = `${isEnabled ? "secondary-button" : "ghost-button"} request-autosave-button`;
+  autosaveButton.setAttribute("aria-pressed", isEnabled ? "true" : "false");
+  autosaveButton.disabled = isRequestPolicyAutosaveSaving || isSavingSettings;
 }
 
 function requestStatusPresentation(isEnabled, accessLevel = "everyone") {
@@ -1009,6 +1088,8 @@ function applyRequestPolicyState() {
   if (blockedPhrasesInput instanceof HTMLTextAreaElement) {
     blockedPhrasesInput.value = (requestPolicy.blockedPhrases || []).join("\n");
   }
+
+  applyRequestAutosaveState();
 }
 
 function renderChatCommandRows(chatCommands) {
@@ -1091,41 +1172,8 @@ function collectSettingsPayload() {
     guiPlayerEnabled: settingsPayload?.settings?.guiPlayerEnabled === true,
     guiPlayerVolume,
     playerStartupTimeoutSeconds: Number.parseInt(el("playback-startup-timeout-seconds")?.value || "15", 10) || 0,
-    requestPolicy: {
-      requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement
-        ? el("requests-enabled-toggle").checked
-        : true,
-      accessLevel: el("requests-access-level") instanceof HTMLSelectElement
-        ? el("requests-access-level").value
-        : "everyone",
-      maxQueueLength: Number.parseInt(el("requests-max-queue-length")?.value || "0", 10) || 0,
-      maxRequestsPerUser: Number.parseInt(el("requests-max-per-user")?.value || "0", 10) || 0,
-      duplicateHistoryCount: Number.parseInt(el("requests-duplicate-history-count")?.value || "0", 10) || 0,
-      cooldownSeconds: Number.parseInt(el("requests-cooldown-seconds")?.value || "0", 10) || 0,
-      maxTrackDurationSeconds: Number.parseInt(el("requests-max-duration-seconds")?.value || "0", 10) || 0,
-      rejectLiveStreams: el("requests-reject-live-toggle") instanceof HTMLInputElement
-        ? el("requests-reject-live-toggle").checked
-        : false,
-      allowSearchRequests: el("requests-allow-search-toggle") instanceof HTMLInputElement
-        ? el("requests-allow-search-toggle").checked
-        : true,
-      youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement
-        ? el("requests-safe-search").value
-        : "none",
-      allowedProviders: [
-        el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked
-          ? "youtube"
-          : "",
-        el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked
-          ? "soundcloud"
-          : ""
-      ].filter(Boolean),
-      blockedYouTubeChannelIds: parseRequestPolicyList(el("requests-blocked-youtube-channels")?.value || "").map((value) => value.toLowerCase()),
-      blockedSoundCloudUsers: parseRequestPolicyList(el("requests-blocked-soundcloud-users")?.value || "").map((value) => value.toLowerCase()),
-      blockedUsers: parseRequestPolicyList(el("requests-blocked-users")?.value || "").map((value) => value.toLowerCase()),
-      blockedDomains: parseRequestPolicyList(el("requests-blocked-domains")?.value || "").map((value) => value.toLowerCase()),
-      blockedPhrases: parseRequestPolicyList(el("requests-blocked-phrases")?.value || "")
-    },
+    requestPolicyAutosaveEnabled: getRequestPolicyAutosaveEnabled(),
+    requestPolicy: collectRequestPolicyPayload(),
     chatCommands: collectChatCommandsPayload(),
     theme: el("theme-select")?.value || lastSavedTheme,
     chatSuppressedCategories,
@@ -1997,6 +2045,8 @@ async function persistSettings(payload) {
 
 async function saveSettings(event) {
   event?.preventDefault?.();
+  clearRequestPolicyAutosaveTimer();
+  hasPendingRequestPolicyAutosave = false;
   isSavingSettings = true;
   const saveButton = el("save-button");
   const themeSelect = el("theme-select");
@@ -2007,6 +2057,7 @@ async function saveSettings(event) {
   if (themeSelect) {
     themeSelect.disabled = true;
   }
+  applyRequestAutosaveState();
   setFeedback("Saving settings...");
 
   try {
@@ -2041,7 +2092,149 @@ async function saveSettings(event) {
     if (el("theme-select")) {
       el("theme-select").disabled = false;
     }
+    applyRequestAutosaveState();
+    if (hasPendingRequestPolicyAutosave && getRequestPolicyAutosaveEnabled()) {
+      hasPendingRequestPolicyAutosave = false;
+      scheduleRequestPolicyAutosave(true);
+    }
   }
+}
+
+async function saveRequestPolicySection({
+  requestPolicy = collectRequestPolicyPayload(),
+  requestPolicyAutosaveEnabled = getRequestPolicyAutosaveEnabled(),
+  reason = "manual"
+} = {}) {
+  clearRequestPolicyAutosaveTimer();
+  hasPendingRequestPolicyAutosave = false;
+
+  if (!settingsPayload) {
+    return;
+  }
+
+  const savedRequestPolicy = settingsPayload.settings?.requestPolicy ?? getRequestPolicy();
+  const savedAutosaveEnabled = settingsPayload.settings?.requestPolicyAutosaveEnabled === true;
+  const requestPolicyChanged = !requestPoliciesEqual(requestPolicy, savedRequestPolicy);
+  const autosaveSettingChanged = requestPolicyAutosaveEnabled !== savedAutosaveEnabled;
+
+  if (!requestPolicyChanged && !autosaveSettingChanged) {
+    if (reason === "toggle") {
+      setRequestsFeedback(
+        requestPolicyAutosaveEnabled
+          ? "Request autosave is on. Request changes now save automatically."
+          : "Request autosave is off. Use Save settings to keep request changes.",
+        "success"
+      );
+      applyRequestAutosaveState();
+    }
+    return;
+  }
+
+  if (isSavingSettings || isRequestPolicyAutosaveSaving) {
+    hasPendingRequestPolicyAutosave = true;
+    return;
+  }
+
+  isRequestPolicyAutosaveSaving = true;
+  applyRequestAutosaveState();
+  if (reason === "autosave") {
+    setRequestsFeedback("Saving request changes automatically...");
+  } else if (reason === "toggle") {
+    setRequestsFeedback(
+      requestPolicyAutosaveEnabled
+        ? "Turning request autosave on..."
+        : "Turning request autosave off..."
+    );
+  } else {
+    setRequestsFeedback("Saving request controls...");
+  }
+
+  const payload = {};
+  if (requestPolicyChanged) {
+    payload.requestPolicy = requestPolicy;
+  }
+  if (autosaveSettingChanged) {
+    payload.requestPolicyAutosaveEnabled = requestPolicyAutosaveEnabled;
+  }
+
+  try {
+    settingsPayload = await persistSettings(payload);
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
+    chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
+      ? [...settingsPayload.settings.chatSuppressedCategories]
+      : [];
+    playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
+      ? [...settingsPayload.settings.playbackSuppressedCategories]
+      : [];
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
+    applySettingsPayload();
+
+    if (reason === "autosave") {
+      setRequestsFeedback("Request changes saved automatically.", "success");
+    } else if (reason === "toggle") {
+      setRequestsFeedback(
+        requestPolicyAutosaveEnabled
+          ? "Request autosave is on. Request changes now save automatically."
+          : "Request autosave is off. Use Save settings to keep request changes.",
+        "success"
+      );
+    } else {
+      setRequestsFeedback("Request controls saved.", "success");
+    }
+  } catch (error) {
+    setRequestsFeedback(error?.message || "Could not save request controls.", "error");
+  } finally {
+    isRequestPolicyAutosaveSaving = false;
+    applyRequestAutosaveState();
+    if (hasPendingRequestPolicyAutosave && getRequestPolicyAutosaveEnabled()) {
+      hasPendingRequestPolicyAutosave = false;
+      scheduleRequestPolicyAutosave(true);
+    }
+  }
+}
+
+function scheduleRequestPolicyAutosave(immediate = false) {
+  if (isHydratingForm || !settingsPayload || !getRequestPolicyAutosaveEnabled()) {
+    return;
+  }
+
+  if (isSavingSettings || isRequestPolicyAutosaveSaving) {
+    hasPendingRequestPolicyAutosave = true;
+    return;
+  }
+
+  clearRequestPolicyAutosaveTimer();
+  const nextRequestPolicy = collectRequestPolicyPayload();
+  const savedRequestPolicy = settingsPayload.settings?.requestPolicy ?? getRequestPolicy();
+  if (requestPoliciesEqual(nextRequestPolicy, savedRequestPolicy)) {
+    setRequestsFeedback("Autosave is on.", "success");
+    return;
+  }
+
+  setRequestsFeedback(immediate ? "Saving request changes automatically..." : "Autosave queued...");
+  requestPolicyAutosaveTimer = window.setTimeout(() => {
+    requestPolicyAutosaveTimer = null;
+    void saveRequestPolicySection({
+      requestPolicy: nextRequestPolicy,
+      reason: "autosave"
+    });
+  }, immediate ? 0 : 500);
+}
+
+function toggleRequestPolicyAutosave() {
+  if (!settingsPayload || isRequestPolicyAutosaveSaving) {
+    return;
+  }
+
+  const nextValue = !getRequestPolicyAutosaveEnabled();
+  void saveRequestPolicySection({
+    requestPolicy: collectRequestPolicyPayload(),
+    requestPolicyAutosaveEnabled: nextValue,
+    reason: "toggle"
+  });
 }
 
 async function saveThemeSelection(nextTheme) {
@@ -2787,6 +2980,8 @@ root.addEventListener("click", (event) => {
     void restartStoppedTrack();
   } else if (event.target.id === "overview-gui-player-toggle") {
     void saveGuiPlayerEnabled(!(settingsPayload?.settings?.guiPlayerEnabled === true));
+  } else if (event.target.id === "requests-autosave-button") {
+    toggleRequestPolicyAutosave();
   }
 });
 
@@ -2824,26 +3019,31 @@ root.addEventListener("change", async (event) => {
   if (target.id === "requests-enabled-toggle" && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (target.id === "requests-access-level" && target instanceof HTMLSelectElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (target.id === "requests-allow-search-toggle" && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (target.id === "requests-reject-live-toggle" && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (target.id === "requests-safe-search" && target instanceof HTMLSelectElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (
@@ -2852,6 +3052,7 @@ root.addEventListener("change", async (event) => {
   ) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   }
 
   if (target.id === "playlist-select-page" && target instanceof HTMLInputElement) {
@@ -2926,11 +3127,12 @@ root.addEventListener("input", (event) => {
       target.id === "requests-duplicate-history-count" ||
       target.id === "requests-cooldown-seconds" ||
       target.id === "requests-max-duration-seconds"
-    ) &&
+  ) &&
     target instanceof HTMLInputElement
   ) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
+    scheduleRequestPolicyAutosave();
   } else if (
     (
       target.id === "requests-blocked-users" ||
@@ -2942,6 +3144,7 @@ root.addEventListener("input", (event) => {
     target instanceof HTMLTextAreaElement
   ) {
     syncRequestPolicyDraftFromInputs();
+    scheduleRequestPolicyAutosave();
   } else if (target.id === "overview-gui-player-volume" && target instanceof HTMLInputElement) {
     guiPlayerVolume = Number.parseInt(target.value || "100", 10);
     if (!Number.isFinite(guiPlayerVolume)) {
@@ -2982,7 +3185,23 @@ root.addEventListener("keydown", (event) => {
     )
   ) {
     event.preventDefault();
-    void saveSettings();
+    if (
+      getRequestPolicyAutosaveEnabled() &&
+      (
+        target.id === "requests-max-queue-length" ||
+        target.id === "requests-max-per-user" ||
+        target.id === "requests-duplicate-history-count" ||
+        target.id === "requests-cooldown-seconds" ||
+        target.id === "requests-max-duration-seconds"
+      )
+    ) {
+      void saveRequestPolicySection({
+        requestPolicy: collectRequestPolicyPayload(),
+        reason: "manual"
+      });
+    } else {
+      void saveSettings();
+    }
   }
 });
 

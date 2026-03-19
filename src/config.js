@@ -251,6 +251,7 @@ function normalizeSettings(raw) {
     guiPlayerEnabled: normalizeBoolean(raw.guiPlayerEnabled, false),
     guiPlayerVolume: normalizePercent(raw.guiPlayerVolume, 100),
     playerStartupTimeoutSeconds: normalizeLimit(raw.playerStartupTimeoutSeconds, 15),
+    requestPolicyAutosaveEnabled: normalizeBoolean(raw.requestPolicyAutosaveEnabled, false),
     requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
     chatCommands: normalizeChatCommands(raw.chatCommands),
     theme: normalizeTheme(raw.theme ?? raw.THEME),
@@ -330,6 +331,10 @@ function normalizeOverrideSettings(raw) {
     overrides.playerStartupTimeoutSeconds = normalizeLimit(raw.playerStartupTimeoutSeconds, 15);
   }
 
+  if (Object.prototype.hasOwnProperty.call(raw, "requestPolicyAutosaveEnabled")) {
+    overrides.requestPolicyAutosaveEnabled = normalizeBoolean(raw.requestPolicyAutosaveEnabled, false);
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, "requestPolicy")) {
     overrides.requestPolicy = normalizeRequestPolicy(raw.requestPolicy);
   }
@@ -379,6 +384,10 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.playerStartupTimeoutSeconds === "number"
         ? normalizeLimit(overridingSettings.playerStartupTimeoutSeconds, baseSettings.playerStartupTimeoutSeconds ?? 15)
         : (baseSettings.playerStartupTimeoutSeconds ?? 15),
+    requestPolicyAutosaveEnabled:
+      typeof overridingSettings.requestPolicyAutosaveEnabled === "boolean"
+        ? overridingSettings.requestPolicyAutosaveEnabled
+        : (baseSettings.requestPolicyAutosaveEnabled ?? false),
     requestPolicy: overridingSettings.requestPolicy || baseSettings.requestPolicy || normalizeRequestPolicy(),
     chatCommands: overridingSettings.chatCommands || baseSettings.chatCommands || normalizeChatCommands(),
     theme: overridingSettings.theme || baseSettings.theme || themeOptions[0].id,
@@ -418,6 +427,7 @@ function normalizeBundledSettings(raw) {
     guiPlayerEnabled: false,
     guiPlayerVolume: 100,
     playerStartupTimeoutSeconds: 15,
+    requestPolicyAutosaveEnabled: false,
     requestPolicy: normalizeRequestPolicy(),
     chatCommands: normalizeChatCommands(),
     theme: themeOptions[0].id,
@@ -444,6 +454,7 @@ export class ConfigStore {
     this.runtimeEnvPath = path.join(this.runtimeDir, ".env");
     this.playlistPath = path.join(this.runtimeDir, "playlist.csv");
     this.runtimeStatePath = path.join(this.runtimeDir, "queue-state.json");
+    this.requestAuditPath = path.join(this.runtimeDir, "request-log.json");
     this.bundledConfigPath = path.join(this.rootDir, "build", "bundled-config.json");
   }
 
@@ -505,6 +516,7 @@ export class ConfigStore {
       publicDir: this.publicDir,
       playlistPath: this.playlistPath,
       runtimeStatePath: this.runtimeStatePath,
+      requestAuditPath: this.requestAuditPath,
       port: settings.port,
       settings,
       runtimeDebug: this.runtimeDebug
@@ -523,6 +535,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
     publicDir: runtimeConfig.publicDir,
     playlistPath: runtimeConfig.playlistPath,
     runtimeStatePath: runtimeConfig.runtimeStatePath,
+    requestAuditPath: runtimeConfig.requestAuditPath,
     port: runtimeConfig.settings.port,
     twitch: {
       channel: runtimeConfig.settings.twitchChannel,
@@ -539,6 +552,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
     guiPlayerEnabled: runtimeConfig.settings.guiPlayerEnabled,
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
     playerStartupTimeoutSeconds: runtimeConfig.settings.playerStartupTimeoutSeconds,
+    requestPolicyAutosaveEnabled: runtimeConfig.settings.requestPolicyAutosaveEnabled,
     requestPolicy: runtimeConfig.settings.requestPolicy,
     chatCommands: runtimeConfig.settings.chatCommands,
     theme: runtimeConfig.settings.theme,

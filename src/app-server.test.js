@@ -649,6 +649,15 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   assert.equal(secondQueuePayload.state.queue.length, 1);
   assert.equal(secondQueuePayload.state.queue[0].title, "Dashboard Two");
 
+  const requestLogResponse = await fetch(new URL("/api/request-log", appServer.urls.dashboardUrl));
+  assert.equal(requestLogResponse.ok, true);
+  const requestLogPayload = await requestLogResponse.json();
+  assert.equal(requestLogPayload.events.length, 2);
+  assert.equal(requestLogPayload.events[0].outcome, "accepted");
+  assert.equal(requestLogPayload.requesterStats.length, 1);
+  assert.equal(requestLogPayload.requesterStats[0].requester.username, "dashboard");
+  assert.equal(requestLogPayload.requesterStats[0].acceptedRequests, 2);
+
   const stopResponse = await fetch(new URL("/api/playback/stop", appServer.urls.dashboardUrl), {
     method: "POST"
   });
@@ -747,6 +756,7 @@ test("settings API persists request policy and configurable chat commands", asyn
     body: JSON.stringify({
       startWithWindows: true,
       playerStartupTimeoutSeconds: 8,
+      requestPolicyAutosaveEnabled: true,
       requestPolicy: {
         requestsEnabled: false,
         accessLevel: "subscriber",
@@ -842,6 +852,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(payload.desktopIntegration.supported, true);
   assert.equal(payload.desktopIntegration.enabled, true);
   assert.equal(payload.settings.playerStartupTimeoutSeconds, 8);
+  assert.equal(payload.settings.requestPolicyAutosaveEnabled, true);
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
   assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
   assert.equal(payload.settings.requestPolicy.maxQueueLength, 7);
@@ -868,6 +879,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   );
   assert.equal(persistedSettings.startWithWindows, true);
   assert.equal(persistedSettings.playerStartupTimeoutSeconds, 8);
+  assert.equal(persistedSettings.requestPolicyAutosaveEnabled, true);
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
   assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");
   assert.equal(persistedSettings.requestPolicy.maxQueueLength, 7);
@@ -1185,5 +1197,7 @@ test("diagnostics export returns the current runtime snapshot as downloadable JS
   assert.equal(typeof payload.exportedAt, "string");
   assert.equal(payload.state.playbackStatus, "playing");
   assert.equal(Array.isArray(payload.state.adminEvents), true);
+  assert.equal(Array.isArray(payload.requestAudit.events), true);
+  assert.equal(Array.isArray(payload.requestAudit.requesterStats), true);
   assert.equal(payload.runtime.runtime.activePort, port);
 });

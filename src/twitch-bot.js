@@ -289,6 +289,41 @@ export class TwitchBot {
     return this.getChatCommandConfig()?.[actionId]?.permission ?? "everyone";
   }
 
+  buildRequestAuditRequester(tags) {
+    return {
+      username: tags?.username ?? "",
+      displayName: tags?.["display-name"] ?? tags?.username ?? ""
+    };
+  }
+
+  async auditRejectedSongRequest({
+    tags,
+    roleState,
+    input = "",
+    track = null,
+    reason = "",
+    message = "",
+    extraDetails = null,
+    bypassRequestLimits = false
+  }) {
+    await this.playerController.recordRequestOutcome?.({
+      source: "twitch_chat",
+      outcome: "rejected",
+      reason,
+      message,
+      input,
+      requestedBy: this.buildRequestAuditRequester(tags),
+      track,
+      bypassRequestLimits,
+      details: {
+        channel: this.config.twitch.channel,
+        command: "song_request",
+        roleState,
+        ...(extraDetails && typeof extraDetails === "object" ? extraDetails : {})
+      }
+    });
+  }
+
   async connect() {
     if (this.isConnected) {
       return;
@@ -332,9 +367,19 @@ export class TwitchBot {
     }
 
     if (actionId === "song_request") {
+      const bypassRequestLimits = roleState.isBroadcaster || roleState.isModerator;
+
       if (this.config.requestPolicy?.requestsEnabled === false &&
         !hasCommandPermission(tags, this.config.twitch.channel, "moderator")
       ) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "requests_closed",
+          message: "Song requests are currently closed.",
+          bypassRequestLimits
+        });
         await this.reply(channel, "Song requests are currently closed.");
         return;
       }
@@ -345,6 +390,14 @@ export class TwitchBot {
       const normalizedUsername = tags.username?.trim().toLowerCase() ?? "";
 
       if (blockedUsers.includes(normalizedUsername)) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "blocked_user",
+          message: "You are not allowed to send song requests in this channel.",
+          bypassRequestLimits
+        });
         await this.reply(channel, "You are not allowed to send song requests in this channel.");
         return;
       }
@@ -353,11 +406,30 @@ export class TwitchBot {
         ? this.config.requestPolicy.accessLevel
         : "everyone";
       if (!hasRequestAccess(roleState, accessLevel)) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "access_level_blocked",
+          message: requestAccessLabel(accessLevel),
+          extraDetails: {
+            accessLevel
+          },
+          bypassRequestLimits
+        });
         await this.reply(channel, requestAccessLabel(accessLevel));
         return;
       }
 
       if (!query) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "missing_input",
+          message: "Usage: provide a YouTube or SoundCloud link, or a YouTube search query.",
+          bypassRequestLimits
+        });
         await this.reply(channel, "Usage: provide a YouTube or SoundCloud link, or a YouTube search query.");
         return;
       }
@@ -369,6 +441,17 @@ export class TwitchBot {
       const blockedPhrase = blockedPhrases.find((phrase) => normalizedQuery.includes(phrase));
 
       if (blockedPhrase) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "blocked_phrase",
+          message: "That request matches a blocked phrase and could not be queued.",
+          extraDetails: {
+            blockedPhrase
+          },
+          bypassRequestLimits
+        });
         await this.reply(channel, "That request matches a blocked phrase and could not be queued.");
         return;
       }
@@ -378,15 +461,40 @@ export class TwitchBot {
       }).map((domain) => normalizeBlockedDomain(domain)).filter(Boolean);
       const blockedInputDomain = findBlockedDomainMatch(query, blockedDomains);
       if (blockedInputDomain) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: "blocked_input_domain",
+          message: "Direct links from that domain are blocked.",
+          extraDetails: {
+            blockedDomain: blockedInputDomain
+          },
+          bypassRequestLimits
+        });
         await this.reply(channel, "Direct links from that domain are blocked.");
         return;
       }
 
-      const resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey, {
-        allowSearchRequests: this.config.requestPolicy?.allowSearchRequests,
-        youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch,
-        preferYouTubeApiMetadata: true
-      });
+      let resolvedTrack;
+
+      try {
+        resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey, {
+          allowSearchRequests: this.config.requestPolicy?.allowSearchRequests,
+          youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch,
+          preferYouTubeApiMetadata: true
+        });
+      } catch (error) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          reason: error?.code ?? "request_resolution_failed",
+          message: error?.message ?? "Failed to resolve song request.",
+          bypassRequestLimits
+        });
+        throw error;
+      }
       const allowedProviders = Array.isArray(this.config.requestPolicy?.allowedProviders)
         ? normalizeRequestList(this.config.requestPolicy.allowedProviders, {
             lowerCase: true
@@ -394,6 +502,15 @@ export class TwitchBot {
         : ["youtube", "soundcloud"];
 
       if (!allowedProviders.includes(resolvedTrack.provider)) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          track: resolvedTrack,
+          reason: "provider_blocked",
+          message: `${resolvedTrack.provider} requests are currently disabled.`,
+          bypassRequestLimits
+        });
         await this.reply(channel, `${resolvedTrack.provider} requests are currently disabled.`);
         return;
       }
@@ -404,6 +521,18 @@ export class TwitchBot {
         Number.isFinite(resolvedTrack.durationSeconds) &&
         resolvedTrack.durationSeconds > maxTrackDurationSeconds
       ) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          track: resolvedTrack,
+          reason: "track_too_long",
+          message: `That track is too long for requests. The limit is ${maxTrackDurationSeconds} seconds.`,
+          extraDetails: {
+            maxTrackDurationSeconds
+          },
+          bypassRequestLimits
+        });
         await this.reply(
           channel,
           `That track is too long for requests. The limit is ${maxTrackDurationSeconds} seconds.`
@@ -412,12 +541,33 @@ export class TwitchBot {
       }
 
       if (this.config.requestPolicy?.rejectLiveStreams === true && resolvedTrack.isLive) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          track: resolvedTrack,
+          reason: "live_stream_blocked",
+          message: "Live streams are blocked from song requests right now.",
+          bypassRequestLimits
+        });
         await this.reply(channel, "Live streams are blocked from song requests right now.");
         return;
       }
 
       const blockedTrackDomain = findBlockedDomainMatch(resolvedTrack.url, blockedDomains);
       if (blockedTrackDomain) {
+        await this.auditRejectedSongRequest({
+          tags,
+          roleState,
+          input: query,
+          track: resolvedTrack,
+          reason: "blocked_track_domain",
+          message: "Direct links from that domain are blocked.",
+          extraDetails: {
+            blockedDomain: blockedTrackDomain
+          },
+          bypassRequestLimits
+        });
         await this.reply(channel, "Direct links from that domain are blocked.");
         return;
       }
@@ -434,6 +584,15 @@ export class TwitchBot {
       ) {
         const sourceCandidates = getYouTubeSourceCandidates(resolvedTrack);
         if (blockedYouTubeChannels.some((blockedChannel) => sourceCandidates.has(blockedChannel))) {
+          await this.auditRejectedSongRequest({
+            tags,
+            roleState,
+            input: query,
+            track: resolvedTrack,
+            reason: "blocked_youtube_channel",
+            message: "Requests from that YouTube channel are blocked.",
+            bypassRequestLimits
+          });
           await this.reply(channel, "Requests from that YouTube channel are blocked.");
           return;
         }
@@ -448,6 +607,15 @@ export class TwitchBot {
       if (resolvedTrack.provider === "soundcloud" && blockedSoundCloudUsers.length > 0) {
         const sourceCandidates = getSoundCloudSourceCandidates(resolvedTrack);
         if (blockedSoundCloudUsers.some((blockedUser) => sourceCandidates.has(blockedUser))) {
+          await this.auditRejectedSongRequest({
+            tags,
+            roleState,
+            input: query,
+            track: resolvedTrack,
+            reason: "blocked_soundcloud_user",
+            message: "Requests from that SoundCloud account are blocked.",
+            bypassRequestLimits
+          });
           await this.reply(channel, "Requests from that SoundCloud account are blocked.");
           return;
         }
@@ -455,12 +623,16 @@ export class TwitchBot {
 
       const queueTrack = await this.playerController.addRequest({
         ...resolvedTrack,
-        requestedBy: {
-          username: tags.username ?? "",
-          displayName: tags["display-name"] ?? tags.username ?? ""
-        }
+        requestedBy: this.buildRequestAuditRequester(tags)
       }, {
-        bypassRequestLimits: roleState.isBroadcaster || roleState.isModerator
+        bypassRequestLimits,
+        requestSource: "twitch_chat",
+        requestInput: query,
+        requestContext: {
+          channel: this.config.twitch.channel,
+          command: actionId,
+          roleState
+        }
       });
 
       if (queueTrack.duplicateType === "playing") {

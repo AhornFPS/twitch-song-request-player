@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PlayerController } from "./player-controller.js";
 
-function createController({ runtimeStateStore = null, requestPolicy = {} } = {}) {
+function createController({
+  runtimeStateStore = null,
+  requestAuditStore = null,
+  requestPolicy = {}
+} = {}) {
   const emittedEvents = [];
   const io = {
     emit(event, payload) {
@@ -28,6 +32,7 @@ function createController({ runtimeStateStore = null, requestPolicy = {} } = {})
       io,
       playlistRepository,
       runtimeStateStore,
+      requestAuditStore,
       requestPolicy
     }),
     emittedEvents
@@ -742,4 +747,187 @@ test("admin activity events are recorded and persisted with runtime state", asyn
   assert.equal(controller.getPublicState().adminEvents[0].action, "queue_clear");
   assert.equal(savedState.adminEvents[0].action, "queue_clear");
   assert.equal(savedState.adminEvents[1].action, "stop_playback");
+});
+
+test("request audit logs accepted, duplicate, and rejected requests with requester totals", async () => {
+  let savedAuditState = null;
+  const requestAuditStore = {
+    async load() {
+      return {
+        events: [],
+        requesterStats: {}
+      };
+    },
+    async save(state) {
+      savedAuditState = JSON.parse(JSON.stringify(state));
+    }
+  };
+
+  const { controller } = createController({
+    requestAuditStore,
+    requestPolicy: {
+      requestsEnabled: true,
+      maxRequestsPerUser: 1
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/audit-one",
+    title: "Audit One",
+    key: "youtube:audit-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  }, {
+    requestSource: "twitch_chat",
+    requestInput: "!sr audit one"
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/audit-one",
+    title: "Audit One",
+    key: "youtube:audit-one",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  }, {
+    requestSource: "twitch_chat",
+    requestInput: "!sr audit one"
+  });
+
+  await assert.rejects(
+    controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/audit-two",
+      title: "Audit Two",
+      key: "youtube:audit-two",
+      artworkUrl: "",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }, {
+      requestSource: "twitch_chat",
+      requestInput: "!sr audit two"
+    }),
+    /too many active song requests/i
+  );
+
+  const requestAudit = controller.getRequestAuditState();
+  assert.equal(requestAudit.events.length, 3);
+  assert.equal(requestAudit.events[0].outcome, "rejected");
+  assert.equal(requestAudit.events[0].reason, "too_many_active_requests");
+  assert.equal(requestAudit.events[1].outcome, "duplicate");
+  assert.equal(requestAudit.events[1].reason, "duplicate_playing");
+  assert.equal(requestAudit.events[2].outcome, "accepted");
+  assert.equal(requestAudit.events[2].track?.title, "Audit One");
+  assert.equal(requestAudit.requesterStats.length, 1);
+  assert.equal(requestAudit.requesterStats[0].requester.username, "viewerone");
+  assert.equal(requestAudit.requesterStats[0].totalRequests, 3);
+  assert.equal(requestAudit.requesterStats[0].acceptedRequests, 1);
+  assert.equal(requestAudit.requesterStats[0].duplicateRequests, 1);
+  assert.equal(requestAudit.requesterStats[0].rejectedRequests, 1);
+  assert.equal(savedAuditState.events.length, 3);
+  assert.equal(savedAuditState.requesterStats.viewerone.totalRequests, 3);
+});
+
+test("request audit restores persisted request events and requester totals", async () => {
+  const requestAuditStore = {
+    async load() {
+      return {
+        events: [
+          {
+            id: "audit-1",
+            createdAt: "2026-03-19T10:00:00.000Z",
+            source: "twitch_chat",
+            outcome: "accepted",
+            reason: "queued",
+            message: "",
+            input: "!sr restored",
+            bypassRequestLimits: false,
+            requester: {
+              username: "viewerone",
+              displayName: "ViewerOne"
+            },
+            track: {
+              id: "track-1",
+              provider: "youtube",
+              url: "https://youtu.be/restored",
+              title: "Restored Track",
+              key: "youtube:restored",
+              origin: "queue",
+              artworkUrl: ""
+            },
+            queueState: {
+              playbackStatus: "playing",
+              queueLength: 0,
+              currentTrackId: "track-1",
+              stoppedTrackId: ""
+            },
+            requesterStats: {
+              requester: {
+                username: "viewerone",
+                displayName: "ViewerOne"
+              },
+              totalRequests: 1,
+              acceptedRequests: 1,
+              duplicateRequests: 0,
+              rejectedRequests: 0,
+              youtubeRequests: 1,
+              soundcloudRequests: 0,
+              lastRequestedAt: "2026-03-19T10:00:00.000Z",
+              lastAcceptedAt: "2026-03-19T10:00:00.000Z",
+              lastOutcome: "accepted",
+              lastSource: "twitch_chat",
+              lastInput: "!sr restored",
+              lastTrackKey: "youtube:restored",
+              lastTrackTitle: "Restored Track"
+            },
+            details: {
+              channel: "testchannel"
+            }
+          }
+        ],
+        requesterStats: {
+          viewerone: {
+            requester: {
+              username: "viewerone",
+              displayName: "ViewerOne"
+            },
+            totalRequests: 1,
+            acceptedRequests: 1,
+            duplicateRequests: 0,
+            rejectedRequests: 0,
+            youtubeRequests: 1,
+            soundcloudRequests: 0,
+            lastRequestedAt: "2026-03-19T10:00:00.000Z",
+            lastAcceptedAt: "2026-03-19T10:00:00.000Z",
+            lastOutcome: "accepted",
+            lastSource: "twitch_chat",
+            lastInput: "!sr restored",
+            lastTrackKey: "youtube:restored",
+            lastTrackTitle: "Restored Track"
+          }
+        }
+      };
+    },
+    async save() {
+    }
+  };
+
+  const { controller } = createController({ requestAuditStore });
+  await controller.restoreRuntimeState();
+
+  const requestAudit = controller.getRequestAuditState();
+  assert.equal(requestAudit.events.length, 1);
+  assert.equal(requestAudit.events[0].track?.title, "Restored Track");
+  assert.equal(requestAudit.requesterStats.length, 1);
+  assert.equal(requestAudit.requesterStats[0].requester.displayName, "ViewerOne");
+  assert.equal(requestAudit.requesterStats[0].acceptedRequests, 1);
 });

@@ -11,6 +11,7 @@ import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { resolveSongRequest } from "./providers.js";
+import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
 
@@ -99,6 +100,7 @@ function buildDiagnosticsExportPayload({
   twitchStatus,
   twitchAuthStatus,
   playerState,
+  requestAudit,
   desktopIntegration
 }) {
   return {
@@ -113,7 +115,8 @@ function buildDiagnosticsExportPayload({
       twitchAuthStatus,
       desktopIntegration
     }),
-    state: playerState
+    state: playerState,
+    requestAudit
   };
 }
 
@@ -206,11 +209,13 @@ export async function startAppServer({
   });
   await playlistRepository.init();
   const runtimeStateStore = new RuntimeStateStore(runtimeConfig.runtimeStatePath);
+  const requestAuditStore = new RequestAuditStore(runtimeConfig.requestAuditPath);
 
   const playerController = new PlayerController({
     io,
     playlistRepository,
     runtimeStateStore,
+    requestAuditStore,
     requestPolicy: currentSettings.requestPolicy
   });
   await playerController.restoreRuntimeState();
@@ -321,6 +326,7 @@ export async function startAppServer({
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus(),
         playerState: playerController.getPublicState(),
+        requestAudit: playerController.getRequestAuditState(),
         desktopIntegration: desktopIntegrationState
       });
 
@@ -374,7 +380,13 @@ export async function startAppServer({
           displayName: "Dashboard"
         }
       }, {
-        bypassRequestLimits: true
+        bypassRequestLimits: true,
+        requestSource: "dashboard_queue",
+        requestInput: input,
+        requestContext: {
+          endpoint: "/api/queue",
+          triggeredBy: "dashboard"
+        }
       });
 
       response.json({
@@ -382,6 +394,22 @@ export async function startAppServer({
         state: playerController.getPublicState()
       });
     } catch (error) {
+      await playerController.recordRequestOutcome({
+        source: "dashboard_queue",
+        outcome: "rejected",
+        reason: error?.code ?? "dashboard_queue_error",
+        message: error?.message ?? "Failed to add track to queue.",
+        input: typeof request.body?.input === "string" ? request.body.input.trim() : "",
+        requestedBy: {
+          username: "dashboard",
+          displayName: "Dashboard"
+        },
+        bypassRequestLimits: true,
+        details: {
+          endpoint: "/api/queue",
+          triggeredBy: "dashboard"
+        }
+      });
       logError("Failed to add queued track from dashboard", {
         message: error?.message ?? String(error),
         stack: error?.stack ?? null
@@ -402,6 +430,10 @@ export async function startAppServer({
     response.json({
       items: playerController.getPublicState().history
     });
+  });
+
+  app.get("/api/request-log", (_request, response) => {
+    response.json(playerController.getRequestAuditState());
   });
 
   app.delete("/api/queue/:trackId", async (request, response) => {
@@ -665,7 +697,14 @@ export async function startAppServer({
             displayName: "Dashboard"
           }
         }, {
-          bypassRequestLimits: true
+          bypassRequestLimits: true,
+          requestSource: "dashboard_bulk_queue",
+          requestInput: track.url || track.key || "",
+          requestContext: {
+            endpoint: "/api/playlist/bulk-queue",
+            triggeredBy: "dashboard",
+            trackKey
+          }
         });
 
         if (queuedTrack.alreadyQueued || queuedTrack.duplicateType) {
