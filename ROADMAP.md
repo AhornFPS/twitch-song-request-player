@@ -2,11 +2,11 @@
 
 This roadmap now treats the shipped queue, moderation, request-policy, and dashboard work as the completed first pass and turns the remaining gaps into a second-pass implementation plan that fits the existing app structure:
 
-- Node/Express API in `src/app-server.js`
-- Playback state machine in `src/player-controller.js`
-- Twitch command handling in `src/twitch-bot.js`
-- Runtime settings in `src/config.js`
-- Dashboard shell in `public/dashboard.js`
+- Node/Express API in `src/app-server.ts`
+- Playback state machine in `src/player-controller.ts`
+- Twitch command handling in `src/twitch-bot.ts`
+- Runtime settings in `src/config.ts`
+- Dashboard source in `client/dashboard.ts` with generated browser assets in `public/`
 
 The goal for the second pass is to harden the app for active streams with better repair workflows, safer imports, clearer failure handling, and shared URL-validation hardening without collapsing the dashboard into oversized tabs.
 
@@ -506,39 +506,40 @@ Status: `Deferred`
 
 Status: keep this section as a quick orientation map for the next agent doing second-pass work
 
-### `src/player-controller.js`
+### `src/player-controller.ts`
 
 - Track repeated playback failures and repair metadata here if the state needs playback-context awareness.
 - Keep playback transition logic and failure classification centralized here.
 
-### `src/app-server.js`
+### `src/app-server.ts`
 
 - Add library health, import preview, and direct-link safety endpoints.
 - Keep the dashboard API thin and focused on explicit actions.
 
-### `src/twitch-bot.js`
+### `src/twitch-bot.ts`
 
 - Reuse centralized URL/domain validation before accepting direct-link requests.
 - Keep denial replies short and specific when second-pass safety rules reject a request.
 
-### `src/config.js`
+### `src/config.ts`
 
 - Extend typed settings carefully for blocked domains, repair preferences, and any second-pass safety toggles.
 - Keep defaults and migrations explicit.
 
-### `src/playlist-repository.js`
+### `src/playlist-repository.ts`
 
 - Store any supplemental library review metadata without breaking CSV as the user-facing import/export format.
 - Keep export backward-compatible even if repair metadata lives beside the CSV.
 
-### `src/providers.js`
+### `src/providers.ts`
 
 - Centralize URL parsing, direct-link domain extraction, and provider-specific validation here when possible.
 - Keep provider detection predictable so request-policy checks do not drift between chat and dashboard flows.
 
-### `public/dashboard.js`
+### `client/dashboard.ts`
 
 - Add library repair/review surfaces and import-preview workflows without making the `Library` tab harder to scan.
+- Keep the generated `public/dashboard.js` output as a build artifact, not the hand-edited source of truth.
 - Surface second-pass diagnostics where moderators can act on them immediately.
 
 ## Non-Goals Still Out Of Scope

@@ -1,25 +1,35 @@
 # Twitch Song Request Player
 
-Small Node app for OBS browser source playback, driven by Twitch chat commands.
-
-See [ROADMAP.md](ROADMAP.md) for the planned queue, moderation, command-configuration, library, safety, and dashboard expansion work.
+Desktop Twitch song request app for YouTube and SoundCloud, with an OBS overlay, a local dashboard, persistent queue state, moderation controls, and Windows packaging.
 
 ## Download
 
-Grab the latest compiled Windows `.exe` directly from the [Releases](https://github.com/AhornFPS/twitch-song-request-player/releases/latest) page. You do not need to install Node or compile the app yourself if you use the pre-built release.
+Grab the latest Windows builds from the [Releases](https://github.com/AhornFPS/twitch-song-request-player/releases/latest) page.
+
+- Installer: `TwitchSongRequestPlayer-Setup-<version>.exe`
+- Portable build: `TwitchSongRequestPlayer-Portable.exe`
+
+You do not need Node.js if you use the packaged releases.
 
 ## Features
 
-- `!sr <url>` queues a YouTube or SoundCloud track.
-- `!sr <search terms>` searches YouTube in the music category, then queues the top result.
-- `!skip` works for the broadcaster, moderators, and VIPs.
-- When the queue is empty, playback falls back to a random entry from `playlist.csv`.
-- When a queued song finishes normally, it is appended to `playlist.csv`.
-- If a YouTube song errors during playback, matching entries are removed from `playlist.csv`.
-- Ten overlay themes built-in: Aurora, Sunset, Winamp Classic, Compact, Terminal, Synthwave, Broadcast, Mixtape Deck, Noir, and Arcade.
-- The app serves a dashboard at `/` and the OBS Browser Source render at `/overlay`.
+- Twitch chat requests for YouTube and SoundCloud links
+- Optional YouTube search requests through the YouTube Data API
+- Desktop dashboard with Overview, Queue, Requests, Library, Playback, Connection, and Settings controls
+- OBS browser-source overlay at `/overlay`
+- Request moderation controls for access level, cooldowns, provider allowlists, blocked users, blocked phrases, and duplicate protection
+- Persistent queue, stopped-track, history, admin activity, and request audit state across restarts
+- Playlist library tools for search, sort, import/export, metadata refresh, and bulk queue/delete actions
+- In-app Twitch bot device login flow
+- Desktop media key support and optional Start with Windows
+- Built-in desktop updates for installed Windows builds
 
-## Setup
+## Requirements
+
+- Node.js 20 or newer for local development
+- Windows for packaged desktop builds
+
+## Local Setup
 
 1. Install dependencies:
 
@@ -27,99 +37,98 @@ Grab the latest compiled Windows `.exe` directly from the [Releases](https://git
    npm install
    ```
 
-2. Create `.env` from `.env.example` and fill in:
+2. Create `.env` from `.env.example`.
 
-   - `TWITCH_CHANNEL`: Your channel name.
-   - `TWITCH_USERNAME`: Optional if you use the in-app Twitch login flow. Otherwise set the Twitch account that will connect to chat.
-   - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow. Otherwise set the OAuth token in the form `oauth:...`.
-   - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression. `npm run build:exe` bundles this value from your root `.env` into the packaged app as the default client ID.
-   - `TWITCH_CLIENT_SECRET`: Optional advanced setting. Not needed for the normal in-app login and category-aware suppression flow.
-- `YOUTUBE_API_KEY`: Required for `!sr <search terms>` and for repairing saved YouTube playlist titles when `playlist.csv` contains `undefined`.
+3. Configure the values you need:
 
-3. Start the app:
+   - `TWITCH_CHANNEL`: Your channel name
+   - `TWITCH_USERNAME`: Optional if you use the in-app Twitch login flow
+   - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow
+   - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression
+   - `TWITCH_CLIENT_SECRET`: Optional advanced setting
+   - `YOUTUBE_API_KEY`: Required for search requests and YouTube metadata repair
+
+4. Start the desktop app:
 
    ```bash
    npm start
    ```
 
-4. The desktop app opens its own GUI window automatically.
+5. The app opens its desktop window and serves the local dashboard and overlay.
 
-5. If `TWITCH_CLIENT_ID` is configured, you can connect the bot account from inside the GUI with Twitch's device login flow instead of pasting the OAuth token manually.
+## OBS Setup
 
-6. In OBS, add a Browser Source pointing to:
+Add an OBS Browser Source pointing to:
 
-   ```text
-   http://localhost:3000/overlay
-   ```
+```text
+http://localhost:3000/overlay
+```
 
-## Commands
+If you change the local port in the app, use that port instead.
 
-- `!sr https://youtu.be/...`
-- `!sr https://soundcloud.com/...`
-- `!sr artist song name`
-- `!skip`
-- `!delete`
-- `!save`
-- `!currentsong`
+## Useful Commands
 
-## EXE Build
+Run the desktop app:
 
-1. Build the Windows executable:
+```bash
+npm start
+```
 
-   ```bash
-   npm run build:exe
-   ```
-
-2. Run:
-
-   ```text
-   dist\TwitchSongRequestPlayer.exe
-   ```
-
-3. On first launch, the app opens its own desktop GUI window.
-
-4. Set or update:
-
-   - Twitch channel
-   - Twitch bot username (optional when using in-app Twitch login)
-   - Twitch bot OAuth token (optional when using in-app Twitch login)
-   - Twitch app Client ID
-   - Twitch app Client Secret (optional advanced setting)
-   - YouTube API key
-   - Local port
-   - Dashboard theme
-
-5. Those values are saved in `settings.json` next to the `.exe`.
-
-6. Use the desktop window for program control and the `/overlay` URL in OBS.
-
-7. The local server still runs on the configured port, so the overlay URL remains:
-
-   ```text
-   http://localhost:3000/overlay
-   ```
-
-## Server-Only Mode
-
-If you want to run the raw local web server without the desktop shell:
+Run the server without Electron:
 
 ```bash
 npm run start:server
 ```
 
-That serves the dashboard at `http://localhost:3000/` and the OBS render at `http://localhost:3000/overlay`.
+Typecheck and build the runtime:
 
-## Versioning And Releases
+```bash
+npm run build
+```
 
-- `package.json` is the single source of truth for the app version and uses semantic versioning.
-- Add user-visible changes to `CHANGELOG.md` under `## Unreleased` while work is in progress.
-- If you want a simple Windows prompt, run `release-menu.bat` from the repo root.
-- Run `npm run release -- patch` for a patch release, or replace `patch` with `minor`, `major`, or an explicit version like `1.2.0`.
-- The release script bumps `package.json` and `package-lock.json`, moves `## Unreleased` into a dated version section, builds `dist/TwitchSongRequestPlayer.exe`, creates a versioned release asset, commits and tags the release, pushes `main`, and publishes the GitHub release notes from `CHANGELOG.md`.
-- `npm run build:exe` and the `Build EXE for testing only` menu option do not rewrite `CHANGELOG.md`.
-- Requirements: clean git working tree, `gh auth login` already completed, and the Windows build dependencies already installed.
+Run the test suite:
 
-For a safe preview without changing git or GitHub:
+```bash
+npm test
+```
+
+## Windows Builds
+
+Portable build:
+
+```bash
+npm run build:exe
+```
+
+Installer build:
+
+```bash
+npm run build:setup
+```
+
+Build all Windows targets:
+
+```bash
+npm run build:release
+```
+
+Build artifacts are written to `dist/`.
+
+## Data Locations
+
+- Development runs use the repo root for `playlist.csv`, `settings.json`, and runtime state files.
+- Installed Windows builds use Electron's user-data folder.
+- Portable Windows builds keep their runtime files next to the executable.
+
+## Release Flow
+
+- `package.json` is the single source of truth for the app version.
+- Add user-visible app changes to `CHANGELOG.md` under `## Unreleased`.
+- `npm run release:patch`, `npm run release:minor`, and `npm run release:major` run the release script.
+- `release-menu.bat` provides a Windows prompt for test builds and release builds.
+- `npm run build:exe` and `npm run build:setup` do not rewrite the changelog.
+
+Dry run:
 
 ```bash
 npm run release -- patch --dry-run
@@ -127,11 +136,7 @@ npm run release -- patch --dry-run
 
 ## Notes
 
-- The app expects `playlist.csv` to have `Link,Title` columns.
-- YouTube search uses the official YouTube Data API `search` endpoint with `videoCategoryId=10`.
-- If `TWITCH_CLIENT_ID` is configured, the desktop GUI can connect the bot account using Twitch's device code flow and store the returned tokens automatically.
-- Windows EXE builds bundle the root `.env` `TWITCH_CLIENT_ID` into the app as a packaged default, but do not bundle your full `.env` file or the Twitch client secret.
-- The desktop GUI lets you maintain separate category lists for suppressing chat messages and suppressing playback entirely.
-- If `TWITCH_CLIENT_ID` is configured, category-aware chat suppression and playback suppression use the authenticated bot user token rather than app client-secret auth.
-- This project keeps queue state in memory. Restarting the process clears the live queue but keeps `playlist.csv`.
-- The packaged `.exe` reads the bundled app assets internally and reads/writes `playlist.csv` and `settings.json` beside the executable.
+- `playlist.csv` uses `Link,Title` columns.
+- The app can use the in-app Twitch device login flow instead of manual bot OAuth entry.
+- Installed builds keep using the existing saved settings, playlist, queue state, and request history after upgrades.
+- The local dashboard is served at `/` and the OBS overlay is served at `/overlay`.
