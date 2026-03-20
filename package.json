@@ -2,24 +2,30 @@
   "name": "twitch-song-request-player",
   "version": "2.2.0",
   "private": true,
-  "main": "electron/main.cjs",
+  "main": "build/electron/main.cjs",
   "type": "module",
   "description": "OBS browser-source player for Twitch-driven YouTube and SoundCloud song requests.",
   "scripts": {
-    "start": "electron .",
-    "start:server": "node server.js",
-    "dev": "electron .",
-    "dev:server": "node --watch server.js",
-    "test": "node --test",
-    "build:bundle-config": "node scripts/write-bundled-config.js",
-    "bundle": "esbuild server.js --bundle --platform=node --format=cjs --outfile=build/server.cjs",
-    "build:exe": "npm run build:bundle-config && electron-builder --win portable",
-    "build:setup": "npm run build:bundle-config && electron-builder --win nsis",
-    "build:release": "npm run build:bundle-config && electron-builder --win",
-    "release": "node scripts/release.js",
-    "release:patch": "node scripts/release.js patch",
-    "release:minor": "node scripts/release.js minor",
-    "release:major": "node scripts/release.js major"
+    "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
+    "build:bundle-config": "tsx scripts/write-bundled-config.ts",
+    "build:server": "tsx scripts/build-runtime.ts",
+    "build:electron": "tsx scripts/build-runtime.ts",
+    "build:web": "tsx scripts/build-runtime.ts",
+    "build:runtime": "tsx scripts/build-runtime.ts",
+    "build": "npm run typecheck && npm run build:bundle-config && npm run build:runtime",
+    "start": "npm run build:runtime && tsx scripts/run-electron.ts .",
+    "start:server": "npm run build:server && node build/server.js",
+    "dev": "npm run build:runtime && tsx scripts/run-electron.ts .",
+    "dev:server": "tsx watch server.ts",
+    "test": "npm run typecheck && npm run build:web && node --import tsx --test src/*.test.ts scripts/*.test.ts",
+    "bundle": "npm run build:runtime",
+    "build:exe": "npm run build && electron-builder --win portable",
+    "build:setup": "npm run build && electron-builder --win nsis",
+    "build:release": "npm run build && electron-builder --win",
+    "release": "tsx scripts/release.ts",
+    "release:patch": "tsx scripts/release.ts patch",
+    "release:minor": "tsx scripts/release.ts minor",
+    "release:major": "tsx scripts/release.ts major"
   },
   "engines": {
     "node": ">=20"
@@ -34,9 +40,14 @@
     "tmi.js": "^1.8.5"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^25.5.0",
+    "@types/tmi.js": "^1.8.6",
     "electron": "^36.0.0",
     "electron-builder": "^26.0.12",
-    "esbuild": "^0.25.1"
+    "esbuild": "^0.25.1",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3"
   },
   "build": {
     "appId": "com.horngaming.twitch-song-request-player",
@@ -45,11 +56,8 @@
       "output": "dist"
     },
     "files": [
-      "electron/**/*",
+      "build/**/*",
       "public/**/*",
-      "src/**/*",
-      "build/bundled-config.json",
-      "server.js",
       "playlist.csv",
       "package.json"
     ],
