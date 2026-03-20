@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.3.0 - 2026-03-20
+
 - Rewrote the app source and build pipeline in TypeScript on a dedicated migration branch while keeping the desktop, server, and browser bundles working.
 - Fixed the TypeScript desktop runtime startup so `npm start` loads the Electron main-process APIs correctly again.
 - Fixed TypeScript desktop builds resolving `playlist.csv`, `public/`, and bundled config files from `build/` instead of the real app root.
