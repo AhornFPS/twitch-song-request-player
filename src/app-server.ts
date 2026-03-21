@@ -51,6 +51,134 @@ function buildRuntimeUrls(activePort) {
   };
 }
 
+function buildObsOverlayLoaderPath(runtimeDir) {
+  return path.join(runtimeDir, "obs-overlay-loader.html");
+}
+
+function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
+  const overlayBaseUrl = `${overlayUrl}${overlayUrl.includes("?") ? "&" : "?"}obsLoader=1`;
+  const serializedOverlayBaseUrl = JSON.stringify(overlayBaseUrl);
+  const serializedAppVersion = JSON.stringify(appVersion);
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Twitch Song Request Player OBS Loader</title>
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      body {
+        color: transparent;
+        font: 12px/1.4 Arial, sans-serif;
+      }
+
+      #overlay-frame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+
+      #loader-status {
+        position: fixed;
+        left: -9999px;
+        top: -9999px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader-status" aria-live="polite">Waiting for the local player service.</div>
+    <iframe id="overlay-frame" title="Twitch Song Request Player OBS Overlay" allow="autoplay"></iframe>
+    <script>
+      const overlayBaseUrl = ${serializedOverlayBaseUrl};
+      const appVersion = ${serializedAppVersion};
+      const retryIntervalMs = 2000;
+      const overlayFrame = document.getElementById("overlay-frame");
+      const loaderStatus = document.getElementById("loader-status");
+      let retryTimer = null;
+      let overlayReady = false;
+
+      function buildOverlayUrl() {
+        const separator = overlayBaseUrl.includes("?") ? "&" : "?";
+        return overlayBaseUrl + separator + "loaderAttempt=" + Date.now().toString(36);
+      }
+
+      function setLoaderStatus(message) {
+        if (loaderStatus) {
+          loaderStatus.textContent = message;
+        }
+      }
+
+      function loadOverlay() {
+        if (!overlayFrame || overlayReady) {
+          return;
+        }
+
+        overlayFrame.src = buildOverlayUrl();
+        setLoaderStatus("Retrying the local player service.");
+      }
+
+      function scheduleRetry() {
+        if (retryTimer || overlayReady) {
+          return;
+        }
+
+        retryTimer = window.setInterval(loadOverlay, retryIntervalMs);
+      }
+
+      function stopRetry() {
+        if (!retryTimer) {
+          return;
+        }
+
+        window.clearInterval(retryTimer);
+        retryTimer = null;
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data?.type !== "tsrp:overlay-ready") {
+          return;
+        }
+
+        overlayReady = true;
+        stopRetry();
+        setLoaderStatus("Local player service connected.");
+      });
+
+      window.addEventListener("beforeunload", stopRetry);
+
+      setLoaderStatus("Waiting for the local player service.");
+      loadOverlay();
+      scheduleRetry();
+      console.info("Twitch Song Request Player OBS loader ready", {
+        appVersion,
+        overlayBaseUrl
+      });
+    </script>
+  </body>
+</html>
+`;
+}
+
+async function writeObsOverlayLoaderFile({ runtimeDir, overlayUrl, appVersion }) {
+  const overlayLoaderFilePath = buildObsOverlayLoaderPath(runtimeDir);
+  const overlayLoaderHtml = buildObsOverlayLoaderHtml({
+    overlayUrl,
+    appVersion
+  });
+  await fs.writeFile(overlayLoaderFilePath, overlayLoaderHtml, "utf8");
+  return overlayLoaderFilePath;
+}
+
 function toClientSettings(settings) {
   const {
     twitchRefreshToken,
@@ -68,6 +196,8 @@ function buildSettingsPayload({
   settings,
   activePort,
   usingFallbackPort,
+  runtimeDir,
+  overlayLoaderFilePath,
   themeOptions,
   dashboardLayoutOptions,
   twitchStatus,
@@ -89,6 +219,7 @@ function buildSettingsPayload({
       usingFallbackPort,
       pendingRestart: settings.port !== activePort,
       configured: hasRequiredSettings(settings),
+      overlayLoaderFilePath: overlayLoaderFilePath || buildObsOverlayLoaderPath(runtimeDir),
       ...urls
     }
   };
@@ -98,6 +229,8 @@ function buildRuntimeStatusPayload({
   settings,
   activePort,
   usingFallbackPort,
+  runtimeDir,
+  overlayLoaderFilePath,
   twitchStatus,
   twitchAuthStatus,
   desktopIntegration
@@ -114,6 +247,7 @@ function buildRuntimeStatusPayload({
       usingFallbackPort,
       pendingRestart: settings.port !== activePort,
       configured: hasRequiredSettings(settings),
+      overlayLoaderFilePath: overlayLoaderFilePath || buildObsOverlayLoaderPath(runtimeDir),
       ...urls
     }
   };
@@ -123,6 +257,8 @@ function buildDiagnosticsExportPayload({
   settings,
   activePort,
   usingFallbackPort,
+  runtimeDir,
+  overlayLoaderFilePath,
   twitchStatus,
   twitchAuthStatus,
   playerState,
@@ -137,6 +273,8 @@ function buildDiagnosticsExportPayload({
       settings,
       activePort,
       usingFallbackPort,
+      runtimeDir,
+      overlayLoaderFilePath,
       twitchStatus,
       twitchAuthStatus,
       desktopIntegration
@@ -208,6 +346,7 @@ export async function startAppServer({
   let currentSettings = runtimeConfig.settings;
   let activePort = currentSettings.port;
   let usingFallbackPort = false;
+  let overlayLoaderFilePath = buildObsOverlayLoaderPath(runtimeConfig.runtimeDir);
 
   async function getDesktopIntegrationState() {
     if (!desktopIntegration?.getState) {
@@ -231,6 +370,7 @@ export async function startAppServer({
   const activeConnections = new Set();
 
   const playlistRepository = new PlaylistRepository(runtimeConfig.playlistPath, {
+    healthPath: runtimeConfig.playlistHealthPath,
     youtubeApiKey: currentSettings.youtubeApiKey
   });
   await playlistRepository.init();
@@ -302,6 +442,8 @@ export async function startAppServer({
         settings: currentSettings,
         activePort,
         usingFallbackPort,
+        runtimeDir: runtimeConfig.runtimeDir,
+        overlayLoaderFilePath,
         themeOptions: configStore.getThemeOptions(),
         dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
         twitchStatus: twitchBotService.getStatus(),
@@ -327,6 +469,8 @@ export async function startAppServer({
         settings: currentSettings,
         activePort,
         usingFallbackPort,
+        runtimeDir: runtimeConfig.runtimeDir,
+        overlayLoaderFilePath,
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus(),
         desktopIntegration: desktopIntegrationState
@@ -349,6 +493,8 @@ export async function startAppServer({
         settings: currentSettings,
         activePort,
         usingFallbackPort,
+        runtimeDir: runtimeConfig.runtimeDir,
+        overlayLoaderFilePath,
         twitchStatus: twitchBotService.getStatus(),
         twitchAuthStatus: twitchBotService.getAuthStatus(),
         playerState: playerController.getPublicState(),
@@ -382,6 +528,11 @@ export async function startAppServer({
       pageSize,
       sortBy
     }));
+  });
+
+  app.get("/api/playlist/review", (request, response) => {
+    const limit = typeof request.query.limit === "string" ? request.query.limit : "25";
+    response.json(playlistRepository.listReviewTracks({ limit }));
   });
 
   app.post("/api/queue", async (request, response) => {
@@ -869,6 +1020,8 @@ export async function startAppServer({
           settings: currentSettings,
           activePort,
           usingFallbackPort,
+          runtimeDir: runtimeConfig.runtimeDir,
+          overlayLoaderFilePath,
           themeOptions: configStore.getThemeOptions(),
           dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus,
@@ -908,6 +1061,8 @@ export async function startAppServer({
           settings: currentSettings,
           activePort,
           usingFallbackPort,
+          runtimeDir: runtimeConfig.runtimeDir,
+          overlayLoaderFilePath,
           themeOptions: configStore.getThemeOptions(),
           dashboardLayoutOptions: configStore.getDashboardLayoutOptions(),
           twitchStatus: twitchBotService.getStatus(),
@@ -1085,6 +1240,19 @@ export async function startAppServer({
   }
 
   const urls = buildRuntimeUrls(activePort);
+  try {
+    overlayLoaderFilePath = await writeObsOverlayLoaderFile({
+      runtimeDir: runtimeConfig.runtimeDir,
+      overlayUrl: urls.overlayUrl,
+      appVersion
+    });
+  } catch (error) {
+    logWarn("Failed to write OBS overlay loader file", {
+      message: error?.message ?? String(error),
+      stack: error?.stack ?? null,
+      runtimeDir: runtimeConfig.runtimeDir
+    });
+  }
   logInfo("Server listening", urls);
 
   if ((forceSetup || !hasRequiredSettings(currentSettings)) && !noBrowser) {

@@ -30,6 +30,7 @@ let playlistSelectedKeys = new Set();
 let settingsPayload = null;
 let playbackState = null;
 let playlistPayload = null;
+let playlistReviewPayload = null;
 let activeTab = "overview";
 let isQueueSubmitting = false;
 let isPlaybackCommandPending = false;
@@ -128,6 +129,14 @@ function renderDashboard() {
                   <input id="overlay-url" class="control-input" type="text" readonly />
                   <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
                 </div>
+              </article>
+              <article class="info-card">
+                <p class="info-card__label">OBS local loader file</p>
+                <div class="copy-row">
+                  <input id="overlay-loader-file-path" class="control-input" type="text" readonly />
+                  <button class="copy-row__button" type="button" data-copy-target="overlay-loader-file-path">Copy</button>
+                </div>
+                <p class="field__hint">In OBS, enable <strong>Local file</strong> and select this file if you want the overlay to reconnect automatically when OBS opens before the app.</p>
               </article>
               <article class="info-card info-card--wide">
                 <p class="info-card__label">Restart notice</p>
@@ -570,6 +579,21 @@ function renderDashboard() {
       </section>
 
       <section id="tab-library" class="atlas-view" hidden>
+        <section class="panel card-panel library-review-panel">
+          <div class="panel__header">
+            <div>
+              <p class="panel__eyebrow">Health review</p>
+              <h2>Flagged library tracks</h2>
+            </div>
+            <div class="status-strip status-strip--compact">
+              <span id="playlist-review-flagged-count" class="status-pill status-pill--warn">0 flagged</span>
+              <span id="playlist-review-total-failures" class="status-pill status-pill--idle">0 failures</span>
+            </div>
+          </div>
+          <p class="panel-note">Saved tracks that fail playback or metadata refreshes stay here until they recover or are removed.</p>
+          <div id="playlist-review-list" class="history-list"></div>
+        </section>
+
         <section class="panel card-panel playlist-panel">
           <div class="panel__header panel__header--playlist">
             <div>
@@ -1307,6 +1331,7 @@ function applyRuntimeState() {
   setText("server-port-pill", `Port ${runtime.activePort}`);
   setText("twitch-status-text", twitchStatus?.message || "Waiting for configuration.");
   setValue("overlay-url", runtime.overlayUrl || "");
+  setValue("overlay-loader-file-path", runtime.overlayLoaderFilePath || "");
 
   if (twitchPill) {
     twitchPill.className = "status-pill";
@@ -1883,6 +1908,103 @@ function applyPlaybackState() {
   renderAdminEvents(adminEvents);
 }
 
+function formatLibraryHealthReason(reason) {
+  if (!reason) {
+    return "Playback failed";
+  }
+
+  if (reason === "metadata_refresh_failed") {
+    return "Metadata refresh failed";
+  }
+
+  if (reason === "youtube_startup_timeout") {
+    return "YouTube startup timed out";
+  }
+
+  if (reason === "soundcloud_load_timeout") {
+    return "SoundCloud load timed out";
+  }
+
+  if (reason === "soundcloud_widget_error") {
+    return "SoundCloud widget error";
+  }
+
+  if (reason === "invalid_youtube_url") {
+    return "Invalid YouTube URL";
+  }
+
+  return reason
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function formatLibraryFailureSummary(health) {
+  const consecutive = Number.parseInt(String(health?.consecutiveFailureCount ?? 0), 10) || 0;
+  const total = Number.parseInt(String(health?.failureCount ?? 0), 10) || 0;
+
+  if (consecutive > 0) {
+    return `${consecutive} recent failure${consecutive === 1 ? "" : "s"} • ${total} total`;
+  }
+
+  return `${total} failure${total === 1 ? "" : "s"} recorded`;
+}
+
+function renderPlaylistReview() {
+  const reviewList = el("playlist-review-list");
+  const flaggedCount = playlistReviewPayload?.summary?.flaggedCount || 0;
+  const totalFailures = playlistReviewPayload?.summary?.totalFailureCount || 0;
+
+  setText("playlist-review-flagged-count", `${flaggedCount} flagged`);
+  setText("playlist-review-total-failures", `${totalFailures} failure${totalFailures === 1 ? "" : "s"}`);
+
+  if (!reviewList) {
+    return;
+  }
+
+  reviewList.innerHTML = "";
+
+  if (!playlistReviewPayload?.items?.length) {
+    const emptyState = document.createElement("div");
+    emptyState.className = "empty-state";
+    emptyState.textContent = "No library tracks are currently flagged for review.";
+    reviewList.appendChild(emptyState);
+    return;
+  }
+
+  playlistReviewPayload.items.forEach((track) => {
+    const item = document.createElement("article");
+    item.className = "history-item library-review-item";
+    const health = track.health || {};
+    const lastFailureText = health.lastFailureAt
+      ? new Date(health.lastFailureAt).toLocaleString()
+      : "Unknown time";
+    const failureMessage = health.lastFailureMessage
+      ? `<div class="command-table__description command-table__description--warn">${htmlEscape(health.lastFailureMessage)}</div>`
+      : "";
+
+    item.innerHTML = `
+      <div class="history-item__main">
+        <div class="library-track-heading">
+          <strong>${htmlEscape(track.title)}</strong>
+          <span class="status-pill status-pill--warn library-flag-pill">Needs review</span>
+        </div>
+        <div class="command-table__description">${htmlEscape(track.provider)} • ${htmlEscape(formatLibraryFailureSummary(health))} • ${htmlEscape(formatLibraryHealthReason(health.lastFailureReason))}</div>
+        <div class="command-table__description">${htmlEscape(track.key)}</div>
+        ${failureMessage}
+      </div>
+      <div class="history-item__meta library-review-meta">
+        <time class="history-item__time" datetime="${htmlEscape(health.lastFailureAt || "")}">${htmlEscape(lastFailureText)}</time>
+        <div class="button-row button-row--compact library-review-actions">
+          <button class="ghost-button" type="button" data-playlist-review-action="queue" data-playlist-review-key="${htmlEscape(track.key)}">Queue</button>
+          <button class="ghost-button" type="button" data-playlist-review-action="refresh" data-playlist-review-key="${htmlEscape(track.key)}">Refresh</button>
+          <button class="ghost-button ghost-button--danger" type="button" data-playlist-review-action="delete" data-playlist-review-key="${htmlEscape(track.key)}">Delete</button>
+        </div>
+      </div>
+    `;
+    reviewList.appendChild(item);
+  });
+}
+
 async function loadPlaylist() {
   const params = new URLSearchParams({
     page: String(playlistPage),
@@ -1894,7 +2016,12 @@ async function loadPlaylist() {
     params.set("q", playlistQuery);
   }
 
-  playlistPayload = await fetchJson(`/api/playlist/tracks?${params.toString()}`);
+  const [playlistResponse, reviewResponse] = await Promise.all([
+    fetchJson(`/api/playlist/tracks?${params.toString()}`),
+    fetchJson("/api/playlist/review?limit=8")
+  ]);
+  playlistPayload = playlistResponse;
+  playlistReviewPayload = reviewResponse;
   playlistTotalPages = playlistPayload.totalPages || 1;
   playlistPage = playlistPayload.page || 1;
   applyPlaylistState();
@@ -1949,16 +2076,25 @@ function applyPlaylistState() {
     return;
   }
 
+  renderPlaylistReview();
   tableBody.innerHTML = "";
   (playlistPayload.items || []).forEach((track) => {
+    const isFlagged = track.health?.flagged === true;
+    const healthSummary = isFlagged
+      ? `<div class="command-table__description command-table__description--warn">${htmlEscape(formatLibraryFailureSummary(track.health))} • ${htmlEscape(formatLibraryHealthReason(track.health?.lastFailureReason))}</div>`
+      : "";
     const row = document.createElement("tr");
     row.innerHTML = `
       <td class="playlist-table__checkbox">
         <input type="checkbox" data-playlist-select-key="${htmlEscape(track.key)}" ${playlistSelectedKeys.has(track.key) ? "checked" : ""} />
       </td>
       <td>
-        <strong>${htmlEscape(track.title)}</strong>
+        <div class="library-track-heading">
+          <strong>${htmlEscape(track.title)}</strong>
+          ${isFlagged ? '<span class="status-pill status-pill--warn library-flag-pill">Flagged</span>' : ""}
+        </div>
         <div class="command-table__description">${htmlEscape(track.key)}</div>
+        ${healthSummary}
       </td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
       <td><a class="playlist-link" href="${htmlEscape(track.url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(track.url)}</a></td>
@@ -2021,16 +2157,42 @@ async function bulkDeletePlaylistTracks() {
       })
     });
     playlistSelectedKeys = new Set();
-    playlistPayload = payload.playlist;
-    playlistTotalPages = playlistPayload.totalPages || 1;
-    playlistPage = playlistPayload.page || 1;
-    applyPlaylistState();
+    await loadPlaylist();
     setPlaylistFeedback(
       `Deleted ${payload.result.removedCount} track${payload.result.removedCount === 1 ? "" : "s"} from the library.`,
       "success"
     );
   } catch (error) {
     setPlaylistFeedback(error?.message || "Could not delete the selected playlist tracks.", "error");
+  }
+}
+
+async function queueSinglePlaylistTrack(trackKey) {
+  if (!trackKey) {
+    return;
+  }
+
+  try {
+    const payload = await fetchJson("/api/playlist/bulk-queue", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        trackKeys: [trackKey]
+      })
+    });
+    playbackState = payload.state;
+    applyPlaybackState();
+    await loadPlaylist();
+
+    if (payload.result.queuedCount > 0) {
+      setPlaylistFeedback("Queued the flagged library track for another playback attempt.", "success");
+    } else {
+      setPlaylistFeedback("That track is already queued or currently playing.", "warning");
+    }
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not queue the library track.", "error");
   }
 }
 
@@ -2851,7 +3013,31 @@ root.addEventListener("click", (event) => {
   if (tabButton) {
     activeTab = tabButton.getAttribute("data-tab") || "overview";
     applyTabState();
+    if (activeTab === "library") {
+      void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
+    }
     return;
+  }
+
+  const reviewActionButton = event.target.closest("[data-playlist-review-action]");
+  if (reviewActionButton) {
+    const trackKey = reviewActionButton.getAttribute("data-playlist-review-key");
+    const action = reviewActionButton.getAttribute("data-playlist-review-action");
+
+    if (action === "queue") {
+      void queueSinglePlaylistTrack(trackKey);
+      return;
+    }
+
+    if (action === "refresh") {
+      void refreshPlaylistTrackMetadata(trackKey);
+      return;
+    }
+
+    if (action === "delete") {
+      void deletePlaylistTrack(trackKey);
+      return;
+    }
   }
 
   const deleteButton = event.target.closest("[data-playlist-delete-key]");

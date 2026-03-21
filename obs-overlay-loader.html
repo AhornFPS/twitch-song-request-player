@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Twitch Song Request Player OBS Loader</title>
+    <style>
+      html, body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      body {
+        color: transparent;
+        font: 12px/1.4 Arial, sans-serif;
+      }
+
+      #overlay-frame {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: transparent;
+      }
+
+      #loader-status {
+        position: fixed;
+        left: -9999px;
+        top: -9999px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="loader-status" aria-live="polite">Waiting for the local player service.</div>
+    <iframe id="overlay-frame" title="Twitch Song Request Player OBS Overlay" allow="autoplay"></iframe>
+    <script>
+      const overlayBaseUrl = "http://localhost:3000/overlay?obsLoader=1";
+      const appVersion = "2.3.0";
+      const retryIntervalMs = 2000;
+      const overlayFrame = document.getElementById("overlay-frame");
+      const loaderStatus = document.getElementById("loader-status");
+      let retryTimer = null;
+      let overlayReady = false;
+
+      function buildOverlayUrl() {
+        const separator = overlayBaseUrl.includes("?") ? "&" : "?";
+        return overlayBaseUrl + separator + "loaderAttempt=" + Date.now().toString(36);
+      }
+
+      function setLoaderStatus(message) {
+        if (loaderStatus) {
+          loaderStatus.textContent = message;
+        }
+      }
+
+      function loadOverlay() {
+        if (!overlayFrame || overlayReady) {
+          return;
+        }
+
+        overlayFrame.src = buildOverlayUrl();
+        setLoaderStatus("Retrying the local player service.");
+      }
+
+      function scheduleRetry() {
+        if (retryTimer || overlayReady) {
+          return;
+        }
+
+        retryTimer = window.setInterval(loadOverlay, retryIntervalMs);
+      }
+
+      function stopRetry() {
+        if (!retryTimer) {
+          return;
+        }
+
+        window.clearInterval(retryTimer);
+        retryTimer = null;
+      }
+
+      window.addEventListener("message", (event) => {
+        if (event.data?.type !== "tsrp:overlay-ready") {
+          return;
+        }
+
+        overlayReady = true;
+        stopRetry();
+        setLoaderStatus("Local player service connected.");
+      });
+
+      window.addEventListener("beforeunload", stopRetry);
+
+      setLoaderStatus("Waiting for the local player service.");
+      loadOverlay();
+      scheduleRetry();
+      console.info("Twitch Song Request Player OBS loader ready", {
+        appVersion,
+        overlayBaseUrl
+      });
+    </script>
+  </body>
+</html>

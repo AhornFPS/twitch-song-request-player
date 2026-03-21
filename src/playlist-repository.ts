@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { logInfo, logWarn } from "./logger.js";
+import { PlaylistHealthStore } from "./playlist-health-store.js";
 import { detectProvider, getTrackKey, resolveTrackFromUrl, resolveYouTubeTrackFromApi } from "./providers.js";
 
 function normalizePlaylistTitle(value) {
@@ -51,17 +52,36 @@ function normalizePlaylistSort(sortBy) {
   return ["recent", "title", "provider"].includes(sortBy) ? sortBy : "recent";
 }
 
+function normalizePlaylistHealthEntry(entry = {}) {
+  return {
+    failureCount: Number.isInteger(entry.failureCount) && entry.failureCount >= 0 ? entry.failureCount : 0,
+    consecutiveFailureCount: Number.isInteger(entry.consecutiveFailureCount) && entry.consecutiveFailureCount >= 0
+      ? entry.consecutiveFailureCount
+      : 0,
+    lastFailureAt: typeof entry.lastFailureAt === "string" ? entry.lastFailureAt : null,
+    lastFailureReason: typeof entry.lastFailureReason === "string" ? entry.lastFailureReason : "",
+    lastFailureMessage: typeof entry.lastFailureMessage === "string" ? entry.lastFailureMessage : "",
+    lastFailureSource: typeof entry.lastFailureSource === "string" ? entry.lastFailureSource : "",
+    lastSuccessAt: typeof entry.lastSuccessAt === "string" ? entry.lastSuccessAt : null,
+    lastRecoveredAt: typeof entry.lastRecoveredAt === "string" ? entry.lastRecoveredAt : null
+  };
+}
+
 export class PlaylistRepository {
   constructor(filePath, {
+    healthStore = null,
+    healthPath = "",
     youtubeApiKey = "",
     youtubeMetadataResolver = resolveYouTubeTrackFromApi,
     metadataResolver = resolveTrackFromUrl
   } = {}) {
     this.filePath = filePath;
+    this.healthStore = healthStore ?? new PlaylistHealthStore(healthPath || `${filePath}.health.json`);
     this.youtubeApiKey = youtubeApiKey;
     this.youtubeMetadataResolver = youtubeMetadataResolver;
     this.metadataResolver = metadataResolver;
     this.rows = [];
+    this.healthByKey = new Map();
   }
 
   setYoutubeApiKey(youtubeApiKey) {
@@ -89,11 +109,18 @@ export class PlaylistRepository {
         logWarn("Playlist file was missing and has been recreated", {
           filePath: this.filePath
         });
-        return;
+      } else {
+        throw error;
       }
-
-      throw error;
     }
+
+    await this.loadHealthState();
+  }
+
+  async loadHealthState() {
+    const persistedHealth = await this.healthStore.load();
+    this.healthByKey = new Map(Object.entries(persistedHealth.items ?? {}));
+    await this.pruneHealthState();
   }
 
   async getRandomTrack() {
@@ -164,6 +191,41 @@ export class PlaylistRepository {
     return this.rows.find((row) => row.Key === trackKey) ?? null;
   }
 
+  buildTrackHealth(trackKey) {
+    const health = normalizePlaylistHealthEntry(this.healthByKey.get(trackKey));
+
+    return {
+      ...health,
+      flagged: health.consecutiveFailureCount > 0
+    };
+  }
+
+  buildTrackPayload(row) {
+    return {
+      key: row.Key,
+      url: row.Link,
+      title: row.Title || row.Link,
+      provider: row.Provider,
+      health: this.buildTrackHealth(row.Key)
+    };
+  }
+
+  async pruneHealthState() {
+    const validTrackKeys = new Set(this.rows.map((row) => row.Key));
+    let changed = false;
+
+    for (const trackKey of Array.from(this.healthByKey.keys())) {
+      if (!validTrackKeys.has(trackKey)) {
+        this.healthByKey.delete(trackKey);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      await this.persistHealthState();
+    }
+  }
+
   listTracks({ query = "", page = 1, pageSize = 100, sortBy = "recent" } = {}) {
     const normalizedQuery = typeof query === "string" ? query.trim().toLowerCase() : "";
     const safePageSize = Math.min(Math.max(Number.parseInt(String(pageSize), 10) || 100, 1), 250);
@@ -176,10 +238,9 @@ export class PlaylistRepository {
         })
       : this.rows;
     const sortedRows = filteredRows
-      .map((row, index) => ({
+      .map((row) => ({
         row,
-        index: this.rows.indexOf(row),
-        filteredIndex: index
+        index: this.rows.indexOf(row)
       }))
       .sort((left, right) => {
         if (normalizedSort === "title") {
@@ -202,12 +263,7 @@ export class PlaylistRepository {
     const totalPages = total === 0 ? 1 : Math.ceil(total / safePageSize);
     const normalizedPage = Math.min(safePage, totalPages);
     const start = (normalizedPage - 1) * safePageSize;
-    const items = sortedRows.slice(start, start + safePageSize).map((row) => ({
-      key: row.Key,
-      url: row.Link,
-      title: row.Title || row.Link,
-      provider: row.Provider
-    }));
+    const items = sortedRows.slice(start, start + safePageSize).map((row) => this.buildTrackPayload(row));
 
     return {
       items,
@@ -216,6 +272,40 @@ export class PlaylistRepository {
       pageSize: safePageSize,
       totalPages,
       sortBy: normalizedSort
+    };
+  }
+
+  listReviewTracks({ limit = 25 } = {}) {
+    const safeLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 25, 1), 100);
+    const reviewItems = this.rows
+      .map((row) => this.buildTrackPayload(row))
+      .filter((track) => track.health.flagged)
+      .sort((left, right) => {
+        const consecutiveDifference = (right.health.consecutiveFailureCount || 0) - (left.health.consecutiveFailureCount || 0);
+        if (consecutiveDifference !== 0) {
+          return consecutiveDifference;
+        }
+
+        const failureDifference = (right.health.failureCount || 0) - (left.health.failureCount || 0);
+        if (failureDifference !== 0) {
+          return failureDifference;
+        }
+
+        return String(right.health.lastFailureAt || "").localeCompare(String(left.health.lastFailureAt || ""));
+      });
+
+    const healthEntries = Array.from(this.healthByKey.values()).map((entry) => normalizePlaylistHealthEntry(entry));
+
+    return {
+      items: reviewItems.slice(0, safeLimit),
+      summary: {
+        flaggedCount: reviewItems.length,
+        totalFailureCount: healthEntries.reduce((sum, entry) => sum + entry.failureCount, 0),
+        lastFailureAt: healthEntries
+          .map((entry) => entry.lastFailureAt)
+          .filter(Boolean)
+          .sort((left, right) => String(right).localeCompare(String(left)))[0] ?? null
+      }
     };
   }
 
@@ -237,6 +327,76 @@ export class PlaylistRepository {
     };
   }
 
+  async recordTrackPlaybackFailure(track, {
+    reason = "playback_error",
+    message = "",
+    source = "player"
+  } = {}) {
+    const row = this.findTrackByKey(track?.key);
+    if (!row) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const nextHealth = normalizePlaylistHealthEntry(this.healthByKey.get(row.Key));
+    nextHealth.failureCount += 1;
+    nextHealth.consecutiveFailureCount += 1;
+    nextHealth.lastFailureAt = now;
+    nextHealth.lastFailureReason = typeof reason === "string" ? reason : "playback_error";
+    nextHealth.lastFailureMessage = typeof message === "string" ? message : "";
+    nextHealth.lastFailureSource = typeof source === "string" ? source : "player";
+    this.healthByKey.set(row.Key, nextHealth);
+    await this.persistHealthState();
+
+    return this.buildTrackPayload(row);
+  }
+
+  async recordTrackPlaybackSuccess(track) {
+    const row = this.findTrackByKey(track?.key);
+    if (!row) {
+      return null;
+    }
+
+    const existingHealth = this.healthByKey.get(row.Key);
+    if (!existingHealth) {
+      return null;
+    }
+
+    const now = new Date().toISOString();
+    const nextHealth = normalizePlaylistHealthEntry(existingHealth);
+    nextHealth.lastSuccessAt = now;
+    if (nextHealth.consecutiveFailureCount > 0) {
+      nextHealth.consecutiveFailureCount = 0;
+      nextHealth.lastRecoveredAt = now;
+    }
+    this.healthByKey.set(row.Key, nextHealth);
+    await this.persistHealthState();
+
+    return this.buildTrackPayload(row);
+  }
+
+  async clearTrackHealthByKey(trackKey) {
+    const row = this.findTrackByKey(trackKey);
+    if (!row) {
+      return null;
+    }
+
+    const existingHealth = this.healthByKey.get(trackKey);
+    if (!existingHealth) {
+      return this.buildTrackPayload(row);
+    }
+
+    const now = new Date().toISOString();
+    const nextHealth = normalizePlaylistHealthEntry(existingHealth);
+    nextHealth.consecutiveFailureCount = 0;
+    nextHealth.lastRecoveredAt = now;
+    nextHealth.lastSuccessAt = now;
+    this.healthByKey.set(trackKey, nextHealth);
+    await this.persistHealthState();
+
+    return this.buildTrackPayload(row);
+  }
+
   async updateTrackTitleByKey(trackKey, nextTitle) {
     const row = this.findTrackByKey(trackKey);
 
@@ -252,12 +412,7 @@ export class PlaylistRepository {
     row.Title = normalizedTitle;
     await this.persist();
 
-    return {
-      key: row.Key,
-      url: row.Link,
-      title: row.Title,
-      provider: row.Provider
-    };
+    return this.buildTrackPayload(row);
   }
 
   async refreshTrackMetadataByKey(trackKey) {
@@ -268,22 +423,29 @@ export class PlaylistRepository {
     }
 
     let refreshedTrack = null;
-    if (row.Provider === "youtube" && this.youtubeApiKey) {
-      refreshedTrack = await this.youtubeMetadataResolver(row.Link, this.youtubeApiKey);
-    } else {
-      refreshedTrack = await this.metadataResolver(row.Link);
+    try {
+      if (row.Provider === "youtube" && this.youtubeApiKey) {
+        refreshedTrack = await this.youtubeMetadataResolver(row.Link, this.youtubeApiKey);
+      } else {
+        refreshedTrack = await this.metadataResolver(row.Link);
+      }
+    } catch (error) {
+      await this.recordTrackPlaybackFailure({
+        key: row.Key
+      }, {
+        reason: "metadata_refresh_failed",
+        message: error?.message ?? String(error),
+        source: "library_refresh"
+      });
+      throw error;
     }
 
     const refreshedTitle = normalizePlaylistTitle(refreshedTrack?.title) || row.Title || row.Link;
     row.Title = refreshedTitle;
     await this.persist();
+    await this.clearTrackHealthByKey(row.Key);
 
-    return {
-      key: row.Key,
-      url: row.Link,
-      title: row.Title || row.Link,
-      provider: row.Provider
-    };
+    return this.buildTrackPayload(row);
   }
 
   async appendTrack(track) {
@@ -315,7 +477,9 @@ export class PlaylistRepository {
     }
 
     this.rows = this.rows.filter((row) => row.Key !== trackKey);
+    this.healthByKey.delete(trackKey);
     await this.persist();
+    await this.persistHealthState();
     logWarn("Track removed from playlist by key", {
       key: trackKey,
       title: track.Title || track.Link,
@@ -328,12 +492,14 @@ export class PlaylistRepository {
   async removeTrack(track) {
     const originalLength = this.rows.length;
     this.rows = this.rows.filter((row) => row.Key !== track.key);
+    this.healthByKey.delete(track.key);
 
     if (this.rows.length === originalLength) {
       return false;
     }
 
     await this.persist();
+    await this.persistHealthState();
     logWarn("Track removed from playlist", {
       title: track.title,
       provider: track.provider,
@@ -367,7 +533,11 @@ export class PlaylistRepository {
     }
 
     this.rows = this.rows.filter((row) => !matchingKeys.includes(row.Key));
+    matchingKeys.forEach((trackKey) => {
+      this.healthByKey.delete(trackKey);
+    });
     await this.persist();
+    await this.persistHealthState();
     logWarn("Removed multiple tracks from playlist", {
       removedCount: matchingKeys.length
     });
@@ -434,6 +604,7 @@ export class PlaylistRepository {
       importedCount = dedupedIncomingRows.length;
       this.rows = dedupedIncomingRows;
       await this.persist();
+      await this.pruneHealthState();
     } else {
       const existingKeys = new Set(this.rows.map((row) => row.Key));
       const appendRows = dedupedIncomingRows.filter((row) => {
@@ -464,5 +635,11 @@ export class PlaylistRepository {
 
   async persist() {
     await fs.writeFile(this.filePath, this.exportCsv(), "utf8");
+  }
+
+  async persistHealthState() {
+    await this.healthStore.save({
+      items: Object.fromEntries(this.healthByKey.entries())
+    });
   }
 }

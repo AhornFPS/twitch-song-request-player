@@ -17,6 +17,7 @@ You do not need Node.js if you use the packaged releases.
 - Optional YouTube search requests through the YouTube Data API
 - Desktop dashboard with Overview, Queue, Requests, Library, Playback, Connection, and Settings controls
 - OBS browser-source overlay at `/overlay`
+- Generated OBS local-file loader that can keep retrying the overlay until the desktop app finishes starting
 - Request moderation controls for access level, cooldowns, provider allowlists, blocked users, blocked phrases, and duplicate protection
 - Persistent queue, stopped-track, history, admin activity, and request audit state across restarts
 - Playlist library tools for search, sort, import/export, metadata refresh, and bulk queue/delete actions
@@ -58,13 +59,21 @@ You do not need Node.js if you use the packaged releases.
 
 ## OBS Setup
 
-Add an OBS Browser Source pointing to:
+You can use either setup:
+
+1. Direct URL browser source:
 
 ```text
 http://localhost:3000/overlay
 ```
 
 If you change the local port in the app, use that port instead.
+
+2. Recommended for OBS-first startup:
+
+- Open the desktop app once and copy the `OBS local loader file` path from the Overview tab.
+- In OBS Browser Source, enable `Local file` and select that generated `obs-overlay-loader.html` file.
+- The loader file keeps retrying the real local overlay until the app server is available, so OBS no longer needs a manual refresh when it opens first.
 
 ## Useful Commands
 

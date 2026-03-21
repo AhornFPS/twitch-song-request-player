@@ -1167,6 +1167,8 @@ export class PlayerController {
       track: formatTrack(this.currentTrack)
     });
 
+    await this.playlistRepository.recordTrackPlaybackSuccess?.(this.currentTrack);
+
     for (const listener of this.trackPlaybackListeners) {
       try {
         await listener(this.currentTrack);
@@ -1200,8 +1202,12 @@ export class PlayerController {
       await this.playlistRepository.appendTrack(finishedTrack);
     }
 
-    if (payload.status === "error" && finishedTrack.provider === "youtube") {
-      await this.playlistRepository.removeTrack(finishedTrack);
+    if (payload.status === "error") {
+      await this.playlistRepository.recordTrackPlaybackFailure?.(finishedTrack, {
+        reason: payload.reason || "playback_error",
+        message: payload.message || "",
+        source: "player"
+      });
     }
 
     if (!payload.suppressEnsurePlayback) {

@@ -6,7 +6,8 @@ import { PlayerController } from "./player-controller.js";
 function createController({
   runtimeStateStore = null,
   requestAuditStore = null,
-  requestPolicy = {}
+  requestPolicy = {},
+  playlistRepositoryOverrides = {}
 } = {}) {
   const emittedEvents = [];
   const io = {
@@ -14,7 +15,7 @@ function createController({
       emittedEvents.push({ event, payload });
     }
   };
-  const playlistRepository = {
+  const basePlaylistRepository = {
     hasTrack() {
       return false;
     },
@@ -25,7 +26,15 @@ function createController({
       return true;
     },
     async removeTrack() {
+    },
+    async recordTrackPlaybackFailure() {
+    },
+    async recordTrackPlaybackSuccess() {
     }
+  };
+  const playlistRepository = {
+    ...basePlaylistRepository,
+    ...playlistRepositoryOverrides
   };
 
   return {
@@ -125,6 +134,65 @@ test("duplicate requests are ignored when the same track is already queued", asy
   assert.equal(duplicateResult.alreadyQueued, true);
   assert.equal(duplicateResult.duplicateType, "queue");
   assert.equal(controller.getPublicState().queue.length, 1);
+});
+
+test("playback events update saved-track health hooks", async () => {
+  const healthEvents = [];
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      hasTrack() {
+        return true;
+      },
+      async recordTrackPlaybackSuccess(track) {
+        healthEvents.push({
+          type: "success",
+          key: track.key
+        });
+      },
+      async recordTrackPlaybackFailure(track, details) {
+        healthEvents.push({
+          type: "failure",
+          key: track.key,
+          reason: details.reason
+        });
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/health-check",
+    title: "Health Check",
+    key: "youtube:health-check",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  const currentTrackId = controller.getCurrentTrack()?.id;
+  await controller.handlePlayerEvent({
+    trackId: currentTrackId,
+    status: "playing"
+  });
+  await controller.handlePlayerEvent({
+    trackId: currentTrackId,
+    status: "error",
+    reason: "youtube_startup_timeout"
+  });
+
+  assert.deepEqual(healthEvents, [
+    {
+      type: "success",
+      key: "youtube:health-check"
+    },
+    {
+      type: "failure",
+      key: "youtube:health-check",
+      reason: "youtube_startup_timeout"
+    }
+  ]);
 });
 
 test("pause toggle updates controller state and emits a player pause event", async () => {

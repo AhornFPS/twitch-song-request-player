@@ -158,3 +158,60 @@ test("playlist repository can edit titles, refresh metadata, and export selected
   assert.match(exportedCsv, /Club Mix/);
   assert.doesNotMatch(exportedCsv, /Refreshed Title/);
 });
+
+test("playlist repository tracks flagged failures and clears them after a successful refresh", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
+  const playlistPath = path.join(runtimeDir, "playlist.csv");
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    playlistPath,
+    [
+      "Link,Title",
+      "https://youtu.be/dQw4w9WgXcQ,Review Me",
+      "https://soundcloud.com/artist/track,Club Mix"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const repository = new PlaylistRepository(playlistPath, {
+    youtubeApiKey: "api-key",
+    youtubeMetadataResolver: async () => ({
+      title: "Recovered Title"
+    })
+  });
+  await repository.init();
+
+  await repository.recordTrackPlaybackFailure({
+    key: "youtube:dQw4w9WgXcQ"
+  }, {
+    reason: "youtube_startup_timeout",
+    message: "The embed never started."
+  });
+  await repository.recordTrackPlaybackFailure({
+    key: "youtube:dQw4w9WgXcQ"
+  }, {
+    reason: "youtube_startup_timeout",
+    message: "The embed never started again."
+  });
+
+  const reviewBeforeRefresh = repository.listReviewTracks();
+  assert.equal(reviewBeforeRefresh.summary.flaggedCount, 1);
+  assert.equal(reviewBeforeRefresh.items[0].key, "youtube:dQw4w9WgXcQ");
+  assert.equal(reviewBeforeRefresh.items[0].health.failureCount, 2);
+  assert.equal(reviewBeforeRefresh.items[0].health.consecutiveFailureCount, 2);
+  const flaggedTrack = repository.listTracks().items.find((item) => item.key === "youtube:dQw4w9WgXcQ");
+  assert.equal(flaggedTrack?.health.flagged, true);
+
+  const refreshedTrack = await repository.refreshTrackMetadataByKey("youtube:dQw4w9WgXcQ");
+  assert.equal(refreshedTrack?.title, "Recovered Title");
+  assert.equal(refreshedTrack?.health.flagged, false);
+  assert.equal(refreshedTrack?.health.failureCount, 2);
+  assert.equal(repository.listReviewTracks().summary.flaggedCount, 0);
+});

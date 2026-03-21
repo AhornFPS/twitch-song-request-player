@@ -451,6 +451,7 @@ export class ConfigStore {
     this.settingsPath = path.join(this.runtimeDir, "settings.json");
     this.runtimeEnvPath = path.join(this.runtimeDir, ".env");
     this.playlistPath = path.join(this.runtimeDir, "playlist.csv");
+    this.playlistHealthPath = path.join(this.runtimeDir, "playlist-health.json");
     this.runtimeStatePath = path.join(this.runtimeDir, "queue-state.json");
     this.requestAuditPath = path.join(this.runtimeDir, "request-log.json");
     this.bundledConfigPath = path.join(this.rootDir, "build", "bundled-config.json");
@@ -513,6 +514,7 @@ export class ConfigStore {
       runtimeDir: this.runtimeDir,
       publicDir: this.publicDir,
       playlistPath: this.playlistPath,
+      playlistHealthPath: this.playlistHealthPath,
       runtimeStatePath: this.runtimeStatePath,
       requestAuditPath: this.requestAuditPath,
       port: settings.port,
@@ -532,6 +534,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
     runtimeDir: runtimeConfig.runtimeDir,
     publicDir: runtimeConfig.publicDir,
     playlistPath: runtimeConfig.playlistPath,
+    playlistHealthPath: runtimeConfig.playlistHealthPath,
     runtimeStatePath: runtimeConfig.runtimeStatePath,
     requestAuditPath: runtimeConfig.requestAuditPath,
     port: runtimeConfig.settings.port,

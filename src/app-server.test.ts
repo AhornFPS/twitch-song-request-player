@@ -165,6 +165,66 @@ test("app server closes even when a client keeps a connection open", async (t) =
   assert.equal(lingeringSocket.destroyed, true);
 });
 
+test("app server exposes and writes an OBS local loader file", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const settingsResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl));
+  assert.equal(settingsResponse.ok, true);
+
+  const settingsPayload = await settingsResponse.json();
+  const overlayLoaderFilePath = settingsPayload.runtime.overlayLoaderFilePath;
+  assert.equal(
+    overlayLoaderFilePath,
+    path.join(runtimeDir, "obs-overlay-loader.html")
+  );
+
+  const overlayLoaderHtml = await fs.readFile(overlayLoaderFilePath, "utf8");
+  assert.match(overlayLoaderHtml, /Twitch Song Request Player OBS Loader/);
+  assert.equal(overlayLoaderHtml.includes(appServer.urls.overlayUrl), true);
+  assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
+});
+
 test("partial settings save updates only the theme without touching other fields", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
@@ -1201,4 +1261,85 @@ test("diagnostics export returns the current runtime snapshot as downloadable JS
   assert.equal(Array.isArray(payload.requestAudit.events), true);
   assert.equal(Array.isArray(payload.requestAudit.requesterStats), true);
   assert.equal(payload.runtime.runtime.activePort, port);
+});
+
+test("playlist review API returns flagged library tracks from the sidecar health file", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port, twitchChannel: "streamer" }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    [
+      "Link,Title",
+      "https://youtu.be/dQw4w9WgXcQ,Rick Roll",
+      "https://soundcloud.com/artist/track,Club Mix"
+    ].join("\n"),
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist-health.json"),
+    `${JSON.stringify({
+      items: {
+        "youtube:dQw4w9WgXcQ": {
+          failureCount: 3,
+          consecutiveFailureCount: 2,
+          lastFailureAt: "2026-03-20T05:00:00.000Z",
+          lastFailureReason: "youtube_startup_timeout",
+          lastFailureMessage: "The embed never started.",
+          lastFailureSource: "player",
+          lastSuccessAt: null,
+          lastRecoveredAt: null
+        }
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const reviewResponse = await fetch(new URL("/api/playlist/review", appServer.urls.dashboardUrl));
+  assert.equal(reviewResponse.ok, true);
+  const reviewPayload = await reviewResponse.json();
+  assert.equal(reviewPayload.summary.flaggedCount, 1);
+  assert.equal(reviewPayload.items[0].key, "youtube:dQw4w9WgXcQ");
+  assert.equal(reviewPayload.items[0].health.consecutiveFailureCount, 2);
+
+  const playlistResponse = await fetch(new URL("/api/playlist/tracks", appServer.urls.dashboardUrl));
+  assert.equal(playlistResponse.ok, true);
+  const playlistPayload = await playlistResponse.json();
+  const flaggedTrack = playlistPayload.items.find((item) => item.key === "youtube:dQw4w9WgXcQ");
+  assert.equal(flaggedTrack.health.flagged, true);
+  assert.equal(flaggedTrack.health.failureCount, 3);
 });
