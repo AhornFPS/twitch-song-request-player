@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.5.2 - 2026-03-21
+
 - Removed the extra provider hint text below the Requests tab allowed-provider toggles.
 - Changed legacy YouTube playlist entries to upgrade to `uploader - title` when their metadata is refreshed for playback.
 
