@@ -16,6 +16,23 @@ function normalizePlaylistTitle(value) {
   return "";
 }
 
+function hasArtistTitleSeparator(title) {
+  return /\s[-–—]\s/.test(title);
+}
+
+function shouldRefreshYoutubePlaylistTitle(row, { missingOnly = false } = {}) {
+  if (row?.Provider !== "youtube") {
+    return false;
+  }
+
+  const normalizedTitle = normalizePlaylistTitle(row.Title);
+  if (!normalizedTitle) {
+    return true;
+  }
+
+  return missingOnly ? false : !hasArtistTitleSeparator(normalizedTitle);
+}
+
 function buildPlaylistRow(link, title) {
   const normalizedLink = typeof link === "string" ? link.trim() : "";
   const provider = detectPlayableProvider(normalizedLink);
@@ -130,7 +147,7 @@ export class PlaylistRepository {
     }
 
     const row = this.rows[Math.floor(Math.random() * this.rows.length)];
-    await this.refreshMissingYoutubeTitle(row);
+    await this.refreshYoutubeTitleIfNeeded(row, { missingOnly: true });
 
     logInfo("Selected fallback playlist track", {
       provider: row.Provider,
@@ -164,13 +181,13 @@ export class PlaylistRepository {
     };
   }
 
-  async refreshMissingYoutubeTitle(row) {
-    if (row.Provider !== "youtube" || row.Title) {
+  async refreshYoutubeTitleIfNeeded(row, options = {}) {
+    if (!shouldRefreshYoutubePlaylistTitle(row, options)) {
       return;
     }
 
     if (!this.youtubeApiKey) {
-      logWarn("Playlist track is missing a title and cannot be refreshed without a YouTube API key", {
+      logWarn("Playlist YouTube title needs metadata refresh but no YouTube API key is configured", {
         url: row.Link
       });
       return;
@@ -186,12 +203,12 @@ export class PlaylistRepository {
 
       row.Title = refreshedTitle;
       await this.persist();
-      logInfo("Refreshed missing YouTube playlist title", {
+      logInfo("Refreshed YouTube playlist title", {
         title: row.Title,
         url: row.Link
       });
     } catch (error) {
-      logWarn("Failed to refresh missing YouTube playlist title", {
+      logWarn("Failed to refresh YouTube playlist title", {
         url: row.Link,
         message: error?.message ?? String(error)
       });
@@ -348,6 +365,8 @@ export class PlaylistRepository {
     if (!row) {
       return null;
     }
+
+    await this.refreshYoutubeTitleIfNeeded(row);
 
     if (row.Provider === "suno") {
       const resolvedTrack = await this.metadataResolver(row.Link);

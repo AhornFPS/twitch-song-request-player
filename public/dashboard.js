@@ -377,7 +377,6 @@ function renderDashboard() {
                   <input id="requests-provider-suno" type="checkbox" />
                   <span>Suno</span>
                 </label>
-                <span class="field__hint">These toggles control which link sources chat can request. Spotify links still resolve to playable YouTube tracks, while Suno links play directly and can be blocked separately here.</span>
               </fieldset>
               <label class="field">
                 <span class="field__label">Blocked usernames</span>

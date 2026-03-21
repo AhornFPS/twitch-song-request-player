@@ -1,16 +1,18 @@
 {
   "queue": [
     {
-      "id": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+      "id": "81042b8f-4272-42e6-9991-eec37c2be2e9",
       "provider": "youtube",
-      "url": "https://www.youtube.com/watch?v=L0BjHPapWLM",
-      "title": "Radio",
-      "key": "youtube:L0BjHPapWLM",
+      "url": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+      "title": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)",
+      "key": "youtube:9hGcJA8fXvU",
       "origin": "queue",
-      "artworkUrl": "https://i.ytimg.com/vi/L0BjHPapWLM/maxresdefault.jpg",
+      "artworkUrl": "https://i.ytimg.com/vi/9hGcJA8fXvU/maxresdefault.jpg",
+      "audioUrl": "",
+      "durationSeconds": 287,
       "requestedBy": {
-        "username": "hollyhopdrive42",
-        "displayName": "HollyHopDrive42"
+        "username": "oldmanrune",
+        "displayName": "OldManRune"
       }
     }
   ],
@@ -25,6 +27,8 @@
         "key": "youtube:yU3HSdEF-os",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",
@@ -39,6 +43,8 @@
         "key": "youtube:J5B4LrSlb1s",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",
@@ -53,6 +59,8 @@
         "key": "youtube:mFxr2_CRab4",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",
@@ -67,6 +75,8 @@
         "key": "youtube:iMHVfCyElW0",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",
@@ -81,6 +91,8 @@
         "key": "youtube:Vz5H8bVSDmc",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",
@@ -95,6 +107,8 @@
         "key": "youtube:Jm3gtx4PKT4",
         "origin": "playlist",
         "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
         "requestedBy": null
       },
       "status": "ended",

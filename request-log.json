@@ -1,6 +1,73 @@
 {
   "events": [
     {
+      "id": "70fdba73-ab94-4246-8522-18cf8e306d07",
+      "createdAt": "2026-03-21T20:07:39.537Z",
+      "source": "twitch_chat",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "oldmanrune",
+        "displayName": "OldManRune"
+      },
+      "track": {
+        "id": "81042b8f-4272-42e6-9991-eec37c2be2e9",
+        "provider": "youtube",
+        "url": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+        "title": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)",
+        "key": "youtube:9hGcJA8fXvU",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/9hGcJA8fXvU/maxresdefault.jpg",
+        "durationSeconds": 287,
+        "isLive": false,
+        "sourceName": "Echo & the Bunnymen",
+        "sourceChannelId": "UCC4vxWpMSKdJlUBC9Lw93Tg",
+        "sourceUrl": "https://www.youtube.com/channel/UCC4vxWpMSKdJlUBC9Lw93Tg"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "oldmanrune",
+          "displayName": "OldManRune"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-21T20:07:39.537Z",
+        "lastAcceptedAt": "2026-03-21T20:07:39.537Z",
+        "lastOutcome": "accepted",
+        "lastSource": "twitch_chat",
+        "lastInput": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+        "lastTrackKey": "youtube:9hGcJA8fXvU",
+        "lastTrackTitle": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "channel": "ahorn",
+          "command": "song_request",
+          "roleState": {
+            "isBroadcaster": false,
+            "isModerator": true,
+            "isVip": false,
+            "isSubscriber": false
+          }
+        }
+      }
+    },
+    {
       "id": "2606a290-195f-48f5-bc5d-f2ec033409f1",
       "createdAt": "2026-03-21T18:43:01.505Z",
       "source": "twitch_chat",
@@ -87,6 +154,25 @@
       "lastInput": "https://www.youtube.com/watch?v=L0BjHPapWLM",
       "lastTrackKey": "youtube:L0BjHPapWLM",
       "lastTrackTitle": "Radio"
+    },
+    "oldmanrune": {
+      "requester": {
+        "username": "oldmanrune",
+        "displayName": "OldManRune"
+      },
+      "totalRequests": 1,
+      "acceptedRequests": 1,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 1,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-03-21T20:07:39.537Z",
+      "lastAcceptedAt": "2026-03-21T20:07:39.537Z",
+      "lastOutcome": "accepted",
+      "lastSource": "twitch_chat",
+      "lastInput": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+      "lastTrackKey": "youtube:9hGcJA8fXvU",
+      "lastTrackTitle": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)"
     }
   }
 }

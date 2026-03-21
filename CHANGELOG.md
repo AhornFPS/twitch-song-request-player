@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Removed the extra provider hint text below the Requests tab allowed-provider toggles.
+- Changed legacy YouTube playlist entries to upgrade to `uploader - title` when their metadata is refreshed for playback.
+
 ## 2.5.1 - 2026-03-21
 
 - Changed Suno song requests to play directly from Suno instead of resolving to a YouTube match.
@@ -11,7 +14,7 @@ This file is maintained between releases and should be updated as work is comple
 ## 2.5.0 - 2026-03-21
 
 - Added Spotify and Suno link requests by matching those shared tracks to playable YouTube results before they enter the queue, with separate request-source toggles for each provider.
-- Changed YouTube song naming so uploads without an `artist - title` pattern fall back to `uploader - title`.
+- Changed YouTube song naming so uploads without an `artist - title` pattern fall back to `uploader - title`, including older playlist entries when their metadata is refreshed for playback.
 
 ## 2.4.0 - 2026-03-21
 

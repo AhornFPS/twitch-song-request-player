@@ -32,7 +32,7 @@ test("playlist fallback refreshes undefined youtube titles from the API and pers
       assert.equal(apiKey, "api-key");
 
       return {
-        title: "Recovered Track Title"
+        title: "Recovered Channel - Recovered Track Title"
       };
     }
   });
@@ -43,11 +43,53 @@ test("playlist fallback refreshes undefined youtube titles from the API and pers
   const secondTrack = await repository.getRandomTrack();
   const persistedPlaylist = await fs.readFile(playlistPath, "utf8");
 
-  assert.equal(firstTrack?.title, "Recovered Track Title");
-  assert.equal(secondTrack?.title, "Recovered Track Title");
+  assert.equal(firstTrack?.title, "Recovered Channel - Recovered Track Title");
+  assert.equal(secondTrack?.title, "Recovered Channel - Recovered Track Title");
   assert.equal(refreshCalls, 1);
-  assert.match(persistedPlaylist, /Recovered Track Title/);
+  assert.match(persistedPlaylist, /Recovered Channel - Recovered Track Title/);
   assert.doesNotMatch(persistedPlaylist, /,undefined/);
+});
+
+test("playlist playback upgrades stored youtube titles without an artist separator", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
+  const playlistPath = path.join(runtimeDir, "playlist.csv");
+  let refreshCalls = 0;
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    playlistPath,
+    "Link,Title\nhttps://youtu.be/radio123,Radio\n",
+    "utf8"
+  );
+
+  const repository = new PlaylistRepository(playlistPath, {
+    youtubeApiKey: "api-key",
+    youtubeMetadataResolver: async (url, apiKey) => {
+      refreshCalls += 1;
+      assert.equal(url, "https://youtu.be/radio123");
+      assert.equal(apiKey, "api-key");
+
+      return {
+        title: "freak slug - Radio"
+      };
+    }
+  });
+
+  await repository.init();
+
+  const track = await repository.getPlayableTrackForKey("youtube:radio123");
+  const persistedPlaylist = await fs.readFile(playlistPath, "utf8");
+
+  assert.equal(track?.title, "freak slug - Radio");
+  assert.equal(refreshCalls, 1);
+  assert.match(persistedPlaylist, /freak slug - Radio/);
+  assert.doesNotMatch(persistedPlaylist, /,Radio/);
 });
 
 test("playlist repository lists, imports, exports, and deletes playlist rows", async (t) => {
