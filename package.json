@@ -1,6 +1,6 @@
 {
   "name": "twitch-song-request-player",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "private": true,
   "main": "build/electron/main.cjs",
   "type": "module",

@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.4.0 - 2026-03-21
+
 - Added Library health tracking with a review queue for saved tracks that repeatedly fail playback or metadata refreshes.
 - Added a generated OBS local loader file that keeps retrying the overlay until the desktop app is up, so OBS can start before the app without needing a manual browser-source refresh.
 
