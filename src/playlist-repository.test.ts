@@ -159,6 +159,46 @@ test("playlist repository can edit titles, refresh metadata, and export selected
   assert.doesNotMatch(exportedCsv, /Refreshed Title/);
 });
 
+test("playlist repository resolves saved Suno tracks into playable entries", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
+  const playlistPath = path.join(runtimeDir, "playlist.csv");
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    playlistPath,
+    [
+      "Link,Title",
+      "https://suno.com/song/suno123,Stored Suno Title"
+    ].join("\n"),
+    "utf8"
+  );
+
+  const repository = new PlaylistRepository(playlistPath, {
+    metadataResolver: async (url) => ({
+      provider: "suno",
+      url,
+      title: "Resolved Suno Title",
+      key: "suno:suno123",
+      artworkUrl: "https://cdn2.suno.ai/suno123.jpeg",
+      audioUrl: "https://cdn1.suno.ai/suno123.mp3"
+    })
+  });
+  await repository.init();
+
+  const track = await repository.getPlayableTrackForKey("suno:suno123");
+
+  assert.equal(track?.provider, "suno");
+  assert.equal(track?.title, "Resolved Suno Title");
+  assert.equal(track?.audioUrl, "https://cdn1.suno.ai/suno123.mp3");
+  assert.equal(track?.origin, "playlist");
+});
+
 test("playlist repository tracks flagged failures and clears them after a successful refresh", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
   const playlistPath = path.join(runtimeDir, "playlist.csv");

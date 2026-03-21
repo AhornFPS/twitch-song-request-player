@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Changed Suno song requests to play directly from Suno instead of resolving to a YouTube match.
+
 ## 2.5.0 - 2026-03-21
 
 - Added Spotify and Suno link requests by matching those shared tracks to playable YouTube results before they enter the queue, with separate request-source toggles for each provider.

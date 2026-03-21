@@ -226,7 +226,7 @@ test("spotify track links resolve into playable YouTube tracks using Spotify met
   assert.equal(track.requestedFromName, "Carly Rae Jepsen");
 });
 
-test("suno song links resolve into playable YouTube tracks using Suno metadata", async (t) => {
+test("suno song links resolve into playable Suno tracks using Suno metadata", async (t) => {
   const originalFetch = global.fetch;
   const requestedUrls = [];
 
@@ -246,64 +246,14 @@ test("suno song links resolve into playable YouTube tracks using Suno metadata",
             '<meta property="og:image" content="https://cdn2.suno.ai/perdu.jpeg" />',
             '<meta name="description" content="perdu by Khassy (@khassy973). Listen and make your own on Suno." />',
             "</head><body>",
-            '<script>self.__next_f.push([1,"2f:[{\\"duration\\":182.68}]"])</script>',
+            '<script>self.__next_f.push([1,"2f:[{\\"duration\\":182.68,\\"audio_url\\":\\"https://cdn1.suno.ai/suno123.mp3\\"}]"])</script>',
             "</body></html>"
           ].join("");
         }
       };
     }
 
-    if (requestedUrl.pathname === "/youtube/v3/search") {
-      return {
-        ok: true,
-        async json() {
-          return {
-            items: [
-              {
-                id: {
-                  videoId: "suno-result"
-                },
-                snippet: {
-                  title: "perdu",
-                  thumbnails: {
-                    high: {
-                      url: "https://img.youtube.test/suno-search.jpg"
-                    }
-                  }
-                }
-              }
-            ]
-          };
-        }
-      };
-    }
-
-    return {
-      ok: true,
-      async json() {
-        return {
-          items: [
-            {
-              id: "suno-result",
-              snippet: {
-                title: "perdu",
-                channelId: "UCsuno",
-                channelTitle: "Khassy",
-                liveBroadcastContent: "none",
-                thumbnails: {
-                  high: {
-                    url: "https://img.youtube.test/suno-result.jpg"
-                  }
-                }
-              },
-              contentDetails: {
-                duration: "PT3M2S"
-              }
-            }
-          ]
-        };
-      }
-    };
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
   };
 
   t.after(() => {
@@ -312,14 +262,51 @@ test("suno song links resolve into playable YouTube tracks using Suno metadata",
 
   const track = await resolveSongRequest("https://suno.com/song/suno123", "api-key");
 
-  assert.equal(requestedUrls[1]?.pathname, "/youtube/v3/search");
-  assert.equal(requestedUrls[1]?.searchParams.get("q"), "Khassy - perdu");
-  assert.equal(track.provider, "youtube");
-  assert.equal(track.key, "youtube:suno-result");
-  assert.equal(track.requestedFromProvider, "suno");
-  assert.equal(track.requestedFromUrl, "https://suno.com/song/suno123");
-  assert.equal(track.requestedFromTitle, "perdu");
-  assert.equal(track.requestedFromName, "Khassy");
+  assert.equal(requestedUrls.length, 1);
+  assert.equal(track.provider, "suno");
+  assert.equal(track.key, "suno:suno123");
+  assert.equal(track.url, "https://suno.com/song/suno123");
+  assert.equal(track.title, "perdu");
+  assert.equal(track.sourceName, "Khassy");
+  assert.equal(track.durationSeconds, 183);
+  assert.equal(track.audioUrl, "https://cdn1.suno.ai/suno123.mp3");
+});
+
+test("suno song links do not require YouTube API access to become playable requests", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.origin === "https://suno.com") {
+      return {
+        ok: true,
+        url: requestedUrl.toString(),
+        async text() {
+          return [
+            "<html><head>",
+            '<link rel="canonical" href="https://suno.com/song/suno456" />',
+            '<meta property="og:title" content="Midnight Echo" />',
+            '<meta property="og:image" content="https://cdn2.suno.ai/midnight.jpeg" />',
+            '<meta name="description" content="Midnight Echo by ExampleArtist (@exampleartist). Listen and make your own on Suno." />',
+            '</head><body><script>self.__next_f.push([1,"2f:[{\\"audio_url\\":\\"https://cdn1.suno.ai/suno456.mp3\\",\\"duration\\":201}]"])</script></body></html>'
+          ].join("");
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveSongRequest("https://suno.com/song/suno456", "");
+
+  assert.equal(track.provider, "suno");
+  assert.equal(track.audioUrl, "https://cdn1.suno.ai/suno456.mp3");
+  assert.equal(track.durationSeconds, 201);
 });
 
 test("spotify links require YouTube API access to become playable requests", async (t) => {

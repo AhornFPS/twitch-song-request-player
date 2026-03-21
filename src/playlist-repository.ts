@@ -138,6 +138,21 @@ export class PlaylistRepository {
       url: row.Link
     });
 
+    if (row.Provider === "suno") {
+      const resolvedTrack = await this.metadataResolver(row.Link);
+
+      return {
+        ...resolvedTrack,
+        provider: row.Provider,
+        url: row.Link,
+        title: resolvedTrack?.title || row.Title || row.Link,
+        key: row.Key,
+        origin: "playlist",
+        requestedBy: null,
+        artworkUrl: resolvedTrack?.artworkUrl ?? ""
+      };
+    }
+
     return {
       provider: row.Provider,
       url: row.Link,
@@ -325,6 +340,31 @@ export class PlaylistRepository {
       requestedBy: null,
       artworkUrl: ""
     };
+  }
+
+  async getPlayableTrackForKey(trackKey) {
+    const row = this.findTrackByKey(trackKey);
+
+    if (!row) {
+      return null;
+    }
+
+    if (row.Provider === "suno") {
+      const resolvedTrack = await this.metadataResolver(row.Link);
+
+      return {
+        ...resolvedTrack,
+        provider: row.Provider,
+        url: row.Link,
+        title: resolvedTrack?.title || row.Title || row.Link,
+        key: row.Key,
+        origin: "playlist",
+        requestedBy: null,
+        artworkUrl: resolvedTrack?.artworkUrl ?? ""
+      };
+    }
+
+    return this.getTrackForKey(trackKey);
   }
 
   async recordTrackPlaybackFailure(track, {

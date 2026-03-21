@@ -390,7 +390,7 @@ function renderDashboard() {
                   <input id="requests-provider-suno" type="checkbox" />
                   <span>Suno</span>
                 </label>
-                <span class="field__hint">These toggles control which link sources chat can request. Spotify and Suno still resolve to playable YouTube tracks, but they can be blocked separately here.</span>
+                <span class="field__hint">These toggles control which link sources chat can request. Spotify links still resolve to playable YouTube tracks, while Suno links play directly and can be blocked separately here.</span>
               </fieldset>
               <label class="field">
                 <span class="field__label">Blocked usernames</span>
@@ -1961,6 +1961,18 @@ function formatLibraryHealthReason(reason) {
 
   if (reason === "invalid_youtube_url") {
     return "Invalid YouTube URL";
+  }
+
+  if (reason === "suno_audio_unavailable") {
+    return "Suno audio playback is unavailable";
+  }
+
+  if (reason === "suno_missing_audio_url") {
+    return "Suno track is missing a playable audio stream";
+  }
+
+  if (reason === "suno_audio_error") {
+    return "Suno audio playback failed";
   }
 
   return reason

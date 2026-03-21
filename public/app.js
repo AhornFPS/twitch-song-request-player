@@ -19,6 +19,7 @@ function sendClientLog(level, message, details = null) {
 const socket = typeof window.io === "function" ? window.io() : null;
 const youtubeContainer = document.getElementById("youtube-player");
 let soundCloudFrame = document.getElementById("soundcloud-player");
+const sunoAudio = document.getElementById("suno-player");
 const currentTitle = document.getElementById("current-title");
 const currentTitleMarquee = document.getElementById("current-title-marquee");
 const currentTitleText = document.getElementById("current-title-text");
@@ -162,6 +163,11 @@ function applyStartupTimeoutSetting(value) {
   const timeoutSeconds = normalizeStartupTimeoutSeconds(value);
   startupTimeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1e3 : 0;
 }
+function isSunoAudioPlayer(element) {
+  return Boolean(
+    element && typeof element === "object" && typeof element.play === "function" && typeof element.pause === "function" && typeof element.load === "function"
+  );
+}
 function applyYouTubeVolume() {
   if (!youtubePlayer) {
     return;
@@ -193,9 +199,24 @@ function applySoundCloudVolume() {
     });
   }
 }
+function applySunoVolume() {
+  if (!isSunoAudioPlayer(sunoAudio)) {
+    return;
+  }
+  try {
+    sunoAudio.volume = desiredPlayerVolume / 100;
+    sunoAudio.muted = desiredPlayerVolume <= 0;
+  } catch (error) {
+    sendClientLog("warn", "Failed to apply Suno volume", {
+      message: error?.message ?? String(error),
+      volume: desiredPlayerVolume
+    });
+  }
+}
 function applyPlayerVolume() {
   applyYouTubeVolume();
   applySoundCloudVolume();
+  applySunoVolume();
 }
 function setPlayerVolume(nextVolume) {
   desiredPlayerVolume = normalizePlayerVolume(nextVolume);
@@ -709,6 +730,30 @@ function hardResetSoundCloudPlayer() {
 function getYouTubeThumbnail(videoId) {
   return `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 }
+function getProviderLabel(provider) {
+  if (provider === "youtube") {
+    return "YouTube";
+  }
+  if (provider === "soundcloud") {
+    return "SoundCloud";
+  }
+  if (provider === "suno") {
+    return "Suno";
+  }
+  return provider || "Unknown";
+}
+function getProviderFallbackText(provider) {
+  if (provider === "youtube") {
+    return "YT";
+  }
+  if (provider === "soundcloud") {
+    return "SC";
+  }
+  if (provider === "suno") {
+    return "SU";
+  }
+  return "SR";
+}
 function setArtwork(url, fallbackText = "SR") {
   if (url) {
     artworkImage.src = url;
@@ -744,7 +789,7 @@ function describeTrackMeta(track) {
     return socketConnected ? "Queue is empty. Fallback playlist will play automatically." : "Connecting to the player service...";
   }
   if (track.origin === "playlist") {
-    return track.provider === "youtube" ? "Playlist fallback from YouTube" : "Playlist fallback from SoundCloud";
+    return `Playlist fallback from ${getProviderLabel(track.provider)}`;
   }
   const requester = track.requestedBy?.displayName || track.requestedBy?.username || "unknown";
   return `Requested by ${requester}`;
@@ -765,12 +810,12 @@ function applyStateToUi(state) {
     scheduleDelayedTitleMarqueeUpdate(320);
   }
   setMetaText(describeTrackMeta(currentTrack));
-  providerBadge.textContent = currentTrack ? currentTrack.provider === "youtube" ? "YouTube" : "SoundCloud" : "Idle";
+  providerBadge.textContent = currentTrack ? getProviderLabel(currentTrack.provider) : "Idle";
   saveBadge.textContent = currentTrack ? currentTrack.isSaved ? "Saved" : "Unsaved" : "Unsaved";
   saveBadge.className = currentTrack?.isSaved ? "save-badge save-badge--saved" : "save-badge save-badge--idle";
   setArtwork(
     resolveArtwork(currentTrack),
-    currentTrack ? currentTrack.provider === "youtube" ? "YT" : "SC" : "SR"
+    currentTrack ? getProviderFallbackText(currentTrack.provider) : "SR"
   );
   queueCount.textContent = `${queue.length} queued`;
   renderQueue(queue);
@@ -1012,6 +1057,22 @@ function resetPlayers() {
     soundCloudWidget.unbind(window.SC.Widget.Events.READY);
   }
   soundCloudWidget = null;
+  if (isSunoAudioPlayer(sunoAudio)) {
+    sunoAudio.onloadedmetadata = null;
+    sunoAudio.oncanplay = null;
+    sunoAudio.onplay = null;
+    sunoAudio.onplaying = null;
+    sunoAudio.ontimeupdate = null;
+    sunoAudio.onpause = null;
+    sunoAudio.onended = null;
+    sunoAudio.onerror = null;
+    try {
+      sunoAudio.pause();
+      sunoAudio.removeAttribute("src");
+      sunoAudio.load();
+    } catch {
+    }
+  }
 }
 function extractYouTubeVideoId(url) {
   const parsed = new URL(url);
@@ -1136,6 +1197,93 @@ function forceSoundCloudPlayback(trackId, attempt = 0) {
     });
   }
 }
+function loadSunoTrack(track) {
+  if (!isSunoAudioPlayer(sunoAudio)) {
+    reportClientError("Suno audio playback is not available in this browser source.");
+    emitStatus("error", { reason: "suno_audio_unavailable" });
+    return;
+  }
+  const audioUrl = typeof track.audioUrl === "string" ? track.audioUrl.trim() : "";
+  if (!audioUrl) {
+    reportClientError("This Suno track is missing a playable audio stream.");
+    emitStatus("error", { reason: "suno_missing_audio_url" });
+    return;
+  }
+  sendClientLog("info", "Loading Suno track", {
+    id: track.id,
+    title: track.title,
+    url: track.url,
+    audioUrl
+  });
+  resetPlayers();
+  activeTrack = track;
+  currentTrackId = track.id;
+  applySunoVolume();
+  sunoAudio.src = audioUrl;
+  sunoAudio.preload = "metadata";
+  sunoAudio.onloadedmetadata = () => {
+    const durationSeconds = Number.isFinite(sunoAudio.duration) && sunoAudio.duration > 0 ? sunoAudio.duration : Number.isFinite(track.durationSeconds) ? track.durationSeconds : 0;
+    updateTimeline(0, durationSeconds);
+  };
+  sunoAudio.oncanplay = () => {
+    if (desiredPausedState) {
+      try {
+        sunoAudio.pause();
+      } catch {
+      }
+      return;
+    }
+    const playPromise = sunoAudio.play();
+    if (playPromise?.catch) {
+      playPromise.catch((error) => {
+        sendClientLog("error", "Failed starting Suno playback", {
+          id: track.id,
+          title: track.title,
+          message: error?.message ?? String(error)
+        });
+        reportClientError("This Suno track could not be started in the embedded player.");
+        emitStatus("error", { reason: "suno_audio_error" });
+      });
+    }
+  };
+  sunoAudio.onplaying = () => {
+    emitStatus("playing");
+  };
+  sunoAudio.ontimeupdate = () => {
+    const durationSeconds = Number.isFinite(sunoAudio.duration) && sunoAudio.duration > 0 ? sunoAudio.duration : Number.isFinite(track.durationSeconds) ? track.durationSeconds : currentDurationSeconds;
+    updateTimeline(sunoAudio.currentTime, durationSeconds);
+    if (sunoAudio.currentTime > 0) {
+      emitStatus("playing");
+    }
+  };
+  sunoAudio.onended = () => {
+    sendClientLog("info", "Suno track finished", {
+      id: track.id,
+      title: track.title
+    });
+    emitStatus("ended");
+  };
+  sunoAudio.onerror = () => {
+    sendClientLog("error", "Suno audio element error", {
+      id: track.id,
+      title: track.title,
+      audioUrl
+    });
+    reportClientError("This Suno track could not be played in the embedded player.");
+    emitStatus("error", { reason: "suno_audio_error" });
+  };
+  try {
+    sunoAudio.load();
+  } catch (error) {
+    sendClientLog("error", "Failed loading Suno audio element", {
+      id: track.id,
+      title: track.title,
+      message: error?.message ?? String(error)
+    });
+    reportClientError("This Suno track could not be loaded in the embedded player.");
+    emitStatus("error", { reason: "suno_audio_error" });
+  }
+}
 function loadYoutubeTrack(track) {
   const videoId = extractYouTubeVideoId(track.url);
   if (!videoId) {
@@ -1200,6 +1348,27 @@ function syncPausedState() {
     } else {
       forceSoundCloudPlayback(activeTrack.id);
     }
+    return;
+  }
+  if (activeTrack.provider === "suno" && isSunoAudioPlayer(sunoAudio)) {
+    if (desiredPausedState) {
+      try {
+        sunoAudio.pause();
+      } catch {
+      }
+      stopPlaybackTimer();
+    } else {
+      const playPromise = sunoAudio.play();
+      if (playPromise?.catch) {
+        playPromise.catch((error) => {
+          sendClientLog("error", "Failed resuming Suno playback", {
+            id: activeTrack.id,
+            title: activeTrack.title,
+            message: error?.message ?? String(error)
+          });
+        });
+      }
+    }
   }
 }
 function loadTrack(track) {
@@ -1245,6 +1414,10 @@ function loadTrack(track) {
   resetTimeline();
   if (track.provider === "soundcloud") {
     loadSoundCloudTrack(track);
+    return;
+  }
+  if (track.provider === "suno") {
+    loadSunoTrack(track);
     return;
   }
   if (track.provider === "youtube") {

@@ -133,6 +133,8 @@ export class PlayerController {
       key: track.key,
       origin: track.origin,
       artworkUrl: track.artworkUrl ?? "",
+      audioUrl: track.audioUrl ?? "",
+      durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
       requestedFromProvider: track.requestedFromProvider ?? "",
       requestedFromUrl: track.requestedFromUrl ?? "",
       requestedFromTitle: track.requestedFromTitle ?? "",

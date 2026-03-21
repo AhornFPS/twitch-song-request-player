@@ -862,7 +862,9 @@ export async function startAppServer({
       let duplicateCount = 0;
 
       for (const trackKey of uniqueTrackKeys) {
-        const track = playlistRepository.getTrackForKey(trackKey);
+        const track = typeof playlistRepository.getPlayableTrackForKey === "function"
+          ? await playlistRepository.getPlayableTrackForKey(trackKey)
+          : playlistRepository.getTrackForKey(trackKey);
         if (!track) {
           continue;
         }

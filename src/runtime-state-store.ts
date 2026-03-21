@@ -18,6 +18,8 @@ function normalizeTrack(track) {
     key: String(track.key),
     origin: String(track.origin),
     artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
+    audioUrl: typeof track.audioUrl === "string" ? track.audioUrl : "",
+    durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
     requestedBy: track.requestedBy && typeof track.requestedBy === "object"
       ? {
           username: typeof track.requestedBy.username === "string" ? track.requestedBy.username : "",

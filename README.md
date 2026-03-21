@@ -1,6 +1,6 @@
 # Twitch Song Request Player
 
-Desktop Twitch song request app for YouTube and SoundCloud playback, with Spotify and Suno link support, an OBS overlay, a local dashboard, persistent queue state, moderation controls, and Windows packaging.
+Desktop Twitch song request app for YouTube, SoundCloud, and Suno playback, with Spotify link support, an OBS overlay, a local dashboard, persistent queue state, moderation controls, and Windows packaging.
 
 ## Download
 
@@ -14,7 +14,8 @@ You do not need Node.js if you use the packaged releases.
 ## Features
 
 - Twitch chat requests for YouTube and SoundCloud links
-- Spotify and Suno links that resolve into playable YouTube requests
+- Spotify links that resolve into playable YouTube requests
+- Direct Suno song links that play from Suno
 - Separate request-source toggles for YouTube, SoundCloud, Spotify, and Suno
 - Optional YouTube search requests through the YouTube Data API
 - Desktop dashboard with Overview, Queue, Requests, Library, Playback, Connection, and Settings controls
@@ -49,7 +50,7 @@ You do not need Node.js if you use the packaged releases.
    - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow
    - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression
    - `TWITCH_CLIENT_SECRET`: Optional advanced setting
-   - `YOUTUBE_API_KEY`: Required for search requests, Spotify/Suno link matching, and YouTube metadata repair
+   - `YOUTUBE_API_KEY`: Required for search requests, Spotify link matching, and YouTube metadata repair
 
 4. Start the desktop app:
 
@@ -148,7 +149,7 @@ npm run release -- patch --dry-run
 ## Notes
 
 - `playlist.csv` uses `Link,Title` columns.
-- Spotify and Suno requests resolve to playable YouTube tracks, so they require a working `YOUTUBE_API_KEY`.
+- Spotify requests resolve to playable YouTube tracks, so they require a working `YOUTUBE_API_KEY`.
 - Spotify and Suno can be allowed or blocked separately from direct YouTube requests in the Requests tab.
 - The app can use the in-app Twitch device login flow instead of manual bot OAuth entry.
 - Installed builds keep using the existing saved settings, playlist, queue state, and request history after upgrades.
