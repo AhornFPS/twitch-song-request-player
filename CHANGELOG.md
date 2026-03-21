@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.5.1 - 2026-03-21
+
 - Changed Suno song requests to play directly from Suno instead of resolving to a YouTube match.
 
 ## 2.5.0 - 2026-03-21
