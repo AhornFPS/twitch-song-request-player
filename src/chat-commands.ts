@@ -3,7 +3,7 @@ const commandSpecs = [
   {
     id: "song_request",
     label: "Song request",
-    description: "Queue a YouTube or SoundCloud track from chat.",
+    description: "Queue a YouTube, SoundCloud, Spotify, or Suno track from chat.",
     trigger: "!sr",
     aliases: [],
     permission: "everyone",

@@ -4,7 +4,7 @@ import { parse } from "csv-parse/sync";
 import { stringify } from "csv-stringify/sync";
 import { logInfo, logWarn } from "./logger.js";
 import { PlaylistHealthStore } from "./playlist-health-store.js";
-import { detectProvider, getTrackKey, resolveTrackFromUrl, resolveYouTubeTrackFromApi } from "./providers.js";
+import { detectPlayableProvider, getTrackKey, resolveTrackFromUrl, resolveYouTubeTrackFromApi } from "./providers.js";
 
 function normalizePlaylistTitle(value) {
   const title = typeof value === "string" ? value.trim() : "";
@@ -18,7 +18,7 @@ function normalizePlaylistTitle(value) {
 
 function buildPlaylistRow(link, title) {
   const normalizedLink = typeof link === "string" ? link.trim() : "";
-  const provider = detectProvider(normalizedLink);
+  const provider = detectPlayableProvider(normalizedLink);
 
   if (!normalizedLink || !provider) {
     return null;

@@ -14,6 +14,17 @@ const SOUNDCLOUD_HOSTS = new Set([
   "on.soundcloud.com"
 ]);
 
+const SPOTIFY_HOSTS = new Set([
+  "open.spotify.com",
+  "play.spotify.com",
+  "spotify.link"
+]);
+
+const SUNO_HOSTS = new Set([
+  "suno.com",
+  "www.suno.com"
+]);
+
 function normalizeUrl(rawUrl) {
   const parsed = new URL(rawUrl.trim());
   parsed.hash = "";
@@ -29,13 +40,20 @@ function isLikelyUrl(value) {
   }
 }
 
-export function detectProvider(value) {
-  if (!isLikelyUrl(value)) {
+function getNormalizedHostname(rawUrl) {
+  try {
+    return normalizeUrl(rawUrl).hostname.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+export function detectPlayableProvider(value) {
+  const hostname = getNormalizedHostname(value);
+
+  if (!hostname) {
     return null;
   }
-
-  const url = normalizeUrl(value);
-  const hostname = url.hostname.toLowerCase();
 
   if (YOUTUBE_HOSTS.has(hostname)) {
     return "youtube";
@@ -43,6 +61,32 @@ export function detectProvider(value) {
 
   if (SOUNDCLOUD_HOSTS.has(hostname)) {
     return "soundcloud";
+  }
+
+  return null;
+}
+
+export function detectProvider(value) {
+  if (!isLikelyUrl(value)) {
+    return null;
+  }
+
+  const hostname = getNormalizedHostname(value);
+
+  if (YOUTUBE_HOSTS.has(hostname)) {
+    return "youtube";
+  }
+
+  if (SOUNDCLOUD_HOSTS.has(hostname)) {
+    return "soundcloud";
+  }
+
+  if (SPOTIFY_HOSTS.has(hostname)) {
+    return "spotify";
+  }
+
+  if (SUNO_HOSTS.has(hostname)) {
+    return "suno";
   }
 
   return null;
@@ -56,6 +100,31 @@ function isPlayableSoundCloudUrl(rawUrl) {
   }
 
   return url.pathname.split("/").filter(Boolean).length >= 2;
+}
+
+function normalizeSpotifyPathSegments(rawUrl) {
+  const url = normalizeUrl(rawUrl);
+  const pathSegments = url.pathname.split("/").filter(Boolean);
+
+  if (pathSegments[0]?.toLowerCase().startsWith("intl-")) {
+    return pathSegments.slice(1);
+  }
+
+  return pathSegments;
+}
+
+function isPlayableSpotifyUrl(rawUrl) {
+  const pathSegments = normalizeSpotifyPathSegments(rawUrl);
+  return pathSegments[0]?.toLowerCase() === "track" && Boolean(pathSegments[1]);
+}
+
+function isPlayableSunoUrl(rawUrl) {
+  const pathSegments = normalizeUrl(rawUrl).pathname.split("/").filter(Boolean);
+  return (
+    (pathSegments[0]?.toLowerCase() === "song" && Boolean(pathSegments[1])) ||
+    (pathSegments[0]?.toLowerCase() === "s" && Boolean(pathSegments[1])) ||
+    (pathSegments[0]?.toLowerCase() === "embed" && Boolean(pathSegments[1]))
+  );
 }
 
 export function extractYouTubeVideoId(rawUrl) {
@@ -87,6 +156,35 @@ export function extractYouTubeVideoId(rawUrl) {
   return null;
 }
 
+function extractSpotifyTrackId(rawUrl) {
+  try {
+    const pathSegments = normalizeSpotifyPathSegments(rawUrl);
+    if (pathSegments[0]?.toLowerCase() !== "track") {
+      return null;
+    }
+
+    return pathSegments[1] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function extractSunoTrackId(rawUrl) {
+  try {
+    const pathSegments = normalizeUrl(rawUrl).pathname.split("/").filter(Boolean);
+
+    if (
+      (pathSegments[0]?.toLowerCase() === "song" || pathSegments[0]?.toLowerCase() === "s" || pathSegments[0]?.toLowerCase() === "embed") &&
+      pathSegments[1]
+    ) {
+      return pathSegments[1];
+    }
+  } catch {
+  }
+
+  return null;
+}
+
 export function getTrackKey(provider, rawUrl) {
   if (provider === "youtube") {
     const videoId = extractYouTubeVideoId(rawUrl);
@@ -97,6 +195,16 @@ export function getTrackKey(provider, rawUrl) {
     const url = normalizeUrl(rawUrl);
     url.search = "";
     return `soundcloud:${url.toString()}`;
+  }
+
+  if (provider === "spotify") {
+    const trackId = extractSpotifyTrackId(rawUrl);
+    return trackId ? `spotify:${trackId}` : `spotify:${rawUrl.trim()}`;
+  }
+
+  if (provider === "suno") {
+    const trackId = extractSunoTrackId(rawUrl);
+    return trackId ? `suno:${trackId}` : `suno:${rawUrl.trim()}`;
   }
 
   return rawUrl.trim();
@@ -110,6 +218,29 @@ function normalizeTrackTitle(value, fallback) {
   }
 
   return fallback;
+}
+
+function hasArtistTitleSeparator(title) {
+  return /\s[-–—]\s/.test(title);
+}
+
+function buildYouTubeTrackTitle(title, sourceName, fallback) {
+  const normalizedTitle = normalizeTrackTitle(title, fallback);
+  const normalizedSourceName = normalizeTrackTitle(sourceName, "");
+
+  if (!normalizedTitle || !normalizedSourceName) {
+    return normalizedTitle;
+  }
+
+  if (hasArtistTitleSeparator(normalizedTitle)) {
+    return normalizedTitle;
+  }
+
+  if (normalizedTitle.toLowerCase().startsWith(normalizedSourceName.toLowerCase())) {
+    return normalizedTitle;
+  }
+
+  return `${normalizedSourceName} - ${normalizedTitle}`;
 }
 
 function extractYouTubeChannelIdFromUrl(rawUrl) {
@@ -159,6 +290,209 @@ async function fetchJson(url) {
   return response.json();
 }
 
+async function fetchText(url) {
+  const response = await fetch(url);
+
+  if (!response.ok) {
+    throw new Error(`Request failed with status ${response.status}`);
+  }
+
+  return {
+    url: response.url || String(url),
+    text: await response.text()
+  };
+}
+
+function escapeRegex(value) {
+  return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? "")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&quot;", "\"")
+    .replaceAll("&#39;", "'")
+    .replaceAll("&#x27;", "'")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
+}
+
+function extractMetaTagContent(html, name) {
+  if (typeof html !== "string" || !html || !name) {
+    return "";
+  }
+
+  const pattern = new RegExp(
+    `<meta[^>]+(?:property|name)=["']${escapeRegex(name)}["'][^>]+content=["']([^"']+)["'][^>]*>`,
+    "i"
+  );
+  const match = html.match(pattern);
+  return match ? decodeHtmlEntities(match[1]) : "";
+}
+
+function extractLinkHref(html, rel) {
+  if (typeof html !== "string" || !html || !rel) {
+    return "";
+  }
+
+  const pattern = new RegExp(
+    `<link[^>]+rel=["']${escapeRegex(rel)}["'][^>]+href=["']([^"']+)["'][^>]*>`,
+    "i"
+  );
+  const match = html.match(pattern);
+  return match ? decodeHtmlEntities(match[1]) : "";
+}
+
+function extractDocumentTitle(html) {
+  if (typeof html !== "string" || !html) {
+    return "";
+  }
+
+  const match = html.match(/<title>([^<]+)<\/title>/i);
+  return match ? decodeHtmlEntities(match[1]) : "";
+}
+
+function parseSpotifyDescription(description, fallbackTitle = "") {
+  const normalizedDescription = typeof description === "string" ? description.trim() : "";
+  const parts = normalizedDescription
+    .split("·")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return {
+      sourceName: parts[0],
+      title: parts[1]
+    };
+  }
+
+  return {
+    sourceName: "",
+    title: fallbackTitle
+  };
+}
+
+function parseSunoDescription(description, fallbackTitle = "") {
+  const normalizedDescription = typeof description === "string" ? description.trim() : "";
+  const match = normalizedDescription.match(/^(.+?) by (.+?)(?: \(@.+\))?\./i);
+
+  if (!match) {
+    return {
+      sourceName: "",
+      title: fallbackTitle
+    };
+  }
+
+  return {
+    title: match[1]?.trim() || fallbackTitle,
+    sourceName: match[2]?.trim() || ""
+  };
+}
+
+function parseSunoDurationSeconds(html) {
+  if (typeof html !== "string" || !html) {
+    return null;
+  }
+
+  const match = html.match(/"duration":([0-9]+(?:\.[0-9]+)?)/i);
+  if (!match) {
+    return null;
+  }
+
+  const parsedDuration = Number.parseFloat(match[1]);
+  return Number.isFinite(parsedDuration) ? Math.round(parsedDuration) : null;
+}
+
+function buildExternalRequestSearchQuery(track) {
+  const parts = [
+    typeof track?.sourceName === "string" ? track.sourceName.trim() : "",
+    typeof track?.title === "string" ? track.title.trim() : ""
+  ].filter(Boolean);
+
+  return parts.join(" - ");
+}
+
+function attachResolvedSource(playableTrack, sourceTrack) {
+  return {
+    ...playableTrack,
+    requestedFromProvider: sourceTrack.provider,
+    requestedFromUrl: sourceTrack.url,
+    requestedFromTitle: sourceTrack.title,
+    requestedFromName: sourceTrack.sourceName ?? "",
+    requestedFromKey: sourceTrack.key
+  };
+}
+
+async function resolveSpotifyTrackFromUrl(rawUrl) {
+  if (!isPlayableSpotifyUrl(rawUrl)) {
+    throw new Error("Spotify album and playlist URLs are not supported. Request a specific Spotify track URL instead.");
+  }
+
+  const { text: html, url: responseUrl } = await fetchText(rawUrl);
+  const canonicalUrl = extractLinkHref(html, "canonical") || responseUrl || normalizeUrl(rawUrl).toString();
+
+  if (!isPlayableSpotifyUrl(canonicalUrl)) {
+    throw new Error("Spotify album and playlist URLs are not supported. Request a specific Spotify track URL instead.");
+  }
+
+  const title = normalizeTrackTitle(
+    extractMetaTagContent(html, "og:title") || extractDocumentTitle(html),
+    `Spotify track ${extractSpotifyTrackId(canonicalUrl) || ""}`.trim()
+  );
+  const description = extractMetaTagContent(html, "og:description") || extractMetaTagContent(html, "description");
+  const parsedDescription = parseSpotifyDescription(description, title);
+  const durationSeconds = Number.parseInt(extractMetaTagContent(html, "music:duration") || "", 10);
+  const sourceName = normalizeTrackTitle(
+    extractMetaTagContent(html, "music:musician_description") || parsedDescription.sourceName,
+    ""
+  );
+
+  return {
+    provider: "spotify",
+    url: canonicalUrl,
+    title: normalizeTrackTitle(parsedDescription.title, title),
+    key: getTrackKey("spotify", canonicalUrl),
+    artworkUrl: extractMetaTagContent(html, "og:image") || "",
+    durationSeconds: Number.isFinite(durationSeconds) ? durationSeconds : null,
+    sourceChannelId: "",
+    sourceName,
+    sourceUrl: "",
+    isLive: false
+  };
+}
+
+async function resolveSunoTrackFromUrl(rawUrl) {
+  if (!isPlayableSunoUrl(rawUrl)) {
+    throw new Error("Suno playlist and profile URLs are not supported. Request a specific Suno song URL instead.");
+  }
+
+  const { text: html, url: responseUrl } = await fetchText(rawUrl);
+  const canonicalUrl = extractLinkHref(html, "canonical") || responseUrl || normalizeUrl(rawUrl).toString();
+
+  if (!isPlayableSunoUrl(canonicalUrl)) {
+    throw new Error("Suno playlist and profile URLs are not supported. Request a specific Suno song URL instead.");
+  }
+
+  const title = normalizeTrackTitle(
+    extractMetaTagContent(html, "og:title"),
+    `Suno song ${extractSunoTrackId(canonicalUrl) || ""}`.trim()
+  );
+  const parsedDescription = parseSunoDescription(extractMetaTagContent(html, "description"), title);
+
+  return {
+    provider: "suno",
+    url: canonicalUrl,
+    title: normalizeTrackTitle(parsedDescription.title, title),
+    key: getTrackKey("suno", canonicalUrl),
+    artworkUrl: extractMetaTagContent(html, "og:image") || "",
+    durationSeconds: parseSunoDurationSeconds(html),
+    sourceChannelId: "",
+    sourceName: parsedDescription.sourceName,
+    sourceUrl: "",
+    isLive: false
+  };
+}
+
 export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
   if (!youtubeApiKey) {
     throw new Error("YouTube API key is required to refresh YouTube metadata.");
@@ -195,11 +529,12 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
   const liveBroadcastContent = typeof snippet.liveBroadcastContent === "string"
     ? snippet.liveBroadcastContent.trim().toLowerCase()
     : "none";
+  const sourceName = typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "";
 
   return {
     provider: "youtube",
     url,
-    title: normalizeTrackTitle(snippet.title, `YouTube video ${videoId}`),
+    title: buildYouTubeTrackTitle(snippet.title, sourceName, `YouTube video ${videoId}`),
     key: `youtube:${videoId}`,
     artworkUrl:
       thumbnails.maxres?.url ??
@@ -210,7 +545,7 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
       "",
     durationSeconds: parseIso8601DurationToSeconds(contentDetails.duration),
     sourceChannelId: typeof snippet.channelId === "string" ? snippet.channelId.trim() : "",
-    sourceName: typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "",
+    sourceName,
     sourceUrl: typeof snippet.channelId === "string" && snippet.channelId.trim()
       ? `https://www.youtube.com/channel/${snippet.channelId.trim()}`
       : "",
@@ -222,11 +557,19 @@ export async function resolveTrackFromUrl(rawUrl, { youtubeApiKey = "" } = {}) {
   const provider = detectProvider(rawUrl);
 
   if (!provider) {
-    throw new Error("Only YouTube and SoundCloud URLs are supported.");
+    throw new Error("Only YouTube, SoundCloud, Spotify, and Suno URLs are supported.");
   }
 
   if (provider === "soundcloud" && !isPlayableSoundCloudUrl(rawUrl)) {
     throw new Error("SoundCloud channel URLs are not playable. Request a specific track URL instead.");
+  }
+
+  if (provider === "spotify") {
+    return resolveSpotifyTrackFromUrl(rawUrl);
+  }
+
+  if (provider === "suno") {
+    return resolveSunoTrackFromUrl(rawUrl);
   }
 
   const url = normalizeUrl(rawUrl).toString();
@@ -244,16 +587,17 @@ export async function resolveTrackFromUrl(rawUrl, { youtubeApiKey = "" } = {}) {
 
     const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const metadata = await fetchJson(oEmbedUrl);
+    const sourceName = typeof metadata.author_name === "string" ? metadata.author_name.trim() : "";
 
     return {
       provider,
       url,
-      title: normalizeTrackTitle(metadata.title, `YouTube video ${videoId}`),
+      title: buildYouTubeTrackTitle(metadata.title, sourceName, `YouTube video ${videoId}`),
       key: `youtube:${videoId}`,
       artworkUrl: metadata.thumbnail_url ?? "",
       durationSeconds: null,
       sourceChannelId: extractYouTubeChannelIdFromUrl(metadata.author_url),
-      sourceName: typeof metadata.author_name === "string" ? metadata.author_name.trim() : "",
+      sourceName,
       sourceUrl: typeof metadata.author_url === "string" ? metadata.author_url.trim() : "",
       isLive: false
     };
@@ -280,7 +624,7 @@ export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "n
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
-    throw new Error("Please provide a YouTube or SoundCloud link, or a search query.");
+    throw new Error("Please provide a YouTube, SoundCloud, Spotify, or Suno link, or a search query.");
   }
 
   if (!youtubeApiKey) {
@@ -320,13 +664,34 @@ export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "n
 
 export async function resolveSongRequest(input, youtubeApiKey, options = {}) {
   if (isLikelyUrl(input)) {
-    return resolveTrackFromUrl(input, {
+    const directTrack = await resolveTrackFromUrl(input, {
       youtubeApiKey: options.preferYouTubeApiMetadata ? youtubeApiKey : ""
     });
+
+    if (directTrack.provider === "spotify" || directTrack.provider === "suno") {
+      if (!youtubeApiKey) {
+        const providerLabel = directTrack.provider === "spotify" ? "Spotify" : "Suno";
+        throw new Error(
+          `${providerLabel} requests require YOUTUBE_API_KEY so the link can be matched to a playable YouTube track.`
+        );
+      }
+
+      const playableTrack = await searchYouTubeMusic(
+        buildExternalRequestSearchQuery(directTrack) || directTrack.title || directTrack.url,
+        youtubeApiKey,
+        {
+          safeSearch: options.youtubeSafeSearch
+        }
+      );
+
+      return attachResolvedSource(playableTrack, directTrack);
+    }
+
+    return directTrack;
   }
 
   if (options.allowSearchRequests === false) {
-    throw new Error("Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead.");
+    throw new Error("Search-based song requests are disabled. Request a direct YouTube, SoundCloud, Spotify, or Suno link instead.");
   }
 
   return searchYouTubeMusic(input, youtubeApiKey, {

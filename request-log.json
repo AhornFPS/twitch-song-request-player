@@ -1,4 +1,92 @@
 {
-  "events": [],
-  "requesterStats": {}
+  "events": [
+    {
+      "id": "2606a290-195f-48f5-bc5d-f2ec033409f1",
+      "createdAt": "2026-03-21T18:43:01.505Z",
+      "source": "twitch_chat",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+      "bypassRequestLimits": false,
+      "requester": {
+        "username": "hollyhopdrive42",
+        "displayName": "HollyHopDrive42"
+      },
+      "track": {
+        "id": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+        "title": "Radio",
+        "key": "youtube:L0BjHPapWLM",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/L0BjHPapWLM/maxresdefault.jpg",
+        "durationSeconds": 192,
+        "isLive": false,
+        "sourceName": "Freak Slug - Topic",
+        "sourceChannelId": "UCkwKhDRSgMntfZXIN68uJVg",
+        "sourceUrl": "https://www.youtube.com/channel/UCkwKhDRSgMntfZXIN68uJVg"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "8e3968ca-fe4b-4363-bdb3-ffb551e3d76a",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "hollyhopdrive42",
+          "displayName": "HollyHopDrive42"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-21T18:43:01.505Z",
+        "lastAcceptedAt": "2026-03-21T18:43:01.505Z",
+        "lastOutcome": "accepted",
+        "lastSource": "twitch_chat",
+        "lastInput": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+        "lastTrackKey": "youtube:L0BjHPapWLM",
+        "lastTrackTitle": "Radio"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "channel": "ahorn",
+          "command": "song_request",
+          "roleState": {
+            "isBroadcaster": false,
+            "isModerator": false,
+            "isVip": true,
+            "isSubscriber": true
+          }
+        }
+      }
+    }
+  ],
+  "requesterStats": {
+    "hollyhopdrive42": {
+      "requester": {
+        "username": "hollyhopdrive42",
+        "displayName": "HollyHopDrive42"
+      },
+      "totalRequests": 1,
+      "acceptedRequests": 1,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 1,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-03-21T18:43:01.505Z",
+      "lastAcceptedAt": "2026-03-21T18:43:01.505Z",
+      "lastOutcome": "accepted",
+      "lastSource": "twitch_chat",
+      "lastInput": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+      "lastTrackKey": "youtube:L0BjHPapWLM",
+      "lastTrackTitle": "Radio"
+    }
+  }
 }

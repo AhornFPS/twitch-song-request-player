@@ -326,3 +326,25 @@ test("request policy and chat commands are normalized with defaults", async (t) 
   assert.equal(settings.chatCommands.current_song.trigger, "!currentsong");
   assert.equal(settings.chatCommands.queue_status.trigger, "!queue");
 });
+
+test("request policy defaults keep all supported request-source providers enabled", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({}, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.deepEqual(settings.requestPolicy.allowedProviders, ["youtube", "soundcloud", "spotify", "suno"]);
+});

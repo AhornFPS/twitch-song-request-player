@@ -71,7 +71,7 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
   assert.equal(requestedUrl?.searchParams.get("key"), "api-key");
   assert.equal(track.provider, "youtube");
   assert.equal(track.url, "https://youtu.be/dQw4w9WgXcQ?t=42");
-  assert.equal(track.title, "Refreshed Title");
+  assert.equal(track.title, "Refresh Channel - Refreshed Title");
   assert.equal(track.key, "youtube:dQw4w9WgXcQ");
   assert.equal(track.artworkUrl, "https://img.youtube.test/high.jpg");
   assert.equal(track.durationSeconds, 242);
@@ -80,12 +80,275 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
   assert.equal(track.isLive, false);
 });
 
+test("youtube titles that already include an artist separator are left unchanged", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => {
+    return {
+      ok: true,
+      async json() {
+        return {
+          items: [
+            {
+              id: "separated123",
+              snippet: {
+                title: "Known Artist - Final Track",
+                channelId: "UCseparated",
+                channelTitle: "Uploader Channel",
+                liveBroadcastContent: "none",
+                thumbnails: {}
+              },
+              contentDetails: {
+                duration: "PT3M"
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveYouTubeTrackFromApi("https://youtu.be/separated123", "api-key");
+
+  assert.equal(track.title, "Known Artist - Final Track");
+  assert.equal(track.sourceName, "Uploader Channel");
+});
+
 test("search-based song requests can be disabled independently from direct links", async () => {
   await assert.rejects(
     () => resolveSongRequest("artist song", "api-key", {
       allowSearchRequests: false
     }),
     /Search-based song requests are disabled/
+  );
+});
+
+test("spotify track links resolve into playable YouTube tracks using Spotify metadata", async (t) => {
+  const originalFetch = global.fetch;
+  const requestedUrls = [];
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+    requestedUrls.push(requestedUrl);
+
+    if (requestedUrl.origin === "https://open.spotify.com") {
+      return {
+        ok: true,
+        url: requestedUrl.toString(),
+        async text() {
+          return [
+            "<html><head>",
+            '<link rel="canonical" href="https://open.spotify.com/track/spotify123" />',
+            '<meta property="og:title" content="Cut To The Feeling" />',
+            '<meta property="og:description" content="Carly Rae Jepsen · Cut To The Feeling · Song · 2017" />',
+            '<meta property="og:image" content="https://image.spotify.test/cut.jpg" />',
+            '<meta name="music:musician_description" content="Carly Rae Jepsen" />',
+            '<meta name="music:duration" content="208" />',
+            "</head><body></body></html>"
+          ].join("");
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "spotify-result"
+                },
+                snippet: {
+                  title: "Cut To The Feeling",
+                  thumbnails: {
+                    high: {
+                      url: "https://img.youtube.test/spotify-search.jpg"
+                    }
+                  }
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    return {
+      ok: true,
+      async json() {
+        return {
+          items: [
+            {
+              id: "spotify-result",
+              snippet: {
+                title: "Cut To The Feeling",
+                channelId: "UCspotify",
+                channelTitle: "Carly Rae Jepsen",
+                liveBroadcastContent: "none",
+                thumbnails: {
+                  high: {
+                    url: "https://img.youtube.test/spotify-result.jpg"
+                  }
+                }
+              },
+              contentDetails: {
+                duration: "PT3M27S"
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveSongRequest("https://open.spotify.com/track/spotify123", "api-key", {
+    youtubeSafeSearch: "strict"
+  });
+
+  assert.equal(requestedUrls[1]?.pathname, "/youtube/v3/search");
+  assert.equal(requestedUrls[1]?.searchParams.get("q"), "Carly Rae Jepsen - Cut To The Feeling");
+  assert.equal(requestedUrls[1]?.searchParams.get("safeSearch"), "strict");
+  assert.equal(track.provider, "youtube");
+  assert.equal(track.key, "youtube:spotify-result");
+  assert.equal(track.requestedFromProvider, "spotify");
+  assert.equal(track.requestedFromUrl, "https://open.spotify.com/track/spotify123");
+  assert.equal(track.requestedFromTitle, "Cut To The Feeling");
+  assert.equal(track.requestedFromName, "Carly Rae Jepsen");
+});
+
+test("suno song links resolve into playable YouTube tracks using Suno metadata", async (t) => {
+  const originalFetch = global.fetch;
+  const requestedUrls = [];
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+    requestedUrls.push(requestedUrl);
+
+    if (requestedUrl.origin === "https://suno.com") {
+      return {
+        ok: true,
+        url: requestedUrl.toString(),
+        async text() {
+          return [
+            "<html><head>",
+            '<link rel="canonical" href="https://suno.com/song/suno123" />',
+            '<meta property="og:title" content="perdu" />',
+            '<meta property="og:image" content="https://cdn2.suno.ai/perdu.jpeg" />',
+            '<meta name="description" content="perdu by Khassy (@khassy973). Listen and make your own on Suno." />',
+            "</head><body>",
+            '<script>self.__next_f.push([1,"2f:[{\\"duration\\":182.68}]"])</script>',
+            "</body></html>"
+          ].join("");
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "suno-result"
+                },
+                snippet: {
+                  title: "perdu",
+                  thumbnails: {
+                    high: {
+                      url: "https://img.youtube.test/suno-search.jpg"
+                    }
+                  }
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    return {
+      ok: true,
+      async json() {
+        return {
+          items: [
+            {
+              id: "suno-result",
+              snippet: {
+                title: "perdu",
+                channelId: "UCsuno",
+                channelTitle: "Khassy",
+                liveBroadcastContent: "none",
+                thumbnails: {
+                  high: {
+                    url: "https://img.youtube.test/suno-result.jpg"
+                  }
+                }
+              },
+              contentDetails: {
+                duration: "PT3M2S"
+              }
+            }
+          ]
+        };
+      }
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveSongRequest("https://suno.com/song/suno123", "api-key");
+
+  assert.equal(requestedUrls[1]?.pathname, "/youtube/v3/search");
+  assert.equal(requestedUrls[1]?.searchParams.get("q"), "Khassy - perdu");
+  assert.equal(track.provider, "youtube");
+  assert.equal(track.key, "youtube:suno-result");
+  assert.equal(track.requestedFromProvider, "suno");
+  assert.equal(track.requestedFromUrl, "https://suno.com/song/suno123");
+  assert.equal(track.requestedFromTitle, "perdu");
+  assert.equal(track.requestedFromName, "Khassy");
+});
+
+test("spotify links require YouTube API access to become playable requests", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => {
+    return {
+      ok: true,
+      url: "https://open.spotify.com/track/spotify123",
+      async text() {
+        return [
+          "<html><head>",
+          '<link rel="canonical" href="https://open.spotify.com/track/spotify123" />',
+          '<meta property="og:title" content="Cut To The Feeling" />',
+          '<meta property="og:description" content="Carly Rae Jepsen · Cut To The Feeling · Song · 2017" />',
+          '<meta name="music:musician_description" content="Carly Rae Jepsen" />',
+          "</head><body></body></html>"
+        ].join("");
+      }
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  await assert.rejects(
+    () => resolveSongRequest("https://open.spotify.com/track/spotify123", ""),
+    /Spotify requests require YOUTUBE_API_KEY/
   );
 });
 
@@ -160,7 +423,7 @@ test("youtube search requests honor the configured safe search mode", async (t) 
   });
 
   assert.equal(requestedUrls[0]?.searchParams.get("safeSearch"), "strict");
-  assert.equal(track.title, "Safe Result");
+  assert.equal(track.title, "Safe Channel - Safe Result");
   assert.equal(track.key, "youtube:safe123");
   assert.equal(track.durationSeconds, 185);
   assert.equal(track.sourceChannelId, "UCsafe");
@@ -211,6 +474,7 @@ test("direct YouTube chat requests can opt into API metadata enrichment", async 
   });
 
   assert.equal(requestedUrls[0]?.pathname, "/youtube/v3/videos");
+  assert.equal(track.title, "Direct Channel - Enriched Direct Track");
   assert.equal(track.sourceChannelId, "UCenriched");
   assert.equal(track.durationSeconds, 3723);
   assert.equal(track.isLive, true);
@@ -244,7 +508,7 @@ test("direct YouTube links without API metadata still capture channel details fr
 
   assert.equal(requestedUrl?.origin, "https://www.youtube.com");
   assert.equal(requestedUrl?.pathname, "/oembed");
-  assert.equal(track.title, "OEmbed Track");
+  assert.equal(track.title, "Example Channel - OEmbed Track");
   assert.equal(track.sourceName, "Example Channel");
   assert.equal(track.sourceUrl, "https://www.youtube.com/@examplechannel");
   assert.equal(track.sourceChannelId, "");

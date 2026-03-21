@@ -428,10 +428,10 @@ export class TwitchBot {
           roleState,
           input: query,
           reason: "missing_input",
-          message: "Usage: provide a YouTube or SoundCloud link, or a YouTube search query.",
+          message: "Usage: provide a YouTube, SoundCloud, Spotify, or Suno link, or a YouTube search query.",
           bypassRequestLimits
         });
-        await this.reply(channel, "Usage: provide a YouTube or SoundCloud link, or a YouTube search query.");
+        await this.reply(channel, "Usage: provide a YouTube, SoundCloud, Spotify, or Suno link, or a YouTube search query.");
         return;
       }
 
@@ -500,19 +500,24 @@ export class TwitchBot {
         ? normalizeRequestList(this.config.requestPolicy.allowedProviders, {
             lowerCase: true
           })
-        : ["youtube", "soundcloud"];
+        : ["youtube", "soundcloud", "spotify", "suno"];
+      const requestedProvider = typeof resolvedTrack?.requestedFromProvider === "string" &&
+        resolvedTrack.requestedFromProvider.trim()
+        ? resolvedTrack.requestedFromProvider.trim().toLowerCase()
+        : resolvedTrack.provider;
 
-      if (!allowedProviders.includes(resolvedTrack.provider)) {
+      if (!allowedProviders.includes(requestedProvider)) {
+        const providerBlockedMessage = `${requestedProvider} requests are currently disabled.`;
         await this.auditRejectedSongRequest({
           tags,
           roleState,
           input: query,
           track: resolvedTrack,
           reason: "provider_blocked",
-          message: `${resolvedTrack.provider} requests are currently disabled.`,
+          message: providerBlockedMessage,
           bypassRequestLimits
         });
-        await this.reply(channel, `${resolvedTrack.provider} requests are currently disabled.`);
+        await this.reply(channel, providerBlockedMessage);
         return;
       }
 

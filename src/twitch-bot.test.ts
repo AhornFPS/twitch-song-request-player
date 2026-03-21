@@ -497,6 +497,40 @@ test("blocked phrases and provider restrictions reject chat requests with clear 
       message: "soundcloud requests are currently disabled."
     }
   ]);
+
+  const spotifyHarness = createBotHarness({
+    requestPolicy: {
+      requestsEnabled: true,
+      allowedProviders: ["soundcloud"]
+    },
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/spotify-match",
+      title: "Spotify Match",
+      key: "youtube:spotify-match",
+      artworkUrl: "",
+      requestedFromProvider: "spotify",
+      requestedFromUrl: "https://open.spotify.com/track/spotify123",
+      requestedFromTitle: "Spotify Match",
+      requestedFromName: "Example Artist"
+    },
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for blocked resolved playback providers");
+    }
+  });
+
+  await spotifyHarness.bot.handleIncomingMessage("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne",
+    badges: {}
+  }, "!sr spotify track", false);
+
+  assert.deepEqual(spotifyHarness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "spotify requests are currently disabled."
+    }
+  ]);
 });
 
 test("duration, live-stream, and blocked-source safety rules reject chat requests before queueing", async () => {
@@ -783,7 +817,7 @@ test("disabled search requests return a direct-link guidance error", async () =>
   });
 
   harness.bot.songRequestResolver = async () => {
-    throw new Error("Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead.");
+    throw new Error("Search-based song requests are disabled. Request a direct YouTube, SoundCloud, Spotify, or Suno link instead.");
   };
 
   await harness.bot.handleIncomingMessage("#testchannel", {
@@ -795,7 +829,7 @@ test("disabled search requests return a direct-link guidance error", async () =>
   assert.deepEqual(harness.sentMessages, [
     {
       channel: "#testchannel",
-      message: "Error: Search-based song requests are disabled. Request a direct YouTube or SoundCloud link instead."
+      message: "Error: Search-based song requests are disabled. Request a direct YouTube, SoundCloud, Spotify, or Suno link instead."
     }
   ]);
 });

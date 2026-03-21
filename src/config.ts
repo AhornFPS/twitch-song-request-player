@@ -85,7 +85,9 @@ const validRequestAccessLevels = new Set([
 ]);
 const validRequestProviders = new Set([
   "youtube",
-  "soundcloud"
+  "soundcloud",
+  "spotify",
+  "suno"
 ]);
 
 function trimValue(value) {
@@ -191,8 +193,8 @@ function normalizeRequestPolicy(value) {
   const allowedProviders = normalizeStringList(
     Object.prototype.hasOwnProperty.call(rawValue, "allowedProviders")
       ? rawValue.allowedProviders
-      : ["youtube", "soundcloud"],
-    ["youtube", "soundcloud"],
+      : ["youtube", "soundcloud", "spotify", "suno"],
+    ["youtube", "soundcloud", "spotify", "suno"],
     {
     lowerCase: true
     }

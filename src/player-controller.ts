@@ -12,7 +12,9 @@ const validRequestAccessLevels = new Set([
 
 const validProviders = new Set([
   "youtube",
-  "soundcloud"
+  "soundcloud",
+  "spotify",
+  "suno"
 ]);
 
 function normalizeRequestPolicyList(value, { lowerCase = false } = {}) {
@@ -36,7 +38,7 @@ function normalizeAllowedProviders(value) {
   const sourceValue =
     Array.isArray(value) || typeof value === "string"
       ? value
-      : ["youtube", "soundcloud"];
+      : ["youtube", "soundcloud", "spotify", "suno"];
   const allowedProviders = normalizeRequestPolicyList(sourceValue, {
     lowerCase: true
   }).filter((provider) => validProviders.has(provider));
@@ -131,6 +133,11 @@ export class PlayerController {
       key: track.key,
       origin: track.origin,
       artworkUrl: track.artworkUrl ?? "",
+      requestedFromProvider: track.requestedFromProvider ?? "",
+      requestedFromUrl: track.requestedFromUrl ?? "",
+      requestedFromTitle: track.requestedFromTitle ?? "",
+      requestedFromName: track.requestedFromName ?? "",
+      requestedFromKey: track.requestedFromKey ?? "",
       requestedBy: track.requestedBy,
       isSaved: this.playlistRepository.hasTrack(track),
       isPaused: track.id === this.currentTrack?.id ? this.isPlaybackPaused : false
@@ -198,6 +205,11 @@ export class PlayerController {
       key,
       origin: typeof track.origin === "string" ? track.origin : "",
       artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
+      requestedFromProvider: typeof track.requestedFromProvider === "string" ? track.requestedFromProvider : "",
+      requestedFromUrl: typeof track.requestedFromUrl === "string" ? track.requestedFromUrl : "",
+      requestedFromTitle: typeof track.requestedFromTitle === "string" ? track.requestedFromTitle : "",
+      requestedFromName: typeof track.requestedFromName === "string" ? track.requestedFromName : "",
+      requestedFromKey: typeof track.requestedFromKey === "string" ? track.requestedFromKey : "",
       durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
       isLive: track.isLive === true,
       sourceName: typeof track.sourceName === "string" ? track.sourceName : "",
@@ -481,6 +493,11 @@ export class PlayerController {
             key: track.key ?? "",
             origin: track.origin ?? "queue",
             artworkUrl: track.artworkUrl ?? "",
+            requestedFromProvider: track.requestedFromProvider ?? "",
+            requestedFromUrl: track.requestedFromUrl ?? "",
+            requestedFromTitle: track.requestedFromTitle ?? "",
+            requestedFromName: track.requestedFromName ?? "",
+            requestedFromKey: track.requestedFromKey ?? "",
             requestedBy: track.requestedBy ?? null
           }
         : null,
@@ -1432,6 +1449,11 @@ export class PlayerController {
         key: track.key,
         origin: track.origin,
         artworkUrl: track.artworkUrl ?? "",
+        requestedFromProvider: track.requestedFromProvider ?? "",
+        requestedFromUrl: track.requestedFromUrl ?? "",
+        requestedFromTitle: track.requestedFromTitle ?? "",
+        requestedFromName: track.requestedFromName ?? "",
+        requestedFromKey: track.requestedFromKey ?? "",
         requestedBy: track.requestedBy ?? null
       },
       status,

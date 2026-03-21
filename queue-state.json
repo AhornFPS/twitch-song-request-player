@@ -1,5 +1,19 @@
 {
-  "queue": [],
+  "queue": [
+    {
+      "id": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+      "provider": "youtube",
+      "url": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+      "title": "Radio",
+      "key": "youtube:L0BjHPapWLM",
+      "origin": "queue",
+      "artworkUrl": "https://i.ytimg.com/vi/L0BjHPapWLM/maxresdefault.jpg",
+      "requestedBy": {
+        "username": "hollyhopdrive42",
+        "displayName": "HollyHopDrive42"
+      }
+    }
+  ],
   "stoppedTrack": null,
   "history": [
     {

@@ -152,7 +152,7 @@ function renderDashboard() {
                 <button id="overview-next" class="ghost-button" type="button">Next track</button>
               </div>
               <form id="overview-queue-form" class="queue-add-form">
-                <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud URL or search text" autocomplete="off" />
+                <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
                 <button id="overview-queue-button" class="secondary-button" type="submit">Add to queue</button>
               </form>
               <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -335,7 +335,7 @@ function renderDashboard() {
               <label class="toggle-card" for="requests-allow-search-toggle">
                 <span class="toggle-card__copy">
                   <span class="toggle-card__title">Allow text-search requests</span>
-                  <span class="toggle-card__body">If disabled, chat requests must use direct YouTube or SoundCloud links.</span>
+                  <span class="toggle-card__body">If disabled, chat requests must use direct YouTube, SoundCloud, Spotify, or Suno links.</span>
                 </span>
                 <input id="requests-allow-search-toggle" type="checkbox" />
               </label>
@@ -369,7 +369,15 @@ function renderDashboard() {
                   <input id="requests-provider-soundcloud" type="checkbox" />
                   <span>SoundCloud</span>
                 </label>
-                <span class="field__hint">Disable providers you do not want viewers to request from chat.</span>
+                <label class="checkbox-row">
+                  <input id="requests-provider-spotify" type="checkbox" />
+                  <span>Spotify</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="requests-provider-suno" type="checkbox" />
+                  <span>Suno</span>
+                </label>
+                <span class="field__hint">These toggles control which link sources chat can request. Spotify and Suno still resolve to playable YouTube tracks, but they can be blocked separately here.</span>
               </fieldset>
               <label class="field">
                 <span class="field__label">Blocked usernames</span>
@@ -590,7 +598,7 @@ function renderDashboard() {
           </div>
           <div class="playlist-tools">
             <form id="playlist-add-form" class="playlist-add-form">
-              <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud URL or search text" autocomplete="off" />
+              <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
               <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
             </form>
             <div class="playlist-tools__body">
@@ -779,7 +787,7 @@ function getRequestPolicy() {
     rejectLiveStreams: false,
     allowSearchRequests: true,
     youtubeSafeSearch: "none",
-    allowedProviders: ["youtube", "soundcloud"],
+    allowedProviders: ["youtube", "soundcloud", "spotify", "suno"],
     blockedYouTubeChannelIds: [],
     blockedSoundCloudUsers: [],
     blockedUsers: [],
@@ -809,7 +817,7 @@ function getDraftRequestPolicy() {
       rejectLiveStreams: requestPolicyDraft.rejectLiveStreams === true,
       allowSearchRequests: requestPolicyDraft.allowSearchRequests !== false,
       youtubeSafeSearch: typeof requestPolicyDraft.youtubeSafeSearch === "string" ? requestPolicyDraft.youtubeSafeSearch : "none",
-      allowedProviders: Array.isArray(requestPolicyDraft.allowedProviders) ? requestPolicyDraft.allowedProviders.filter(Boolean) : ["youtube", "soundcloud"],
+      allowedProviders: Array.isArray(requestPolicyDraft.allowedProviders) ? requestPolicyDraft.allowedProviders.filter(Boolean) : ["youtube", "soundcloud", "spotify", "suno"],
       blockedYouTubeChannelIds: Array.isArray(requestPolicyDraft.blockedYouTubeChannelIds) ? requestPolicyDraft.blockedYouTubeChannelIds.filter(Boolean) : [],
       blockedSoundCloudUsers: Array.isArray(requestPolicyDraft.blockedSoundCloudUsers) ? requestPolicyDraft.blockedSoundCloudUsers.filter(Boolean) : [],
       blockedUsers: Array.isArray(requestPolicyDraft.blockedUsers) ? requestPolicyDraft.blockedUsers.filter(Boolean) : [],
@@ -845,7 +853,9 @@ function syncRequestPolicyDraftFromInputs() {
     youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement ? el("requests-safe-search").value : getRequestPolicy().youtubeSafeSearch || "none",
     allowedProviders: [
       el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked ? "youtube" : "",
-      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked ? "soundcloud" : ""
+      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked ? "soundcloud" : "",
+      el("requests-provider-spotify") instanceof HTMLInputElement && el("requests-provider-spotify").checked ? "spotify" : "",
+      el("requests-provider-suno") instanceof HTMLInputElement && el("requests-provider-suno").checked ? "suno" : ""
     ].filter(Boolean),
     blockedYouTubeChannelIds: blockedYoutubeChannelsInput instanceof HTMLTextAreaElement ? parseRequestPolicyList(blockedYoutubeChannelsInput.value.toLowerCase()) : [...getRequestPolicy().blockedYouTubeChannelIds || []],
     blockedSoundCloudUsers: blockedSoundCloudUsersInput instanceof HTMLTextAreaElement ? parseRequestPolicyList(blockedSoundCloudUsersInput.value.toLowerCase()) : [...getRequestPolicy().blockedSoundCloudUsers || []],
@@ -868,7 +878,9 @@ function collectRequestPolicyPayload() {
     youtubeSafeSearch: el("requests-safe-search") instanceof HTMLSelectElement ? el("requests-safe-search").value : "none",
     allowedProviders: [
       el("requests-provider-youtube") instanceof HTMLInputElement && el("requests-provider-youtube").checked ? "youtube" : "",
-      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked ? "soundcloud" : ""
+      el("requests-provider-soundcloud") instanceof HTMLInputElement && el("requests-provider-soundcloud").checked ? "soundcloud" : "",
+      el("requests-provider-spotify") instanceof HTMLInputElement && el("requests-provider-spotify").checked ? "spotify" : "",
+      el("requests-provider-suno") instanceof HTMLInputElement && el("requests-provider-suno").checked ? "suno" : ""
     ].filter(Boolean),
     blockedYouTubeChannelIds: parseRequestPolicyList(el("requests-blocked-youtube-channels")?.value || "").map((value) => value.toLowerCase()),
     blockedSoundCloudUsers: parseRequestPolicyList(el("requests-blocked-soundcloud-users")?.value || "").map((value) => value.toLowerCase()),
@@ -921,6 +933,8 @@ function applyRequestPolicyState() {
   const safeSearchSelect = el("requests-safe-search");
   const youtubeProviderToggle = el("requests-provider-youtube");
   const soundCloudProviderToggle = el("requests-provider-soundcloud");
+  const spotifyProviderToggle = el("requests-provider-spotify");
+  const sunoProviderToggle = el("requests-provider-suno");
   const blockedYoutubeChannelsInput = el("requests-blocked-youtube-channels");
   const blockedSoundCloudUsersInput = el("requests-blocked-soundcloud-users");
   const blockedUsersInput = el("requests-blocked-users");
@@ -972,6 +986,12 @@ function applyRequestPolicyState() {
   }
   if (soundCloudProviderToggle instanceof HTMLInputElement) {
     soundCloudProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("soundcloud");
+  }
+  if (spotifyProviderToggle instanceof HTMLInputElement) {
+    spotifyProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("spotify");
+  }
+  if (sunoProviderToggle instanceof HTMLInputElement) {
+    sunoProviderToggle.checked = (requestPolicy.allowedProviders || []).includes("suno");
   }
   if (blockedYoutubeChannelsInput instanceof HTMLTextAreaElement) {
     blockedYoutubeChannelsInput.value = (requestPolicy.blockedYouTubeChannelIds || []).join("\n");
@@ -2776,7 +2796,7 @@ root.addEventListener("change", async (event) => {
     applyRequestPolicyState();
     scheduleRequestPolicyAutosave();
   }
-  if ((target.id === "requests-provider-youtube" || target.id === "requests-provider-soundcloud") && target instanceof HTMLInputElement) {
+  if ((target.id === "requests-provider-youtube" || target.id === "requests-provider-soundcloud" || target.id === "requests-provider-spotify" || target.id === "requests-provider-suno") && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
     scheduleRequestPolicyAutosave();
