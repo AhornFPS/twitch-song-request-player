@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.6.0 - 2026-03-22
+
 - Added a moderator `!addplaylist` chat command to import full YouTube playlists into the fallback playlist without adding those tracks to the live queue.
 
 ## 2.5.2 - 2026-03-21
