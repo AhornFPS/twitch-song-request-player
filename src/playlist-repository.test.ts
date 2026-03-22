@@ -143,9 +143,35 @@ test("playlist repository lists, imports, exports, and deletes playlist rows", a
   assert.equal(importSummary.finalCount, 3);
   assert.match(repository.exportCsv(), /Gangnam Style/);
 
+  const appendSummary = await repository.appendTracks([
+    {
+      provider: "youtube",
+      url: "https://www.youtube.com/watch?v=playlist-one",
+      title: "Playlist One",
+      key: "youtube:playlist-one"
+    },
+    {
+      provider: "youtube",
+      url: "https://www.youtube.com/watch?v=playlist-one",
+      title: "Playlist One Duplicate",
+      key: "youtube:playlist-one"
+    },
+    {
+      provider: "soundcloud",
+      url: "https://soundcloud.com/artist/track",
+      title: "Existing Duplicate",
+      key: "soundcloud:https://soundcloud.com/artist/track"
+    }
+  ]);
+
+  assert.equal(appendSummary.addedCount, 1);
+  assert.equal(appendSummary.duplicateCount, 2);
+  assert.equal(appendSummary.finalCount, 4);
+  assert.match(repository.exportCsv(), /Playlist One/);
+
   const removed = await repository.removeTrackByKey("youtube:9bZkp7q19f0");
   assert.equal(removed, true);
-  assert.equal(repository.listTracks().total, 2);
+  assert.equal(repository.listTracks().total, 3);
 
   const bulkRemoval = await repository.removeTracksByKeys([
     "youtube:dQw4w9WgXcQ",
@@ -153,7 +179,7 @@ test("playlist repository lists, imports, exports, and deletes playlist rows", a
   ]);
   assert.equal(bulkRemoval.removedCount, 1);
   assert.deepEqual(bulkRemoval.removedKeys, ["youtube:dQw4w9WgXcQ"]);
-  assert.equal(repository.listTracks().total, 1);
+  assert.equal(repository.listTracks().total, 2);
 });
 
 test("playlist repository can edit titles, refresh metadata, and export selected rows", async (t) => {

@@ -1,7 +1,12 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveSongRequest, resolveTrackFromUrl, resolveYouTubeTrackFromApi } from "./providers.js";
+import {
+  resolveSongRequest,
+  resolveTrackFromUrl,
+  resolveYouTubePlaylistFromApi,
+  resolveYouTubeTrackFromApi
+} from "./providers.js";
 
 test("soundcloud profile URLs are rejected before metadata lookup", async (t) => {
   const originalFetch = global.fetch;
@@ -78,6 +83,148 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
   assert.equal(track.sourceChannelId, "UCrefresh");
   assert.equal(track.sourceName, "Refresh Channel");
   assert.equal(track.isLive, false);
+});
+
+test("youtube playlist api resolver imports every playlist item across pages", async (t) => {
+  const originalFetch = global.fetch;
+  const requestedUrls = [];
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+    requestedUrls.push(requestedUrl);
+
+    if (requestedUrl.pathname === "/youtube/v3/playlists") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                snippet: {
+                  title: "Imported Playlist"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/playlistItems") {
+      const pageToken = requestedUrl.searchParams.get("pageToken") || "";
+
+      return {
+        ok: true,
+        async json() {
+          if (!pageToken) {
+            return {
+              nextPageToken: "page-2",
+              items: [
+                {
+                  snippet: {
+                    title: "First Song",
+                    videoOwnerChannelId: "UCfirst",
+                    videoOwnerChannelTitle: "First Artist",
+                    thumbnails: {
+                      high: {
+                        url: "https://img.youtube.test/first.jpg"
+                      }
+                    }
+                  },
+                  contentDetails: {
+                    videoId: "first123"
+                  }
+                }
+              ]
+            };
+          }
+
+          return {
+            items: [
+              {
+                snippet: {
+                  title: "Second Song",
+                  videoOwnerChannelId: "UCsecond",
+                  videoOwnerChannelTitle: "Second Artist"
+                },
+                contentDetails: {
+                  videoId: "second456"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "first123",
+                snippet: {
+                  title: "First Song",
+                  channelId: "UCfirst",
+                  channelTitle: "First Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {
+                    high: {
+                      url: "https://img.youtube.test/first-detail.jpg"
+                    }
+                  }
+                },
+                contentDetails: {
+                  duration: "PT3M4S"
+                }
+              },
+              {
+                id: "second456",
+                snippet: {
+                  title: "Second Song",
+                  channelId: "UCsecond",
+                  channelTitle: "Second Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {
+                    high: {
+                      url: "https://img.youtube.test/second-detail.jpg"
+                    }
+                  }
+                },
+                contentDetails: {
+                  duration: "PT2M30S"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const result = await resolveYouTubePlaylistFromApi(
+    "https://www.youtube.com/playlist?list=PLimport123",
+    "api-key"
+  );
+
+  assert.equal(requestedUrls[0]?.pathname, "/youtube/v3/playlists");
+  assert.equal(requestedUrls[1]?.pathname, "/youtube/v3/playlistItems");
+  assert.equal(requestedUrls[2]?.searchParams.get("pageToken"), "page-2");
+  assert.equal(result.playlistId, "PLimport123");
+  assert.equal(result.title, "Imported Playlist");
+  assert.equal(result.trackCount, 2);
+  assert.equal(result.tracks.length, 2);
+  assert.equal(result.tracks[0].title, "First Artist - First Song");
+  assert.equal(result.tracks[1].key, "youtube:second456");
+  assert.equal(result.tracks[1].durationSeconds, 150);
 });
 
 test("youtube titles that already include an artist separator are left unchanged", async (t) => {

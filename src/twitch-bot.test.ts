@@ -10,6 +10,14 @@ function createBotHarness({
   addRequestResult = null,
   addRequestImpl = null,
   resolvedTrack = null,
+  resolvedPlaylist = null,
+  appendTracksToPlaylistResult = {
+    addedCount: 0,
+    duplicateCount: 0,
+    finalCount: 0,
+    tracks: []
+  },
+  appendTracksToPlaylistImpl = null,
   chatCommands = getDefaultChatCommands(),
   requestPolicy = {
     requestsEnabled: true
@@ -38,6 +46,13 @@ function createBotHarness({
       }
 
       return addRequestResult;
+    },
+    async appendTracksToPlaylist(tracks, options) {
+      if (typeof appendTracksToPlaylistImpl === "function") {
+        return appendTracksToPlaylistImpl(tracks, options);
+      }
+
+      return appendTracksToPlaylistResult;
     },
     getCurrentTrack() {
       return currentTrack;
@@ -89,6 +104,7 @@ function createBotHarness({
     client,
     channelInfo,
     songRequestResolver: async () => resolvedTrack,
+    youtubePlaylistResolver: async () => resolvedPlaylist,
     updateSettings
   });
 
@@ -101,6 +117,60 @@ function createBotHarness({
     }
   };
 }
+
+test("youtube playlist import command adds the full playlist to the fallback playlist instead of the queue", async () => {
+  const appendedTracks = [];
+  const harness = createBotHarness({
+    addRequestImpl: async () => {
+      throw new Error("addRequest should not run for playlist imports");
+    },
+    resolvedPlaylist: {
+      playlistId: "PL123",
+      title: "Viewer Favorites",
+      trackCount: 2,
+      tracks: [
+        {
+          provider: "youtube",
+          url: "https://www.youtube.com/watch?v=track-one",
+          title: "Artist One - Track One",
+          key: "youtube:track-one"
+        },
+        {
+          provider: "youtube",
+          url: "https://www.youtube.com/watch?v=track-two",
+          title: "Artist Two - Track Two",
+          key: "youtube:track-two"
+        }
+      ]
+    },
+    appendTracksToPlaylistImpl: async (tracks) => {
+      appendedTracks.push(...tracks);
+      return {
+        addedCount: tracks.length,
+        duplicateCount: 0,
+        finalCount: tracks.length,
+        tracks
+      };
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "modone",
+    "display-name": "ModOne",
+    mod: true,
+    badges: {
+      moderator: "1"
+    }
+  }, "!addplaylist https://www.youtube.com/playlist?list=PL123");
+
+  assert.equal(appendedTracks.length, 2);
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Imported 2 tracks from Viewer Favorites into the playlist."
+    }
+  ]);
+});
 
 test("automatic playback announcement uses the currentsong format for playlist tracks", async () => {
   const harness = createBotHarness({

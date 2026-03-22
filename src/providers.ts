@@ -160,6 +160,23 @@ export function extractYouTubeVideoId(rawUrl) {
   return null;
 }
 
+export function extractYouTubePlaylistId(rawUrl) {
+  let url;
+
+  try {
+    url = normalizeUrl(rawUrl);
+  } catch {
+    return null;
+  }
+
+  if (!YOUTUBE_HOSTS.has(url.hostname.toLowerCase())) {
+    return null;
+  }
+
+  const playlistId = url.searchParams.get("list");
+  return playlistId?.trim() || null;
+}
+
 function extractSpotifyTrackId(rawUrl) {
   try {
     const pathSegments = normalizeSpotifyPathSegments(rawUrl);
@@ -282,6 +299,17 @@ function parseIso8601DurationToSeconds(duration) {
   const seconds = Number.parseInt(match[4] || "0", 10) || 0;
 
   return (days * 86400) + (hours * 3600) + (minutes * 60) + seconds;
+}
+
+function chunkItems(items, size) {
+  const chunkSize = Math.max(Number.parseInt(String(size), 10) || 1, 1);
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
 }
 
 async function fetchJson(url) {
@@ -661,29 +689,30 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
     throw new Error("Could not extract the YouTube video ID.");
   }
 
-  const apiUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-  apiUrl.searchParams.set("part", "snippet,contentDetails,liveStreamingDetails");
-  apiUrl.searchParams.set("id", videoId);
-  apiUrl.searchParams.set("key", youtubeApiKey);
-
-  const response = await fetchJson(apiUrl);
-  const item = response.items?.[0];
+  const item = await fetchYouTubeVideoMetadataItem(videoId, youtubeApiKey);
 
   if (!item?.id) {
     throw new Error(`No YouTube video metadata found for ${videoId}.`);
   }
 
+  return buildYouTubeTrackFromVideoApiItem(item, {
+    url
+  });
+}
+
+function buildYouTubeTrackFromVideoApiItem(item, { url = "" } = {}) {
   const snippet = item.snippet ?? {};
   const thumbnails = snippet.thumbnails ?? {};
   const contentDetails = item.contentDetails ?? {};
   const liveBroadcastContent = typeof snippet.liveBroadcastContent === "string"
     ? snippet.liveBroadcastContent.trim().toLowerCase()
     : "none";
+  const videoId = typeof item.id === "string" ? item.id.trim() : "";
   const sourceName = typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "";
 
   return {
     provider: "youtube",
-    url,
+    url: url || `https://www.youtube.com/watch?v=${videoId}`,
     title: buildYouTubeTrackTitle(snippet.title, sourceName, `YouTube video ${videoId}`),
     key: `youtube:${videoId}`,
     artworkUrl:
@@ -700,6 +729,179 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
       ? `https://www.youtube.com/channel/${snippet.channelId.trim()}`
       : "",
     isLive: liveBroadcastContent === "live" || liveBroadcastContent === "upcoming"
+  };
+}
+
+async function fetchYouTubeVideoMetadataItem(videoId, youtubeApiKey) {
+  const items = await fetchYouTubeVideoMetadataItems([videoId], youtubeApiKey);
+  return items[0] ?? null;
+}
+
+async function fetchYouTubeVideoMetadataItems(videoIds, youtubeApiKey) {
+  const normalizedVideoIds = Array.from(
+    new Set(
+      Array.isArray(videoIds)
+        ? videoIds.map((videoId) => typeof videoId === "string" ? videoId.trim() : "").filter(Boolean)
+        : []
+    )
+  );
+  const items = [];
+
+  for (const videoIdChunk of chunkItems(normalizedVideoIds, 50)) {
+    const apiUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
+    apiUrl.searchParams.set("part", "snippet,contentDetails,liveStreamingDetails");
+    apiUrl.searchParams.set("id", videoIdChunk.join(","));
+    apiUrl.searchParams.set("key", youtubeApiKey);
+
+    const response = await fetchJson(apiUrl);
+    items.push(...(Array.isArray(response.items) ? response.items : []));
+  }
+
+  return items;
+}
+
+async function fetchYouTubePlaylistItems(playlistId, youtubeApiKey) {
+  const items = [];
+  let nextPageToken = "";
+
+  do {
+    const apiUrl = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+    apiUrl.searchParams.set("part", "snippet,contentDetails,status");
+    apiUrl.searchParams.set("playlistId", playlistId);
+    apiUrl.searchParams.set("maxResults", "50");
+    apiUrl.searchParams.set("key", youtubeApiKey);
+
+    if (nextPageToken) {
+      apiUrl.searchParams.set("pageToken", nextPageToken);
+    }
+
+    const response = await fetchJson(apiUrl);
+    items.push(...(Array.isArray(response.items) ? response.items : []));
+    nextPageToken = typeof response.nextPageToken === "string" ? response.nextPageToken : "";
+  } while (nextPageToken);
+
+  return items;
+}
+
+function buildYouTubePlaylistFallbackTrack({
+  videoId,
+  title,
+  artworkUrl = "",
+  sourceChannelId = "",
+  sourceName = ""
+}) {
+  return {
+    provider: "youtube",
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    title: buildYouTubeTrackTitle(title, sourceName, `YouTube video ${videoId}`),
+    key: `youtube:${videoId}`,
+    artworkUrl,
+    durationSeconds: null,
+    sourceChannelId,
+    sourceName,
+    sourceUrl: sourceChannelId ? `https://www.youtube.com/channel/${sourceChannelId}` : "",
+    isLive: false
+  };
+}
+
+export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
+  if (!youtubeApiKey) {
+    throw new Error("YouTube API key is required to import YouTube playlists.");
+  }
+
+  const provider = detectProvider(rawUrl);
+
+  if (provider !== "youtube") {
+    throw new Error("Only YouTube playlist URLs can be imported.");
+  }
+
+  const playlistId = extractYouTubePlaylistId(rawUrl);
+
+  if (!playlistId) {
+    throw new Error("Provide a YouTube playlist URL with a list= parameter.");
+  }
+
+  const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlists");
+  playlistUrl.searchParams.set("part", "snippet");
+  playlistUrl.searchParams.set("id", playlistId);
+  playlistUrl.searchParams.set("key", youtubeApiKey);
+
+  const [playlistResponse, playlistItems] = await Promise.all([
+    fetchJson(playlistUrl),
+    fetchYouTubePlaylistItems(playlistId, youtubeApiKey)
+  ]);
+
+  const playlistTitle = normalizeTrackTitle(
+    playlistResponse.items?.[0]?.snippet?.title,
+    `YouTube playlist ${playlistId}`
+  );
+  const playlistEntriesByVideoId = new Map();
+
+  for (const item of playlistItems) {
+    const snippet = item?.snippet ?? {};
+    const contentDetails = item?.contentDetails ?? {};
+    const videoId = typeof contentDetails.videoId === "string" && contentDetails.videoId.trim()
+      ? contentDetails.videoId.trim()
+      : typeof snippet?.resourceId?.videoId === "string" && snippet.resourceId.videoId.trim()
+        ? snippet.resourceId.videoId.trim()
+        : "";
+
+    if (!videoId || playlistEntriesByVideoId.has(videoId)) {
+      continue;
+    }
+
+    const thumbnails = snippet.thumbnails ?? {};
+    const sourceChannelId = typeof snippet.videoOwnerChannelId === "string" ? snippet.videoOwnerChannelId.trim() : "";
+    const sourceName = typeof snippet.videoOwnerChannelTitle === "string" && snippet.videoOwnerChannelTitle.trim()
+      ? snippet.videoOwnerChannelTitle.trim()
+      : typeof snippet.channelTitle === "string"
+        ? snippet.channelTitle.trim()
+        : "";
+
+    playlistEntriesByVideoId.set(videoId, {
+      videoId,
+      title: typeof snippet.title === "string" ? snippet.title.trim() : "",
+      artworkUrl:
+        thumbnails.maxres?.url ??
+        thumbnails.standard?.url ??
+        thumbnails.high?.url ??
+        thumbnails.medium?.url ??
+        thumbnails.default?.url ??
+        "",
+      sourceChannelId,
+      sourceName
+    });
+  }
+
+  if (playlistEntriesByVideoId.size === 0) {
+    throw new Error("This YouTube playlist does not contain any playable videos.");
+  }
+
+  const detailedItems = await fetchYouTubeVideoMetadataItems(Array.from(playlistEntriesByVideoId.keys()), youtubeApiKey);
+  const videoItemsById = new Map(
+    detailedItems
+      .filter((item) => typeof item?.id === "string" && item.id.trim())
+      .map((item) => [item.id.trim(), item])
+  );
+  const tracks = [];
+
+  for (const [videoId, entry] of playlistEntriesByVideoId.entries()) {
+    const videoItem = videoItemsById.get(videoId);
+
+    if (videoItem) {
+      tracks.push(buildYouTubeTrackFromVideoApiItem(videoItem));
+      continue;
+    }
+
+    tracks.push(buildYouTubePlaylistFallbackTrack(entry));
+  }
+
+  return {
+    playlistId,
+    title: playlistTitle,
+    trackCount: playlistEntriesByVideoId.size,
+    skippedCount: Math.max(playlistEntriesByVideoId.size - tracks.length, 0),
+    tracks
   };
 }
 

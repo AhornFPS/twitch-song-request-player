@@ -1030,6 +1030,32 @@ export class PlayerController {
     };
   }
 
+  async appendTracksToPlaylist(tracks, {
+    triggeredBy = "unknown",
+    details = null
+  } = {}) {
+    const result = await this.playlistRepository.appendTracks(tracks);
+
+    logInfo("Appending tracks to playlist", {
+      triggeredBy,
+      addedCount: result.addedCount,
+      duplicateCount: result.duplicateCount
+    });
+
+    this.recordAdminEvent("playlist_import", {
+      triggeredBy,
+      details: {
+        addedCount: result.addedCount,
+        duplicateCount: result.duplicateCount,
+        ...(details && typeof details === "object" ? details : {})
+      }
+    });
+    await this.persistRuntimeState();
+    this.broadcastState();
+
+    return result;
+  }
+
   getCurrentTrack() {
     return this.serializeTrack(this.currentTrack);
   }

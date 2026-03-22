@@ -325,6 +325,7 @@ test("request policy and chat commands are normalized with defaults", async (t) 
   assert.equal(settings.chatCommands.skip_current.trigger, "!next");
   assert.equal(settings.chatCommands.current_song.trigger, "!currentsong");
   assert.equal(settings.chatCommands.queue_status.trigger, "!queue");
+  assert.equal(settings.chatCommands.import_youtube_playlist.trigger, "!addplaylist");
 });
 
 test("request policy defaults keep all supported request-source providers enabled", async (t) => {

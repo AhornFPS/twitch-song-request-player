@@ -2,7 +2,7 @@
 import tmi from "tmi.js";
 import { logInfo } from "./logger.js";
 import { findChatCommandAction, getDefaultChatCommands } from "./chat-commands.js";
-import { resolveSongRequest } from "./providers.js";
+import { resolveSongRequest, resolveYouTubePlaylistFromApi } from "./providers.js";
 import { TwitchChannelInfo } from "./twitch-channel-info.js";
 
 function getViewerRoleState(tags, channelName) {
@@ -224,11 +224,13 @@ export class TwitchBot {
     client = null,
     channelInfo = null,
     songRequestResolver = resolveSongRequest,
+    youtubePlaylistResolver = resolveYouTubePlaylistFromApi,
     updateSettings = async () => null
   }) {
     this.config = config;
     this.playerController = playerController;
     this.songRequestResolver = songRequestResolver;
+    this.youtubePlaylistResolver = youtubePlaylistResolver;
     this.updateSettings = updateSettings;
     this.channelInfo = channelInfo ?? new TwitchChannelInfo({
       channelName: config.twitch.channel,
@@ -744,6 +746,41 @@ export class TwitchBot {
       }
 
       await this.reply(channel, `Saved: ${result.track.title}`);
+      return;
+    }
+
+    if (actionId === "import_youtube_playlist") {
+      if (!query) {
+        await this.reply(channel, "Usage: provide a YouTube playlist URL.");
+        return;
+      }
+
+      const playlistImport = await this.youtubePlaylistResolver(query, this.config.youtubeApiKey);
+      const result = await this.playerController.appendTracksToPlaylist(playlistImport.tracks, {
+        triggeredBy: tags.username ?? "unknown",
+        details: {
+          input: query,
+          playlistId: playlistImport.playlistId,
+          playlistTitle: playlistImport.title,
+          requestedCount: playlistImport.trackCount
+        }
+      });
+
+      if (result.addedCount === 0) {
+        await this.reply(
+          channel,
+          `No new tracks were added from ${playlistImport.title}. ${result.duplicateCount} duplicates skipped.`
+        );
+        return;
+      }
+
+      const duplicateSuffix = result.duplicateCount > 0
+        ? ` ${result.duplicateCount} duplicates skipped.`
+        : "";
+      await this.reply(
+        channel,
+        `Imported ${result.addedCount} tracks from ${playlistImport.title} into the playlist.${duplicateSuffix}`
+      );
       return;
     }
 

@@ -885,6 +885,12 @@ test("settings API persists request policy and configurable chat commands", asyn
           permission: "vip",
           enabled: true
         },
+        import_youtube_playlist: {
+          trigger: "!addplaylist",
+          aliases: [],
+          permission: "moderator",
+          enabled: true
+        },
         open_requests: {
           trigger: "!openrequests",
           aliases: [],
@@ -933,6 +939,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(payload.settings.chatCommands.song_request.trigger, "!song");
   assert.deepEqual(payload.settings.chatCommands.song_request.aliases, ["!req"]);
   assert.equal(payload.settings.chatCommands.queue_status.trigger, "!queue");
+  assert.equal(payload.settings.chatCommands.import_youtube_playlist.trigger, "!addplaylist");
   assert.equal(payload.settings.chatCommands.clear_queue.trigger, "!clearqueue");
 
   const persistedSettings = JSON.parse(
@@ -959,6 +966,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.deepEqual(persistedSettings.requestPolicy.blockedPhrases, ["blocked phrase"]);
   assert.equal(persistedSettings.chatCommands.current_song.trigger, "!np");
   assert.equal(persistedSettings.chatCommands.remove_own_request.trigger, "!unrequest");
+  assert.equal(persistedSettings.chatCommands.import_youtube_playlist.trigger, "!addplaylist");
   assert.deepEqual(desktopIntegrationCalls, [true]);
 });
 

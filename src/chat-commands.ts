@@ -73,6 +73,15 @@ const commandSpecs = [
     enabled: true
   },
   {
+    id: "import_youtube_playlist",
+    label: "Import YouTube playlist",
+    description: "Import every track from a YouTube playlist into the fallback playlist.",
+    trigger: "!addplaylist",
+    aliases: [],
+    permission: "moderator",
+    enabled: true
+  },
+  {
     id: "open_requests",
     label: "Open requests",
     description: "Re-open viewer song requests.",

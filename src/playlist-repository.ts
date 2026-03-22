@@ -528,6 +528,58 @@ export class PlaylistRepository {
     return true;
   }
 
+  async appendTracks(tracks) {
+    const normalizedTracks = Array.isArray(tracks) ? tracks : [];
+    const existingKeys = new Set(this.rows.map((row) => row.Key));
+    const seenIncomingKeys = new Set();
+    const rowsToAppend = [];
+    const addedTracks = [];
+    let duplicateCount = 0;
+
+    for (const track of normalizedTracks) {
+      const key = typeof track?.key === "string" ? track.key.trim() : "";
+      const url = typeof track?.url === "string" ? track.url.trim() : "";
+      const provider = typeof track?.provider === "string" ? track.provider.trim() : "";
+
+      if (!key || !url || !provider) {
+        continue;
+      }
+
+      if (seenIncomingKeys.has(key) || existingKeys.has(key)) {
+        duplicateCount += 1;
+        continue;
+      }
+
+      seenIncomingKeys.add(key);
+      existingKeys.add(key);
+
+      const row = {
+        Link: url,
+        Title: normalizePlaylistTitle(track.title),
+        Provider: provider,
+        Key: key
+      };
+      rowsToAppend.push(row);
+      addedTracks.push(this.buildTrackPayload(row));
+    }
+
+    if (rowsToAppend.length > 0) {
+      this.rows.push(...rowsToAppend);
+      await this.persist();
+      logInfo("Tracks appended to playlist", {
+        addedCount: rowsToAppend.length,
+        duplicateCount
+      });
+    }
+
+    return {
+      addedCount: rowsToAppend.length,
+      duplicateCount,
+      finalCount: this.rows.length,
+      tracks: addedTracks
+    };
+  }
+
   async removeTrackByKey(trackKey) {
     const track = this.findTrackByKey(trackKey);
 
