@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.7.0 - 2026-03-28
+
 - Added a new Slate overlay theme with a cleaner lower-third layout and a readable subtitle line.
 - Changed the Slate overlay theme to a floating, ultra-minimal layout that removes the outer card and extra status pills.
 
