@@ -212,6 +212,7 @@ test("new overlay themes are exposed and accepted as valid saved settings", asyn
     "sunset",
     "winamp",
     "compact",
+    "slate",
     "terminal",
     "synthwave",
     "broadcast",

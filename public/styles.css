@@ -161,8 +161,24 @@ body {
   min-width: 0;
   flex: 1;
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
   min-height: 62px;
+}
+
+.current-meta {
+  display: none;
+  width: 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .player-card__status {
@@ -1076,6 +1092,111 @@ body {
 
 [data-theme="compact"] .queue-meta {
   display: none; /* hide requester in compact UP NEXT row */
+}
+
+/* =====================================================
+   Slate – minimal lower-third with stronger readability
+   ===================================================== */
+
+[data-theme="slate"] .player-card {
+  width: min(560px, calc(100vw - 20px));
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  gap: 0;
+  overflow: visible;
+}
+
+[data-theme="slate"] .player-card::before {
+  display: none;
+}
+
+[data-theme="slate"] .player-card__glow {
+  display: none;
+}
+
+[data-theme="slate"] .player-card__top {
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  overflow: visible;
+}
+
+[data-theme="slate"] .player-card__media {
+  width: 82px;
+  height: 82px;
+}
+
+[data-theme="slate"] .artwork-image,
+[data-theme="slate"] .artwork-fallback {
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.34),
+    0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+[data-theme="slate"] .player-card__main {
+  display: grid;
+  gap: 6px;
+}
+
+[data-theme="slate"] .player-card__header {
+  display: block;
+}
+
+[data-theme="slate"] .player-card__copy {
+  min-height: 0;
+  gap: 4px;
+}
+
+[data-theme="slate"] #current-title {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: clamp(1.18rem, 2.2vw, 1.62rem);
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: 0.01em;
+  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.42);
+}
+
+[data-theme="slate"] .current-meta {
+  display: block;
+  color: #bcc8da;
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+[data-theme="slate"] .player-card__status {
+  display: none;
+}
+
+[data-theme="slate"] .timeline {
+  gap: 8px;
+  margin-top: 2px;
+}
+
+[data-theme="slate"] .timeline__time {
+  color: #d4dde9;
+  font-size: 0.7rem;
+}
+
+[data-theme="slate"] .timeline__track {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.18);
+  box-shadow: none;
+}
+
+[data-theme="slate"] .timeline__fill {
+  background: linear-gradient(90deg, #dce7f5, #84d9dd);
+  box-shadow: 0 0 10px rgba(132, 217, 221, 0.18);
+}
+
+[data-theme="slate"] .queue-panel {
+  display: none;
 }
 
 @media (max-width: 640px) {

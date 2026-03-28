@@ -784,6 +784,29 @@ function setMetaText(message) {
     currentMeta.textContent = message;
   }
 }
+function getOverlayThemeId() {
+  return document.documentElement.dataset.theme || "aurora";
+}
+function splitArtistAndTitle(title) {
+  if (typeof title !== "string") {
+    return null;
+  }
+  const trimmedTitle = title.trim();
+  const separatorMatch = trimmedTitle.match(/\s[-–—]\s/);
+  if (!separatorMatch?.index) {
+    return null;
+  }
+  const separatorIndex = separatorMatch.index;
+  const artist = trimmedTitle.slice(0, separatorIndex).trim();
+  const trackTitle = trimmedTitle.slice(separatorIndex + separatorMatch[0].length).trim();
+  if (!artist || !trackTitle || artist.length > 48) {
+    return null;
+  }
+  return {
+    artist,
+    trackTitle
+  };
+}
 function describeTrackMeta(track) {
   if (!track) {
     return socketConnected ? "Queue is empty. Fallback playlist will play automatically." : "Connecting to the player service...";
@@ -794,10 +817,43 @@ function describeTrackMeta(track) {
   const requester = track.requestedBy?.displayName || track.requestedBy?.username || "unknown";
   return `Requested by ${requester}`;
 }
+function getDisplayedTrackText(track) {
+  if (!track) {
+    return {
+      title: "Waiting for a track",
+      meta: describeTrackMeta(track)
+    };
+  }
+  if (getOverlayThemeId() !== "slate") {
+    return {
+      title: track.title,
+      meta: describeTrackMeta(track)
+    };
+  }
+  const separatedTrack = splitArtistAndTitle(track.title);
+  if (separatedTrack) {
+    return {
+      title: separatedTrack.trackTitle,
+      meta: separatedTrack.artist
+    };
+  }
+  if (track.origin === "playlist") {
+    return {
+      title: track.title,
+      meta: getProviderLabel(track.provider)
+    };
+  }
+  const requester = track.requestedBy?.displayName || track.requestedBy?.username || "";
+  return {
+    title: track.title,
+    meta: requester ? `Requested by ${requester}` : getProviderLabel(track.provider)
+  };
+}
 function applyStateToUi(state) {
   const currentTrack = state.currentTrack;
   const queue = state.queue ?? [];
-  const titleText = currentTrack?.title ?? "Waiting for a track";
+  const displayText = getDisplayedTrackText(currentTrack);
+  const titleText = displayText.title;
   const titleChanged = (currentTitleText?.textContent ?? "") !== titleText || (currentTitleTextClone?.textContent ?? "") !== titleText;
   if (currentTitleText) {
     currentTitleText.textContent = titleText;
@@ -809,7 +865,7 @@ function applyStateToUi(state) {
     scheduleTitleMarqueeUpdate();
     scheduleDelayedTitleMarqueeUpdate(320);
   }
-  setMetaText(describeTrackMeta(currentTrack));
+  setMetaText(displayText.meta);
   providerBadge.textContent = currentTrack ? getProviderLabel(currentTrack.provider) : "Idle";
   saveBadge.textContent = currentTrack ? currentTrack.isSaved ? "Saved" : "Unsaved" : "Unsaved";
   saveBadge.className = currentTrack?.isSaved ? "save-badge save-badge--saved" : "save-badge save-badge--idle";

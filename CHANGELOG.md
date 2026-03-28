@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added a new Slate overlay theme with a cleaner lower-third layout and a readable subtitle line.
+- Changed the Slate overlay theme to a floating, ultra-minimal layout that removes the outer card and extra status pills.
+
 ## 2.6.0 - 2026-03-22
 
 - Added a moderator `!addplaylist` chat command to import full YouTube playlists into the fallback playlist without adding those tracks to the live queue.

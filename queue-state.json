@@ -1,23 +1,39 @@
 {
-  "queue": [
-    {
-      "id": "81042b8f-4272-42e6-9991-eec37c2be2e9",
-      "provider": "youtube",
-      "url": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
-      "title": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)",
-      "key": "youtube:9hGcJA8fXvU",
-      "origin": "queue",
-      "artworkUrl": "https://i.ytimg.com/vi/9hGcJA8fXvU/maxresdefault.jpg",
-      "audioUrl": "",
-      "durationSeconds": 287,
-      "requestedBy": {
-        "username": "oldmanrune",
-        "displayName": "OldManRune"
-      }
-    }
-  ],
+  "queue": [],
   "stoppedTrack": null,
   "history": [
+    {
+      "track": {
+        "id": "5611b1e9-b320-4fb8-8e81-fef25add5431",
+        "provider": "youtube",
+        "url": "https://youtu.be/4kZHYcRJzD4",
+        "title": "KASIMOFF - You Again (Extended Mix)",
+        "key": "youtube:4kZHYcRJzD4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
+        "requestedBy": null
+      },
+      "status": "skipped",
+      "completedAt": "2026-03-28T17:02:59.801Z"
+    },
+    {
+      "track": {
+        "id": "5611b1e9-b320-4fb8-8e81-fef25add5431",
+        "provider": "youtube",
+        "url": "https://youtu.be/4kZHYcRJzD4",
+        "title": "KASIMOFF - You Again (Extended Mix)",
+        "key": "youtube:4kZHYcRJzD4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
+        "requestedBy": null
+      },
+      "status": "stopped",
+      "completedAt": "2026-03-23T23:03:07.394Z"
+    },
     {
       "track": {
         "id": "3214d710-b14d-484a-88c3-2080fa7bffeb",
@@ -115,5 +131,60 @@
       "completedAt": "2026-03-17T22:07:08.711Z"
     }
   ],
-  "adminEvents": []
+  "adminEvents": [
+    {
+      "action": "skip_current",
+      "triggeredBy": "dashboard",
+      "track": {
+        "id": "5611b1e9-b320-4fb8-8e81-fef25add5431",
+        "provider": "youtube",
+        "url": "https://youtu.be/4kZHYcRJzD4",
+        "title": "KASIMOFF - You Again (Extended Mix)",
+        "key": "youtube:4kZHYcRJzD4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
+        "requestedBy": null
+      },
+      "details": null,
+      "createdAt": "2026-03-28T17:02:59.800Z"
+    },
+    {
+      "action": "restart_stopped",
+      "triggeredBy": "dashboard",
+      "track": {
+        "id": "5611b1e9-b320-4fb8-8e81-fef25add5431",
+        "provider": "youtube",
+        "url": "https://youtu.be/4kZHYcRJzD4",
+        "title": "KASIMOFF - You Again (Extended Mix)",
+        "key": "youtube:4kZHYcRJzD4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
+        "requestedBy": null
+      },
+      "details": null,
+      "createdAt": "2026-03-28T17:02:34.774Z"
+    },
+    {
+      "action": "stop_playback",
+      "triggeredBy": "dashboard",
+      "track": {
+        "id": "5611b1e9-b320-4fb8-8e81-fef25add5431",
+        "provider": "youtube",
+        "url": "https://youtu.be/4kZHYcRJzD4",
+        "title": "KASIMOFF - You Again (Extended Mix)",
+        "key": "youtube:4kZHYcRJzD4",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": null,
+        "requestedBy": null
+      },
+      "details": null,
+      "createdAt": "2026-03-23T23:03:07.394Z"
+    }
+  ]
 }

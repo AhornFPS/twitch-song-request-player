@@ -94,6 +94,28 @@
   --badge-queue-text: #a0e8f0;
 }
 
+:root[data-theme="slate"] {
+  --panel: rgba(13, 21, 37, 0.84);
+  --panel-border: rgba(214, 225, 245, 0.14);
+  --panel-highlight: rgba(170, 191, 226, 0.1);
+  --text: #f5f7fb;
+  --muted: #aebbcf;
+  --accent: #d9e2f0;
+  --accent-strong: #d6c69b;
+  --shadow: 0 20px 44px rgba(2, 8, 18, 0.5);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.1);
+  --overlay-card-start: rgba(34, 52, 84, 0.8);
+  --overlay-card-end: rgba(14, 22, 39, 0.92);
+  --overlay-orb-left: rgba(255, 255, 255, 0.08);
+  --overlay-orb-right: rgba(179, 197, 225, 0.08);
+  --overlay-artwork-start: rgba(36, 50, 76, 0.96);
+  --overlay-artwork-end: rgba(12, 20, 34, 0.98);
+  --overlay-queue-item-start: rgba(255, 255, 255, 0.06);
+  --overlay-queue-item-end: rgba(255, 255, 255, 0.02);
+  --overlay-progress-end: #d6c69b;
+}
+
 :root[data-theme="terminal"] {
   --panel: rgba(3, 7, 3, 0.97);
   --panel-border: rgba(45, 216, 129, 0.46);

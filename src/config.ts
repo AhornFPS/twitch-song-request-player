@@ -37,6 +37,11 @@ const themeOptions = [
     description: "Slim ticker bar: stacked coloured badges, inline UP NEXT queue."
   },
   {
+    id: "slate",
+    label: "Slate",
+    description: "Muted steel-blue lower-third with a brighter title and softer secondary metadata."
+  },
+  {
     id: "terminal",
     label: "Terminal",
     description: "Monochrome CRT readout with only the essentials."
