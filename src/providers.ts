@@ -529,6 +529,376 @@ function getTokenCoverage(expectedValue, candidateValue) {
   return matchedTokens / expectedTokens.length;
 }
 
+function splitArtistAndTitle(value) {
+  const normalizedValue = normalizeTrackTitle(value, "");
+  const match = normalizedValue.match(/^(.+?)\s[-–—]\s(.+)$/);
+
+  if (!match) {
+    return null;
+  }
+
+  const artist = normalizeTrackTitle(match[1], "");
+  const trackTitle = normalizeTrackTitle(match[2], "");
+
+  if (!artist || !trackTitle) {
+    return null;
+  }
+
+  return {
+    artist,
+    trackTitle
+  };
+}
+
+function pushUniqueQuery(queries, value) {
+  const normalizedValue = typeof value === "string" ? value.trim() : "";
+
+  if (!normalizedValue || queries.includes(normalizedValue)) {
+    return;
+  }
+
+  queries.push(normalizedValue);
+}
+
+function buildYouTubeRadioQueries(seedTrack) {
+  const queries = [];
+  const radioSeedInput = typeof seedTrack?.radioSeedInput === "string"
+    ? seedTrack.radioSeedInput.trim()
+    : "";
+  const sourceName = normalizeTrackTitle(
+    seedTrack?.requestedFromName || seedTrack?.sourceName,
+    ""
+  );
+  const effectiveTitle = normalizeTrackTitle(
+    seedTrack?.requestedFromTitle || seedTrack?.title,
+    ""
+  );
+  const separatedTitle = splitArtistAndTitle(effectiveTitle);
+  const artist = sourceName || separatedTitle?.artist || "";
+  const trackTitle = separatedTitle?.trackTitle || effectiveTitle;
+
+  if (radioSeedInput && !isLikelyUrl(radioSeedInput)) {
+    pushUniqueQuery(queries, `${radioSeedInput} music`);
+    pushUniqueQuery(queries, radioSeedInput);
+  }
+
+  if (artist && trackTitle) {
+    pushUniqueQuery(queries, `${artist} ${trackTitle} radio`);
+    pushUniqueQuery(queries, `${artist} ${trackTitle}`);
+    pushUniqueQuery(queries, `${artist} similar songs`);
+  }
+
+  if (artist) {
+    pushUniqueQuery(queries, `${artist} mix`);
+    pushUniqueQuery(queries, `${artist} songs`);
+  }
+
+  if (trackTitle) {
+    pushUniqueQuery(queries, `${trackTitle} music`);
+  }
+
+  return queries;
+}
+
+function isLikelySameTrack(candidate, seedTrack) {
+  const candidateKey = typeof candidate?.key === "string"
+    ? candidate.key.trim()
+    : typeof candidate?.id?.videoId === "string"
+      ? `youtube:${candidate.id.videoId.trim()}`
+      : "";
+
+  if (candidateKey && candidateKey === seedTrack?.key) {
+    return true;
+  }
+
+  const candidateTitle = normalizeTrackTitle(candidate?.title || candidate?.snippet?.title, "");
+  const candidateSource = normalizeTrackTitle(candidate?.sourceName || candidate?.snippet?.channelTitle, "");
+  const separatedSeedTitle = splitArtistAndTitle(seedTrack?.requestedFromTitle || seedTrack?.title || "");
+  const seedTitle = normalizeTrackTitle(
+    separatedSeedTitle?.trackTitle || seedTrack?.requestedFromTitle || seedTrack?.title,
+    ""
+  );
+  const seedSource = normalizeTrackTitle(
+    seedTrack?.requestedFromName || seedTrack?.sourceName || separatedSeedTitle?.artist,
+    ""
+  );
+
+  if (!seedTitle || !candidateTitle) {
+    return false;
+  }
+
+  const titleCoverage = getTokenCoverage(seedTitle, `${candidateTitle} ${candidateSource}`.trim());
+  if (titleCoverage < 1) {
+    return false;
+  }
+
+  if (!seedSource) {
+    return true;
+  }
+
+  return getTokenCoverage(seedSource, `${candidateTitle} ${candidateSource}`.trim()) >= 0.5;
+}
+
+async function searchYouTubeVideos(query, youtubeApiKey, {
+  safeSearch = "none",
+  maxResults = 10
+} = {}) {
+  const trimmedQuery = typeof query === "string" ? query.trim() : "";
+
+  if (!trimmedQuery || !youtubeApiKey) {
+    return [];
+  }
+
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("type", "video");
+  url.searchParams.set("maxResults", String(Math.min(Math.max(maxResults, 1), 25)));
+  url.searchParams.set("videoCategoryId", "10");
+  url.searchParams.set("safeSearch", ["none", "moderate", "strict"].includes(safeSearch) ? safeSearch : "none");
+  url.searchParams.set("q", trimmedQuery);
+  url.searchParams.set("key", youtubeApiKey);
+
+  const response = await fetchJson(url);
+  return Array.isArray(response.items) ? response.items : [];
+}
+
+function buildYouTubeTrackFromSearchItem(item) {
+  const videoId = typeof item?.id?.videoId === "string" ? item.id.videoId.trim() : "";
+  const snippet = item?.snippet ?? {};
+  const thumbnails = snippet.thumbnails ?? {};
+  const sourceName = typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "";
+  const liveBroadcastContent = typeof snippet.liveBroadcastContent === "string"
+    ? snippet.liveBroadcastContent.trim().toLowerCase()
+    : "none";
+
+  if (!videoId) {
+    return null;
+  }
+
+  return {
+    provider: "youtube",
+    url: `https://www.youtube.com/watch?v=${videoId}`,
+    title: buildYouTubeTrackTitle(snippet.title, sourceName, `YouTube video ${videoId}`),
+    key: `youtube:${videoId}`,
+    artworkUrl:
+      thumbnails.high?.url ??
+      thumbnails.medium?.url ??
+      thumbnails.default?.url ??
+      "",
+    durationSeconds: null,
+    sourceChannelId: typeof snippet.channelId === "string" ? snippet.channelId.trim() : "",
+    sourceName,
+    sourceUrl: typeof snippet.channelId === "string" && snippet.channelId.trim()
+      ? `https://www.youtube.com/channel/${snippet.channelId.trim()}`
+      : "",
+    isLive: liveBroadcastContent === "live" || liveBroadcastContent === "upcoming"
+  };
+}
+
+export async function searchYouTubeMusicResults(query, youtubeApiKey, {
+  safeSearch = "none",
+  limit = 5
+} = {}) {
+  const trimmedQuery = typeof query === "string" ? query.trim() : "";
+  const normalizedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 5, 1), 10);
+
+  if (!trimmedQuery) {
+    throw new Error("Please provide a YouTube, SoundCloud, Spotify, or Suno link, or a search query.");
+  }
+
+  if (!youtubeApiKey) {
+    throw new Error("YouTube search requires YOUTUBE_API_KEY in your .env file.");
+  }
+
+  const searchItems = await searchYouTubeVideos(trimmedQuery, youtubeApiKey, {
+    safeSearch,
+    maxResults: normalizedLimit
+  });
+
+  if (searchItems.length === 0) {
+    throw new Error(`No YouTube music results found for "${trimmedQuery}".`);
+  }
+
+  const detailedItems = await fetchYouTubeVideoMetadataItems(
+    searchItems
+      .map((item) => typeof item?.id?.videoId === "string" ? item.id.videoId.trim() : "")
+      .filter(Boolean),
+    youtubeApiKey
+  );
+  const detailedItemsById = new Map(
+    detailedItems
+      .filter((item) => typeof item?.id === "string" && item.id.trim())
+      .map((item) => [item.id.trim(), item])
+  );
+
+  const tracks = [];
+
+  for (const item of searchItems) {
+    const videoId = typeof item?.id?.videoId === "string" ? item.id.videoId.trim() : "";
+    if (!videoId) {
+      continue;
+    }
+
+    const detailedTrack = detailedItemsById.has(videoId)
+      ? buildYouTubeTrackFromVideoApiItem(detailedItemsById.get(videoId), {
+        url: `https://www.youtube.com/watch?v=${videoId}`
+      })
+      : buildYouTubeTrackFromSearchItem(item);
+
+    if (!detailedTrack) {
+      continue;
+    }
+
+    detailedTrack.artworkUrl =
+      detailedTrack.artworkUrl ||
+      item.snippet?.thumbnails?.high?.url ||
+      item.snippet?.thumbnails?.default?.url ||
+      "";
+
+    if (tracks.some((track) => track.key === detailedTrack.key)) {
+      continue;
+    }
+
+    tracks.push(detailedTrack);
+
+    if (tracks.length >= normalizedLimit) {
+      break;
+    }
+  }
+
+  if (tracks.length === 0) {
+    throw new Error(`No YouTube music results found for "${trimmedQuery}".`);
+  }
+
+  return tracks;
+}
+
+export async function searchSongRequestCandidates(input, youtubeApiKey, options = {}) {
+  const trimmedInput = typeof input === "string" ? input.trim() : "";
+
+  if (!trimmedInput) {
+    throw new Error("Track input is required.");
+  }
+
+  if (isLikelyUrl(trimmedInput)) {
+    return [
+      await resolveSongRequest(trimmedInput, youtubeApiKey, options)
+    ];
+  }
+
+  if (options.allowSearchRequests === false) {
+    throw new Error("Search-based song requests are disabled. Request a direct YouTube, SoundCloud, Spotify, or Suno link instead.");
+  }
+
+  return searchYouTubeMusicResults(trimmedInput, youtubeApiKey, {
+    safeSearch: options.youtubeSafeSearch,
+    limit: options.limit
+  });
+}
+
+export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
+  safeSearch = "none",
+  limit = 3,
+  excludeTrackKeys = [],
+  isTrackAllowed = null
+} = {}) {
+  const normalizedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 3, 1), 10);
+
+  if (!youtubeApiKey) {
+    return [];
+  }
+
+  const queries = buildYouTubeRadioQueries(seedTrack);
+  if (queries.length === 0) {
+    return [];
+  }
+
+  const excludedKeys = new Set(
+    Array.isArray(excludeTrackKeys)
+      ? excludeTrackKeys
+        .map((trackKey) => typeof trackKey === "string" ? trackKey.trim() : "")
+        .filter(Boolean)
+      : []
+  );
+
+  if (typeof seedTrack?.key === "string" && seedTrack.key.trim()) {
+    excludedKeys.add(seedTrack.key.trim());
+  }
+
+  const tracks = [];
+
+  for (const query of queries) {
+    if (tracks.length >= normalizedLimit) {
+      break;
+    }
+
+    const searchItems = await searchYouTubeVideos(query, youtubeApiKey, {
+      safeSearch,
+      maxResults: 10
+    });
+    const candidateVideoIds = searchItems
+      .map((item) => typeof item?.id?.videoId === "string" ? item.id.videoId.trim() : "")
+      .filter(Boolean);
+
+    if (candidateVideoIds.length === 0) {
+      continue;
+    }
+
+    const detailedItems = await fetchYouTubeVideoMetadataItems(candidateVideoIds, youtubeApiKey);
+    const detailedItemsById = new Map(
+      detailedItems
+        .filter((item) => typeof item?.id === "string" && item.id.trim())
+        .map((item) => [item.id.trim(), item])
+    );
+
+    for (const searchItem of searchItems) {
+      if (tracks.length >= normalizedLimit) {
+        break;
+      }
+
+      const videoId = typeof searchItem?.id?.videoId === "string" ? searchItem.id.videoId.trim() : "";
+      if (!videoId) {
+        continue;
+      }
+
+      const trackKey = `youtube:${videoId}`;
+      if (excludedKeys.has(trackKey) || isLikelySameTrack(searchItem, seedTrack)) {
+        continue;
+      }
+
+      const detailedItem = detailedItemsById.get(videoId);
+      if (!detailedItem) {
+        continue;
+      }
+
+      const track = buildYouTubeTrackFromVideoApiItem(detailedItem, {
+        url: `https://www.youtube.com/watch?v=${videoId}`
+      });
+      track.artworkUrl =
+        track.artworkUrl ||
+        searchItem.snippet?.thumbnails?.high?.url ||
+        searchItem.snippet?.thumbnails?.default?.url ||
+        "";
+
+      if (excludedKeys.has(track.key) || isLikelySameTrack(track, seedTrack)) {
+        continue;
+      }
+
+      if (typeof isTrackAllowed === "function") {
+        const allowed = await isTrackAllowed(track);
+        if (!allowed) {
+          continue;
+        }
+      }
+
+      excludedKeys.add(track.key);
+      tracks.push(track);
+    }
+  }
+
+  return tracks;
+}
+
 function scoreExternalYouTubeCandidate(item, expectedTrack) {
   const candidateTitle = typeof item?.snippet?.title === "string" ? item.snippet.title : "";
   const candidateChannelTitle = typeof item?.snippet?.channelTitle === "string" ? item.snippet.channelTitle : "";
@@ -983,17 +1353,10 @@ export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "n
     throw new Error("YouTube search requires YOUTUBE_API_KEY in your .env file.");
   }
 
-  const url = new URL("https://www.googleapis.com/youtube/v3/search");
-  url.searchParams.set("part", "snippet");
-  url.searchParams.set("type", "video");
-  url.searchParams.set("maxResults", "1");
-  url.searchParams.set("videoCategoryId", "10");
-  url.searchParams.set("safeSearch", ["none", "moderate", "strict"].includes(safeSearch) ? safeSearch : "none");
-  url.searchParams.set("q", trimmedQuery);
-  url.searchParams.set("key", youtubeApiKey);
-
-  const response = await fetchJson(url);
-  const item = response.items?.[0];
+  const item = (await searchYouTubeVideos(trimmedQuery, youtubeApiKey, {
+    safeSearch,
+    maxResults: 1
+  }))[0];
 
   if (!item?.id?.videoId) {
     throw new Error(`No YouTube music result found for "${trimmedQuery}".`);
@@ -1025,17 +1388,10 @@ async function searchYouTubeMusicForExternalTrack(track, youtubeApiKey, { safeSe
     throw new Error("YouTube search requires YOUTUBE_API_KEY in your .env file.");
   }
 
-  const url = new URL("https://www.googleapis.com/youtube/v3/search");
-  url.searchParams.set("part", "snippet");
-  url.searchParams.set("type", "video");
-  url.searchParams.set("maxResults", "10");
-  url.searchParams.set("videoCategoryId", "10");
-  url.searchParams.set("safeSearch", ["none", "moderate", "strict"].includes(safeSearch) ? safeSearch : "none");
-  url.searchParams.set("q", trimmedQuery.trim());
-  url.searchParams.set("key", youtubeApiKey);
-
-  const response = await fetchJson(url);
-  const items = Array.isArray(response.items) ? response.items : [];
+  const items = await searchYouTubeVideos(trimmedQuery.trim(), youtubeApiKey, {
+    safeSearch,
+    maxResults: 10
+  });
   const bestMatch = items
     .map((item) => scoreExternalYouTubeCandidate(item, track))
     .sort((left, right) => right.score - left.score)[0];

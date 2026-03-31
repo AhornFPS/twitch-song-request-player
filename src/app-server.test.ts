@@ -256,6 +256,7 @@ test("partial settings save updates only the theme without touching other fields
     port,
     guiPlayerEnabled: false,
     guiPlayerVolume: 42,
+    overlayScalePercent: 100,
     theme: "aurora"
   };
 
@@ -299,6 +300,7 @@ test("partial settings save updates only the theme without touching other fields
   assert.equal(payload.settings.port, port);
   assert.equal(payload.settings.guiPlayerEnabled, false);
   assert.equal(payload.settings.guiPlayerVolume, 42);
+  assert.equal(payload.settings.overlayScalePercent, 100);
   assert.equal(payload.settings.youtubeApiKey, initialSettings.youtubeApiKey);
   assert.equal(Array.isArray(payload.dashboardLayoutOptions), true);
   assert.deepEqual(payload.dashboardLayoutOptions.map((layout) => layout.id), ["atlas"]);
@@ -311,7 +313,93 @@ test("partial settings save updates only the theme without touching other fields
   assert.equal(persistedSettings.port, port);
   assert.equal(persistedSettings.guiPlayerEnabled, false);
   assert.equal(persistedSettings.guiPlayerVolume, 42);
+  assert.equal(persistedSettings.overlayScalePercent, 100);
   assert.equal(persistedSettings.youtubeApiKey, initialSettings.youtubeApiKey);
+});
+
+test("partial settings save updates the overlay scale without touching other fields", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      youtubeApiKey: "youtube-key",
+      port,
+      guiPlayerEnabled: false,
+      guiPlayerVolume: 42,
+      overlayScalePercent: 100,
+      theme: "aurora"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      overlayScalePercent: 140
+    })
+  });
+
+  assert.equal(response.ok, true);
+
+  const payload = await response.json();
+  assert.equal(payload.settings.guiPlayerEnabled, false);
+  assert.equal(payload.settings.guiPlayerVolume, 42);
+  assert.equal(payload.settings.overlayScalePercent, 140);
+  assert.equal(payload.settings.theme, "aurora");
+  assert.equal(payload.settings.port, port);
+
+  const stateResponse = await fetch(new URL("/api/state", appServer.urls.overlayUrl));
+  assert.equal(stateResponse.ok, true);
+  const statePayload = await stateResponse.json();
+  assert.equal(statePayload.overlayScalePercent, 140);
+
+  const persistedSettings = JSON.parse(
+    await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8")
+  );
+  assert.equal(persistedSettings.guiPlayerEnabled, false);
+  assert.equal(persistedSettings.guiPlayerVolume, 42);
+  assert.equal(persistedSettings.overlayScalePercent, 140);
+  assert.equal(persistedSettings.theme, "aurora");
+  assert.equal(persistedSettings.port, port);
 });
 
 test("partial settings save updates the GUI player state without touching other fields", async (t) => {
@@ -743,6 +831,157 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   const nextPayload = await nextResponse.json();
   assert.equal(nextPayload.state.playbackStatus, "playing");
   assert.equal(nextPayload.state.currentTrack.title, "Dashboard Two");
+});
+
+test("overview search API returns selectable track matches", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  const originalFetch = global.fetch;
+  let appServer = null;
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ youtubeApiKey: "youtube-key", port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  global.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+
+    if (url.startsWith("https://www.googleapis.com/youtube/v3/search")) {
+      return createJsonResponse({
+        items: [
+          {
+            id: {
+              videoId: "search-one"
+            },
+            snippet: {
+              title: "Search Result One",
+              channelId: "UCsearch1",
+              channelTitle: "Search Artist One",
+              liveBroadcastContent: "none",
+              thumbnails: {
+                high: {
+                  url: "https://img.youtube.test/search-one.jpg"
+                }
+              }
+            }
+          },
+          {
+            id: {
+              videoId: "search-two"
+            },
+            snippet: {
+              title: "Search Result Two",
+              channelId: "UCsearch2",
+              channelTitle: "Search Artist Two",
+              liveBroadcastContent: "none",
+              thumbnails: {
+                high: {
+                  url: "https://img.youtube.test/search-two.jpg"
+                }
+              }
+            }
+          }
+        ]
+      });
+    }
+
+    if (url.startsWith("https://www.googleapis.com/youtube/v3/videos")) {
+      return createJsonResponse({
+        items: [
+          {
+            id: "search-one",
+            snippet: {
+              title: "Search Result One",
+              channelId: "UCsearch1",
+              channelTitle: "Search Artist One",
+              liveBroadcastContent: "none",
+              thumbnails: {
+                high: {
+                  url: "https://img.youtube.test/search-one.jpg"
+                }
+              }
+            },
+            contentDetails: {
+              duration: "PT3M15S"
+            }
+          },
+          {
+            id: "search-two",
+            snippet: {
+              title: "Search Result Two",
+              channelId: "UCsearch2",
+              channelTitle: "Search Artist Two",
+              liveBroadcastContent: "none",
+              thumbnails: {
+                high: {
+                  url: "https://img.youtube.test/search-two.jpg"
+                }
+              }
+            },
+            contentDetails: {
+              duration: "PT4M5S"
+            }
+          }
+        ]
+      });
+    }
+
+    return originalFetch(input, init);
+  };
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const searchResponse = await fetch(new URL("/api/search", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      input: "rock song"
+    })
+  });
+  assert.equal(searchResponse.ok, true);
+
+  const searchPayload = await searchResponse.json();
+  assert.equal(searchPayload.tracks.length, 2);
+  assert.equal(searchPayload.tracks[0].title, "Search Artist One - Search Result One");
+  assert.equal(searchPayload.tracks[0].durationSeconds, 195);
+  assert.equal(searchPayload.tracks[1].title, "Search Artist Two - Search Result Two");
 });
 
 test("settings API persists request policy and configurable chat commands", async (t) => {

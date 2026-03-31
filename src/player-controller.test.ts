@@ -7,7 +7,8 @@ function createController({
   runtimeStateStore = null,
   requestAuditStore = null,
   requestPolicy = {},
-  playlistRepositoryOverrides = {}
+  playlistRepositoryOverrides = {},
+  getRadioTracks = null
 } = {}) {
   const emittedEvents = [];
   const io = {
@@ -43,7 +44,8 @@ function createController({
       playlistRepository,
       runtimeStateStore,
       requestAuditStore,
-      requestPolicy
+      requestPolicy,
+      getRadioTracks
     }),
     emittedEvents
   };
@@ -219,6 +221,52 @@ test("pause toggle updates controller state and emits a player pause event", asy
     emittedEvents.filter(({ event }) => event === "player:toggle-pause").length,
     2
   );
+});
+
+test("current track elapsed time advances while playing and freezes while paused", async () => {
+  const realDateNow = Date.now;
+  let now = 1_000_000;
+  Date.now = () => now;
+
+  try {
+    const { controller } = createController();
+
+    await controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/progress-track",
+      title: "Progress Track",
+      key: "youtube:progress-track",
+      artworkUrl: "",
+      durationSeconds: 240,
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    });
+
+    const trackId = controller.getCurrentTrack()?.id;
+
+    await controller.handlePlayerEvent({
+      trackId,
+      status: "playing"
+    });
+
+    now += 45_000;
+    let elapsedSeconds = controller.getPublicState().currentTrack?.elapsedSeconds ?? 0;
+    assert.equal(Math.round(elapsedSeconds), 45);
+
+    await controller.togglePauseCurrentTrack("dashboard");
+    now += 15_000;
+    elapsedSeconds = controller.getPublicState().currentTrack?.elapsedSeconds ?? 0;
+    assert.equal(Math.round(elapsedSeconds), 45);
+
+    await controller.togglePauseCurrentTrack("dashboard");
+    now += 30_000;
+    elapsedSeconds = controller.getPublicState().currentTrack?.elapsedSeconds ?? 0;
+    assert.equal(Math.round(elapsedSeconds), 75);
+  } finally {
+    Date.now = realDateNow;
+  }
 });
 
 test("stop keeps the current track ready to restart without auto-advancing", async () => {
@@ -488,12 +536,262 @@ test("queue can be cleared without interrupting the current track", async () => 
   assert.equal(controller.getPublicState().queue.length, 0);
 });
 
+test("radio queues three related tracks after the final queued request finishes", async () => {
+  const radioCalls = [];
+  const { controller } = createController({
+    getRadioTracks: async ({ seedTrack, excludeTrackKeys, count }) => {
+      radioCalls.push({
+        seedTrack,
+        excludeTrackKeys,
+        count
+      });
+
+      return [
+        {
+          provider: "youtube",
+          url: "https://youtu.be/radio-one",
+          title: "Radio One",
+          key: "youtube:radio-one",
+          artworkUrl: "",
+          sourceName: "Radio Artist"
+        },
+        {
+          provider: "youtube",
+          url: "https://youtu.be/radio-two",
+          title: "Radio Two",
+          key: "youtube:radio-two",
+          artworkUrl: "",
+          sourceName: "Radio Artist"
+        },
+        {
+          provider: "youtube",
+          url: "https://youtu.be/radio-three",
+          title: "Radio Three",
+          key: "youtube:radio-three",
+          artworkUrl: "",
+          sourceName: "Radio Artist"
+        }
+      ];
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/final-request",
+    title: "Viewer Artist - Final Request",
+    key: "youtube:final-request",
+    artworkUrl: "",
+    sourceName: "Viewer Artist",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  }, {
+    requestInput: "rock song"
+  });
+
+  const currentTrackId = controller.getCurrentTrack()?.id;
+  await controller.handlePlayerEvent({
+    trackId: currentTrackId,
+    status: "ended"
+  });
+
+  assert.equal(radioCalls.length, 1);
+  assert.equal(radioCalls[0].count, 3);
+  assert.equal(radioCalls[0].seedTrack.title, "Viewer Artist - Final Request");
+  assert.equal(radioCalls[0].seedTrack.radioSeedInput, "rock song");
+  assert.equal(radioCalls[0].excludeTrackKeys.includes("youtube:final-request"), true);
+  assert.equal(controller.getCurrentTrack()?.origin, "radio");
+  assert.equal(controller.getCurrentTrack()?.title, "Radio One");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Radio Two", "Radio Three"]
+  );
+});
+
+test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
+  const { controller } = createController({
+    getRadioTracks: async ({ seedTrack }) => {
+      if (seedTrack.title === "First Seed") {
+        return [
+          {
+            provider: "youtube",
+            url: "https://youtu.be/first-radio-one",
+            title: "First Radio One",
+            key: "youtube:first-radio-one",
+            artworkUrl: ""
+          },
+          {
+            provider: "youtube",
+            url: "https://youtu.be/first-radio-two",
+            title: "First Radio Two",
+            key: "youtube:first-radio-two",
+            artworkUrl: ""
+          },
+          {
+            provider: "youtube",
+            url: "https://youtu.be/first-radio-three",
+            title: "First Radio Three",
+            key: "youtube:first-radio-three",
+            artworkUrl: ""
+          }
+        ];
+      }
+
+      return [
+        {
+          provider: "youtube",
+          url: "https://youtu.be/second-radio-one",
+          title: "Second Radio One",
+          key: "youtube:second-radio-one",
+          artworkUrl: ""
+        },
+        {
+          provider: "youtube",
+          url: "https://youtu.be/second-radio-two",
+          title: "Second Radio Two",
+          key: "youtube:second-radio-two",
+          artworkUrl: ""
+        },
+        {
+          provider: "youtube",
+          url: "https://youtu.be/second-radio-three",
+          title: "Second Radio Three",
+          key: "youtube:second-radio-three",
+          artworkUrl: ""
+        }
+      ];
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/first-seed",
+    title: "First Seed",
+    key: "youtube:first-seed",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "First Radio One");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["First Radio Two", "First Radio Three"]
+  );
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/second-seed",
+    title: "Second Seed",
+    key: "youtube:second-seed",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Second Seed");
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.origin, "radio");
+  assert.equal(controller.getCurrentTrack()?.title, "Second Radio One");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Second Radio Two", "Second Radio Three"]
+  );
+});
+
+test("radio tracks are auto-saved only when they finish naturally", async () => {
+  const savedTracks = [];
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      async appendTrack(track) {
+        savedTracks.push(track.title);
+        return true;
+      }
+    },
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/radio-finish",
+        title: "Radio Finish",
+        key: "youtube:radio-finish",
+        artworkUrl: ""
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/radio-skip",
+        title: "Radio Skip",
+        key: "youtube:radio-skip",
+        artworkUrl: ""
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/radio-three",
+        title: "Radio Three",
+        key: "youtube:radio-three",
+        artworkUrl: ""
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/seed-track",
+    title: "Seed Track",
+    key: "youtube:seed-track",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Radio Finish");
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.deepEqual(savedTracks, ["Seed Track", "Radio Finish"]);
+  assert.equal(controller.getCurrentTrack()?.title, "Radio Skip");
+
+  await controller.skipToNextTrack("dashboard");
+
+  assert.deepEqual(savedTracks, ["Seed Track", "Radio Finish"]);
+});
+
 test("controller persists queue, stopped track, and history to the runtime state store", async () => {
   let savedState = null;
   const runtimeStateStore = {
     async load() {
       return {
         queue: [],
+        radioQueue: [],
         stoppedTrack: null,
         history: []
       };
@@ -527,9 +825,21 @@ test("controller persists queue, stopped track, and history to the runtime state
       displayName: "ViewerTwo"
     }
   });
+  controller.radioQueue = [
+    {
+      id: "radio-track-1",
+      provider: "youtube",
+      url: "https://youtu.be/radio-track-1",
+      title: "Radio Track 1",
+      key: "youtube:radio-track-1",
+      origin: "radio",
+      artworkUrl: ""
+    }
+  ];
   await controller.stopPlayback("dashboard");
 
   assert.equal(savedState.queue.length, 1);
+  assert.equal(savedState.radioQueue.length, 1);
   assert.equal(savedState.stoppedTrack.title, "Persist Me");
   assert.equal(savedState.history[0].status, "stopped");
 });
@@ -551,6 +861,17 @@ test("controller restores queue, stopped track, and history from the runtime sta
               username: "viewerone",
               displayName: "ViewerOne"
             }
+          }
+        ],
+        radioQueue: [
+          {
+            id: "radio-one",
+            provider: "youtube",
+            url: "https://youtu.be/radio-one",
+            title: "Radio One",
+            key: "youtube:radio-one",
+            origin: "radio",
+            artworkUrl: ""
           }
         ],
         stoppedTrack: {
@@ -608,6 +929,8 @@ test("controller restores queue, stopped track, and history from the runtime sta
   const state = controller.getPublicState();
   assert.equal(state.queue.length, 1);
   assert.equal(state.queue[0].title, "Queued One");
+  assert.equal(state.radioQueue.length, 1);
+  assert.equal(state.radioQueue[0].title, "Radio One");
   assert.equal(state.stoppedTrack?.title, "Stopped One");
   assert.equal(state.history.length, 1);
   assert.equal(state.history[0].track?.title, "History One");

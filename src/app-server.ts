@@ -12,7 +12,7 @@ import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
-import { resolveSongRequest } from "./providers.js";
+import { findYouTubeRadioTracks, resolveSongRequest, searchSongRequestCandidates } from "./providers.js";
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
@@ -382,7 +382,14 @@ export async function startAppServer({
     playlistRepository,
     runtimeStateStore,
     requestAuditStore,
-    requestPolicy: currentSettings.requestPolicy
+    requestPolicy: currentSettings.requestPolicy,
+    getRadioTracks: async ({ seedTrack, excludeTrackKeys = [], count = 3 }) =>
+      findYouTubeRadioTracks(seedTrack, currentSettings.youtubeApiKey, {
+        safeSearch: currentSettings.requestPolicy?.youtubeSafeSearch,
+        limit: count,
+        excludeTrackKeys,
+        isTrackAllowed: async (track) => !playlistRepository.hasTrack(track)
+      })
   });
   await playerController.restoreRuntimeState();
   const twitchBotService = new TwitchBotService({
@@ -431,6 +438,7 @@ export async function startAppServer({
       ...playerController.getPublicState(),
       theme: currentSettings.theme,
       overlayBuildToken,
+      overlayScalePercent: currentSettings.overlayScalePercent,
       playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
     });
   });
@@ -593,6 +601,37 @@ export async function startAppServer({
       });
       response.status(400).json({
         error: error?.message ?? "Failed to add track to queue."
+      });
+    }
+  });
+
+  app.post("/api/search", async (request, response) => {
+    try {
+      const input = typeof request.body?.input === "string" ? request.body.input.trim() : "";
+
+      if (!input) {
+        response.status(400).json({
+          error: "Track input is required."
+        });
+        return;
+      }
+
+      const tracks = await searchSongRequestCandidates(input, currentSettings.youtubeApiKey, {
+        allowSearchRequests: true,
+        youtubeSafeSearch: currentSettings.requestPolicy?.youtubeSafeSearch,
+        limit: 5
+      });
+
+      response.json({
+        tracks
+      });
+    } catch (error) {
+      logError("Failed to search tracks for dashboard overview", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to search tracks."
       });
     }
   });
@@ -999,20 +1038,21 @@ export async function startAppServer({
         botSettingsChanged ||
         (hasRequiredSettings(currentSettings) && previousTwitchStatus.state !== "connected");
       const themeChanged = previousSettings.theme !== nextSettings.theme;
+      const overlayScaleChanged =
+        previousSettings.overlayScalePercent !== nextSettings.overlayScalePercent;
       const portChanged = previousSettings.port !== nextSettings.port;
       const twitchStatus = shouldReconnectBot
         ? await twitchBotService.applySettings(currentSettings)
         : previousTwitchStatus;
 
-      if (themeChanged) {
-        io.emit("app:settings", {
-          theme: currentSettings.theme
-        });
-      }
-
-      if (previousSettings.playerStartupTimeoutSeconds !== nextSettings.playerStartupTimeoutSeconds) {
+      if (
+        themeChanged ||
+        overlayScaleChanged ||
+        previousSettings.playerStartupTimeoutSeconds !== nextSettings.playerStartupTimeoutSeconds
+      ) {
         io.emit("app:settings", {
           theme: currentSettings.theme,
+          overlayScalePercent: currentSettings.overlayScalePercent,
           playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
         });
       }

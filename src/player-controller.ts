@@ -95,7 +95,8 @@ export class PlayerController {
     requestAuditStore = null,
     historyLimit = 25,
     requestAuditLimit = 1000,
-    requestPolicy = {}
+    requestPolicy = {},
+    getRadioTracks = null
   }) {
     this.io = io;
     this.playlistRepository = playlistRepository;
@@ -105,6 +106,7 @@ export class PlayerController {
     this.requestAuditLimit = requestAuditLimit;
     this.requestPolicy = normalizeRequestPolicy(requestPolicy);
     this.queue = [];
+    this.radioQueue = [];
     this.currentTrack = null;
     this.stoppedTrack = null;
     this.history = [];
@@ -113,11 +115,66 @@ export class PlayerController {
     this.requesterStatsByUser = new Map();
     this.isAdvancing = false;
     this.isPlaybackPaused = false;
+    this.currentTrackStartedAt = 0;
+    this.currentTrackElapsedSeconds = 0;
     this.playbackSuppressed = false;
     this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
     this.trackPlaybackListeners = new Set();
     this.requestTimestampsByUser = new Map();
+    this.getRadioTracks = typeof getRadioTracks === "function"
+      ? getRadioTracks
+      : null;
+  }
+
+  clampElapsedSeconds(track, value) {
+    const safeValue = Number.isFinite(value) ? Math.max(value, 0) : 0;
+    const durationSeconds = Number.isFinite(track?.durationSeconds)
+      ? Math.max(track.durationSeconds, 0)
+      : null;
+
+    if (durationSeconds === null) {
+      return safeValue;
+    }
+
+    return Math.min(safeValue, durationSeconds);
+  }
+
+  getTrackElapsedSeconds(track) {
+    if (!track) {
+      return null;
+    }
+
+    if (track.id === this.currentTrack?.id) {
+      let elapsedSeconds = this.currentTrackElapsedSeconds;
+
+      if (!this.isPlaybackPaused && this.currentTrackStartedAt > 0) {
+        elapsedSeconds += (Date.now() - this.currentTrackStartedAt) / 1000;
+      }
+
+      return this.clampElapsedSeconds(track, elapsedSeconds);
+    }
+
+    return this.clampElapsedSeconds(track, track.elapsedSeconds);
+  }
+
+  captureCurrentTrackElapsedSeconds() {
+    if (!this.currentTrack) {
+      return 0;
+    }
+
+    const elapsedSeconds = this.getTrackElapsedSeconds(this.currentTrack) ?? 0;
+
+    this.currentTrackElapsedSeconds = elapsedSeconds;
+    this.currentTrack.elapsedSeconds = elapsedSeconds;
+    this.currentTrackStartedAt = 0;
+
+    return elapsedSeconds;
+  }
+
+  resetCurrentTrackProgress() {
+    this.currentTrackStartedAt = 0;
+    this.currentTrackElapsedSeconds = 0;
   }
 
   serializeTrack(track) {
@@ -135,6 +192,7 @@ export class PlayerController {
       artworkUrl: track.artworkUrl ?? "",
       audioUrl: track.audioUrl ?? "",
       durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
+      elapsedSeconds: this.getTrackElapsedSeconds(track),
       requestedFromProvider: track.requestedFromProvider ?? "",
       requestedFromUrl: track.requestedFromUrl ?? "",
       requestedFromTitle: track.requestedFromTitle ?? "",
@@ -152,6 +210,7 @@ export class PlayerController {
       stoppedTrack: this.serializeTrack(this.stoppedTrack),
       playbackStatus: this.getPlaybackStatus(),
       queue: this.queue.map((track) => this.serializeTrack(track)),
+      radioQueue: this.radioQueue.map((track) => this.serializeTrack(track)),
       history: this.history.map((entry) => ({
         track: this.serializeTrack(entry.track),
         status: entry.status,
@@ -574,7 +633,8 @@ export class PlayerController {
     const queueTrack = {
       ...track,
       id: crypto.randomUUID(),
-      origin: "queue"
+      origin: "queue",
+      radioSeedInput: typeof requestInput === "string" ? requestInput.trim() : ""
     };
 
     this.queue.push(queueTrack);
@@ -753,8 +813,12 @@ export class PlayerController {
   }
 
   async clearQueue(triggeredBy) {
-    const clearedTracks = this.queue.map((track) => this.serializeTrack(track));
+    const clearedTracks = [
+      ...this.queue,
+      ...this.radioQueue
+    ].map((track) => this.serializeTrack(track));
     this.queue = [];
+    this.radioQueue = [];
     this.recordAdminEvent("queue_clear", {
       triggeredBy,
       details: {
@@ -774,7 +838,9 @@ export class PlayerController {
   }
 
   getQueueSummary(limit = 3) {
-    return this.queue.slice(0, Math.max(1, limit)).map((track) => this.serializeTrack(track));
+    return this.getUpcomingTracks()
+      .slice(0, Math.max(1, limit))
+      .map((track) => this.serializeTrack(track));
   }
 
   getQueuePositionForRequester(username) {
@@ -843,7 +909,10 @@ export class PlayerController {
       };
     }
 
-    const queuedTrack = this.queue.find((queuedTrack) => queuedTrack.key === trackKey);
+    const queuedTrack = [
+      ...this.queue,
+      ...this.radioQueue
+    ].find((queuedTrack) => queuedTrack.key === trackKey);
 
     if (!queuedTrack) {
       if (this.stoppedTrack?.key === trackKey) {
@@ -1072,6 +1141,9 @@ export class PlayerController {
       this.queue = Array.isArray(persistedState.queue)
         ? persistedState.queue.map((track) => ({ ...track }))
         : [];
+      this.radioQueue = Array.isArray(persistedState.radioQueue)
+        ? persistedState.radioQueue.map((track) => ({ ...track }))
+        : [];
       this.stoppedTrack = persistedState.stoppedTrack
         ? { ...persistedState.stoppedTrack }
         : null;
@@ -1118,6 +1190,7 @@ export class PlayerController {
 
     logInfo("Restored runtime playback state", {
       queueLength: this.queue.length,
+      radioQueueLength: this.radioQueue.length,
       hasStoppedTrack: Boolean(this.stoppedTrack),
       historyLength: this.history.length,
       adminEventCount: this.adminEvents.length,
@@ -1148,12 +1221,16 @@ export class PlayerController {
 
       if (this.currentTrack) {
         const interruptedTrack = {
-          ...this.currentTrack
+          ...this.currentTrack,
+          elapsedSeconds: 0
         };
 
         if (interruptedTrack.origin === "queue") {
           delete interruptedTrack.playbackConfirmed;
           this.queue.unshift(interruptedTrack);
+        } else if (interruptedTrack.origin === "radio") {
+          delete interruptedTrack.playbackConfirmed;
+          this.radioQueue.unshift(interruptedTrack);
         }
 
         this.io.emit("player:stop", {
@@ -1163,6 +1240,7 @@ export class PlayerController {
 
         this.isPlaybackPaused = false;
         this.currentTrack = null;
+        this.resetCurrentTrackProgress();
         await this.persistRuntimeState();
         this.broadcastState();
       }
@@ -1207,6 +1285,12 @@ export class PlayerController {
     }
 
     this.currentTrack.playbackConfirmed = true;
+    this.currentTrackElapsedSeconds = this.clampElapsedSeconds(
+      this.currentTrack,
+      this.currentTrack.elapsedSeconds
+    );
+    this.currentTrack.elapsedSeconds = this.currentTrackElapsedSeconds;
+    this.currentTrackStartedAt = this.isPlaybackPaused ? 0 : Date.now();
 
     logInfo("Playback confirmed for current track", {
       track: formatTrack(this.currentTrack)
@@ -1223,14 +1307,23 @@ export class PlayerController {
         });
       }
     }
+
+    this.broadcastState();
   }
 
   async finishCurrentTrack(payload) {
-    const finishedTrack = this.currentTrack;
+    const activeTrack = this.currentTrack;
 
-    if (!finishedTrack || finishedTrack.id !== payload.trackId) {
+    if (!activeTrack || activeTrack.id !== payload.trackId) {
       return;
     }
+
+    const finishedTrack = {
+      ...activeTrack,
+      elapsedSeconds: this.captureCurrentTrackElapsedSeconds()
+    };
+
+    delete finishedTrack.playbackConfirmed;
 
     logInfo("Finishing current track", {
       status: payload.status,
@@ -1239,11 +1332,15 @@ export class PlayerController {
 
     this.currentTrack = null;
     this.isPlaybackPaused = false;
+    this.resetCurrentTrackProgress();
     this.pushHistoryEntry(finishedTrack, payload.status);
     await this.persistRuntimeState();
     this.broadcastState();
 
-    if (payload.status === "ended" && finishedTrack.origin === "queue") {
+    if (
+      payload.status === "ended" &&
+      (finishedTrack.origin === "queue" || finishedTrack.origin === "radio")
+    ) {
       await this.playlistRepository.appendTrack(finishedTrack);
     }
 
@@ -1253,6 +1350,10 @@ export class PlayerController {
         message: payload.message || "",
         source: "player"
       });
+    }
+
+    if (finishedTrack.origin === "queue" && this.queue.length === 0) {
+      await this.rebuildRadioQueue(finishedTrack);
     }
 
     if (!payload.suppressEnsurePlayback) {
@@ -1291,7 +1392,10 @@ export class PlayerController {
     this.isAdvancing = true;
 
     try {
-      const nextTrack = this.queue.shift() ?? await this.playlistRepository.getRandomTrack();
+      const nextTrack =
+        this.queue.shift() ??
+        this.radioQueue.shift() ??
+        await this.playlistRepository.getRandomTrack();
 
       if (!nextTrack) {
         logWarn("No track available for playback", {
@@ -1315,9 +1419,11 @@ export class PlayerController {
     this.currentTrack = {
       ...track,
       id: track.id ?? crypto.randomUUID(),
+      elapsedSeconds: 0,
       playbackConfirmed: false
     };
     this.isPlaybackPaused = false;
+    this.resetCurrentTrackProgress();
 
     logInfo("Starting playback", {
       track: formatTrack(this.currentTrack),
@@ -1359,7 +1465,13 @@ export class PlayerController {
       return null;
     }
 
-    this.isPlaybackPaused = !this.isPlaybackPaused;
+    if (this.isPlaybackPaused) {
+      this.isPlaybackPaused = false;
+      this.currentTrackStartedAt = Date.now();
+    } else {
+      this.captureCurrentTrackElapsedSeconds();
+      this.isPlaybackPaused = true;
+    }
 
     logInfo("Toggling playback pause state", {
       triggeredBy,
@@ -1421,7 +1533,8 @@ export class PlayerController {
   async stopPlayback(triggeredBy) {
     if (this.currentTrack) {
       const stoppedTrack = {
-        ...this.currentTrack
+        ...this.currentTrack,
+        elapsedSeconds: this.captureCurrentTrackElapsedSeconds()
       };
 
       delete stoppedTrack.playbackConfirmed;
@@ -1442,6 +1555,7 @@ export class PlayerController {
       });
       this.currentTrack = null;
       this.isPlaybackPaused = false;
+      this.resetCurrentTrackProgress();
       this.pushHistoryEntry(stoppedTrack, "stopped");
       await this.persistRuntimeState();
       this.broadcastState();
@@ -1477,6 +1591,8 @@ export class PlayerController {
         key: track.key,
         origin: track.origin,
         artworkUrl: track.artworkUrl ?? "",
+        durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
+        elapsedSeconds: this.clampElapsedSeconds(track, track.elapsedSeconds),
         requestedFromProvider: track.requestedFromProvider ?? "",
         requestedFromUrl: track.requestedFromUrl ?? "",
         requestedFromTitle: track.requestedFromTitle ?? "",
@@ -1501,6 +1617,7 @@ export class PlayerController {
 
     await this.runtimeStateStore.save({
       queue: this.queue,
+      radioQueue: this.radioQueue,
       stoppedTrack: this.stoppedTrack,
       history: this.history,
       adminEvents: this.adminEvents
@@ -1517,5 +1634,87 @@ export class PlayerController {
       events: this.requestEvents,
       requesterStats: Object.fromEntries(this.requesterStatsByUser.entries())
     });
+  }
+
+  getUpcomingTracks() {
+    return [
+      ...this.queue,
+      ...this.radioQueue
+    ];
+  }
+
+  collectRadioExcludedTrackKeys(seedTrack = null) {
+    const excludedTrackKeys = new Set();
+
+    [
+      seedTrack,
+      this.currentTrack,
+      this.stoppedTrack,
+      ...this.queue,
+      ...this.radioQueue,
+      ...this.history.map((entry) => entry?.track).filter(Boolean)
+    ].forEach((track) => {
+      if (typeof track?.key === "string" && track.key.trim()) {
+        excludedTrackKeys.add(track.key.trim());
+      }
+    });
+
+    return Array.from(excludedTrackKeys);
+  }
+
+  async rebuildRadioQueue(seedTrack) {
+    this.radioQueue = [];
+
+    if (!this.getRadioTracks || !seedTrack) {
+      await this.persistRuntimeState();
+      this.broadcastState();
+      return;
+    }
+
+    let radioTracks = [];
+
+    try {
+      radioTracks = await this.getRadioTracks({
+        count: 3,
+        seedTrack: {
+          ...seedTrack
+        },
+        excludeTrackKeys: this.collectRadioExcludedTrackKeys(seedTrack)
+      });
+    } catch (error) {
+      logWarn("Failed to build radio queue", {
+        seedTrack: formatTrack(seedTrack),
+        message: error?.message ?? String(error)
+      });
+    }
+
+    if (Array.isArray(radioTracks)) {
+      for (const radioTrack of radioTracks) {
+        if (!radioTrack?.key || this.playlistRepository.hasTrack(radioTrack) || this.findDuplicateTrack(radioTrack.key)) {
+          continue;
+        }
+
+        this.radioQueue.push({
+          ...radioTrack,
+          id: crypto.randomUUID(),
+          origin: "radio",
+          requestedBy: null
+        });
+
+        if (this.radioQueue.length >= 3) {
+          break;
+        }
+      }
+    }
+
+    if (this.radioQueue.length > 0) {
+      logInfo("Queued automatic radio tracks", {
+        seedTrack: formatTrack(seedTrack),
+        addedCount: this.radioQueue.length
+      });
+    }
+
+    await this.persistRuntimeState();
+    this.broadcastState();
   }
 }

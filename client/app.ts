@@ -80,6 +80,28 @@ function applyOverlayTheme(themeId) {
   document.documentElement.dataset.theme = themeId || "aurora";
 }
 
+function normalizeOverlayScalePercent(value) {
+  const parsedValue = Number.parseInt(String(value ?? 100), 10);
+  if (!Number.isFinite(parsedValue)) {
+    return 100;
+  }
+
+  return Math.min(200, Math.max(50, parsedValue));
+}
+
+function applyOverlayScale(scalePercent) {
+  const normalizedScale = normalizeOverlayScalePercent(scalePercent);
+  const nextScale = String(normalizedScale / 100);
+  const currentScale = document.documentElement.style.getPropertyValue("--overlay-scale").trim();
+
+  if (currentScale === nextScale) {
+    return false;
+  }
+
+  document.documentElement.style.setProperty("--overlay-scale", nextScale);
+  return true;
+}
+
 function scheduleTitleMarqueeUpdate() {
   if (titleMarqueeFrame) {
     window.cancelAnimationFrame(titleMarqueeFrame);
@@ -998,6 +1020,10 @@ function describeTrackMeta(track) {
       : "Connecting to the player service...";
   }
 
+  if (track.origin === "radio") {
+    return `Auto radio from ${getProviderLabel(track.provider)}`;
+  }
+
   if (track.origin === "playlist") {
     return `Playlist fallback from ${getProviderLabel(track.provider)}`;
   }
@@ -1029,10 +1055,12 @@ function getDisplayedTrackText(track) {
     };
   }
 
-  if (track.origin === "playlist") {
+  if (track.origin === "playlist" || track.origin === "radio") {
     return {
       title: track.title,
-      meta: getProviderLabel(track.provider)
+      meta: track.origin === "radio"
+        ? `Radio • ${getProviderLabel(track.provider)}`
+        : getProviderLabel(track.provider)
     };
   }
 
@@ -1160,12 +1188,18 @@ function updateState(state) {
     });
   }
 
+  const overlayScaleChanged = Object.prototype.hasOwnProperty.call(state, "overlayScalePercent")
+    ? applyOverlayScale(state.overlayScalePercent)
+    : false;
+
   if (typeof state.theme === "string" && state.theme) {
     const previousTheme = document.documentElement.dataset.theme;
     applyOverlayTheme(state.theme);
-    if (state.theme !== previousTheme) {
+    if (state.theme !== previousTheme || overlayScaleChanged) {
       scheduleTitleMarqueeUpdate();
     }
+  } else if (overlayScaleChanged) {
+    scheduleTitleMarqueeUpdate();
   }
 
   if (Object.prototype.hasOwnProperty.call(state, "playerStartupTimeoutSeconds")) {
@@ -1221,6 +1255,9 @@ function renderQueue(queue) {
     item.className = "queue-item";
     item.style.animationDelay = `${index * 70}ms`;
     const requester =
+      track.origin === "radio"
+        ? "radio"
+        :
       track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
     const title = document.createElement("span");
     title.className = "queue-title";
@@ -1872,7 +1909,18 @@ if (socket) {
     handleSocketDisconnect();
   });
   socket.on("app:settings", (payload) => {
-    applyOverlayTheme(payload?.theme);
+    const overlayScaleChanged = Object.prototype.hasOwnProperty.call(payload ?? {}, "overlayScalePercent")
+      ? applyOverlayScale(payload.overlayScalePercent)
+      : false;
+    let themeChanged = false;
+    if (typeof payload?.theme === "string" && payload.theme) {
+      const previousTheme = document.documentElement.dataset.theme;
+      applyOverlayTheme(payload.theme);
+      themeChanged = payload.theme !== previousTheme;
+    }
+    if (themeChanged || overlayScaleChanged) {
+      scheduleTitleMarqueeUpdate();
+    }
     if (Object.prototype.hasOwnProperty.call(payload ?? {}, "playerStartupTimeoutSeconds")) {
       applyStartupTimeoutSetting(payload.playerStartupTimeoutSeconds);
     }

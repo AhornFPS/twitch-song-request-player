@@ -70,6 +70,7 @@ test("saved GUI player state is preserved across reloads", async (t) => {
       startWithWindows: true,
       guiPlayerEnabled: true,
       guiPlayerVolume: 42,
+      overlayScalePercent: 135,
       playerStartupTimeoutSeconds: 9,
       requestPolicyAutosaveEnabled: true
     }, null, 2)}\n`,
@@ -82,8 +83,31 @@ test("saved GUI player state is preserved across reloads", async (t) => {
   assert.equal(settings.startWithWindows, true);
   assert.equal(settings.guiPlayerEnabled, true);
   assert.equal(settings.guiPlayerVolume, 42);
+  assert.equal(settings.overlayScalePercent, 135);
   assert.equal(settings.playerStartupTimeoutSeconds, 9);
   assert.equal(settings.requestPolicyAutosaveEnabled, true);
+});
+
+test("overlay scale is clamped to a supported saved range", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ overlayScalePercent: 15 }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.overlayScalePercent, 50);
 });
 
 test("explicit env theme, dashboard layout, and port still override saved settings", async (t) => {

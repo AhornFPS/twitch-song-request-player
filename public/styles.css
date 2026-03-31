@@ -17,6 +17,7 @@
   --shadow: 0 18px 50px rgba(0, 0, 0, 0.52);
   --surface: rgba(255, 255, 255, 0.06);
   --surface-strong: rgba(255, 255, 255, 0.12);
+  --overlay-scale: 1;
 }
 
 * {
@@ -51,7 +52,9 @@ body {
     var(--panel);
   box-shadow: var(--shadow);
   backdrop-filter: blur(22px);
-  transform-origin: left center;
+  transform-origin: top left;
+  /* Scale inside the browser source so OBS receives a crisp re-rendered card. */
+  zoom: var(--overlay-scale);
 }
 
 .player-card::before,
@@ -784,7 +787,7 @@ body {
 
 [data-theme="winamp"] .save-badge--idle {
   background: #141414;
-  color: var(--muted);
+  color: #ff0000;
 }
 
 /* ── Queue: playlist-style flat rows ── */

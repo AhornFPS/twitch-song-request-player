@@ -20,6 +20,17 @@ function normalizeTrack(track) {
     artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
     audioUrl: typeof track.audioUrl === "string" ? track.audioUrl : "",
     durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
+    elapsedSeconds: Number.isFinite(track.elapsedSeconds) ? Math.max(track.elapsedSeconds, 0) : 0,
+    sourceChannelId: typeof track.sourceChannelId === "string" ? track.sourceChannelId : "",
+    sourceName: typeof track.sourceName === "string" ? track.sourceName : "",
+    sourceUrl: typeof track.sourceUrl === "string" ? track.sourceUrl : "",
+    requestedFromProvider: typeof track.requestedFromProvider === "string" ? track.requestedFromProvider : "",
+    requestedFromUrl: typeof track.requestedFromUrl === "string" ? track.requestedFromUrl : "",
+    requestedFromTitle: typeof track.requestedFromTitle === "string" ? track.requestedFromTitle : "",
+    requestedFromName: typeof track.requestedFromName === "string" ? track.requestedFromName : "",
+    requestedFromKey: typeof track.requestedFromKey === "string" ? track.requestedFromKey : "",
+    radioSeedInput: typeof track.radioSeedInput === "string" ? track.radioSeedInput : "",
+    isLive: track.isLive === true,
     requestedBy: track.requestedBy && typeof track.requestedBy === "object"
       ? {
           username: typeof track.requestedBy.username === "string" ? track.requestedBy.username : "",
@@ -75,6 +86,9 @@ export class RuntimeStateStore {
         queue: Array.isArray(parsed.queue)
           ? parsed.queue.map((track) => normalizeTrack(track)).filter(Boolean)
           : [],
+        radioQueue: Array.isArray(parsed.radioQueue)
+          ? parsed.radioQueue.map((track) => normalizeTrack(track)).filter(Boolean)
+          : [],
         stoppedTrack: normalizeTrack(parsed.stoppedTrack),
         history: Array.isArray(parsed.history)
           ? parsed.history.map((entry) => normalizeHistoryEntry(entry)).filter(Boolean).slice(0, this.historyLimit)
@@ -87,6 +101,7 @@ export class RuntimeStateStore {
       if (error?.code === "ENOENT") {
         return {
           queue: [],
+          radioQueue: [],
           stoppedTrack: null,
           history: [],
           adminEvents: []
@@ -101,6 +116,9 @@ export class RuntimeStateStore {
     const payload = {
       queue: Array.isArray(state.queue)
         ? state.queue.map((track) => normalizeTrack(track)).filter(Boolean)
+        : [],
+      radioQueue: Array.isArray(state.radioQueue)
+        ? state.radioQueue.map((track) => normalizeTrack(track)).filter(Boolean)
         : [],
       stoppedTrack: normalizeTrack(state.stoppedTrack),
       history: Array.isArray(state.history)

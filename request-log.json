@@ -1,6 +1,250 @@
 {
   "events": [
     {
+      "id": "839ca7f6-d993-4600-85f5-fab1dc77604e",
+      "createdAt": "2026-03-31T16:53:30.669Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "alligatoah",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "06dab7dd-c2f4-4240-af24-702eb64a22bb",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=SPkVRk4rWzg",
+        "title": "Alligatoah - Verloren",
+        "key": "youtube:SPkVRk4rWzg",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/SPkVRk4rWzg/maxresdefault.jpg",
+        "durationSeconds": 253,
+        "isLive": false,
+        "sourceName": "Alligatoah",
+        "sourceChannelId": "UC7OwZsuUYLUpAk-T-uKLrQw",
+        "sourceUrl": "https://www.youtube.com/channel/UC7OwZsuUYLUpAk-T-uKLrQw"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "c73fc012-a724-423b-93bd-abd7a038b013",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 4,
+        "acceptedRequests": 4,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 4,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:53:30.669Z",
+        "lastAcceptedAt": "2026-03-31T16:53:30.669Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "alligatoah",
+        "lastTrackKey": "youtube:SPkVRk4rWzg",
+        "lastTrackTitle": "Alligatoah - Verloren"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 2,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "6f4a3106-9684-4afa-b423-eb59adb7d6af",
+      "createdAt": "2026-03-31T16:52:40.143Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "nine inch nails",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "c73fc012-a724-423b-93bd-abd7a038b013",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=PTFwQP86BRs",
+        "title": "Nine Inch Nails - Closer (Director's Cut)",
+        "key": "youtube:PTFwQP86BRs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/PTFwQP86BRs/maxresdefault.jpg",
+        "durationSeconds": 282,
+        "isLive": false,
+        "sourceName": "NineInchNailsVEVO",
+        "sourceChannelId": "UCeQAnhVwklc7uo0cpMGqBiA",
+        "sourceUrl": "https://www.youtube.com/channel/UCeQAnhVwklc7uo0cpMGqBiA"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "e43cd821-1ae3-45ae-8dc2-0f7cb1666dd1",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 3,
+        "acceptedRequests": 3,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 3,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:52:40.143Z",
+        "lastAcceptedAt": "2026-03-31T16:52:40.143Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "nine inch nails",
+        "lastTrackKey": "youtube:PTFwQP86BRs",
+        "lastTrackTitle": "Nine Inch Nails - Closer (Director's Cut)"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "88479805-8ecc-46c7-a864-67a75ffd077a",
+      "createdAt": "2026-03-31T16:48:53.915Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "63c88171-4d35-4249-acb8-c0763dc55056",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+        "title": "Berserk - S3RL ft Iceman",
+        "key": "youtube:xd9fiOrfEqI",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/xd9fiOrfEqI/hqdefault.jpg",
+        "durationSeconds": null,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "",
+        "sourceUrl": "https://www.youtube.com/@S3RL"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 2,
+        "currentTrackId": "0a4685bb-4128-4386-a657-802e140c7e00",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 2,
+        "acceptedRequests": 2,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 2,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:48:53.915Z",
+        "lastAcceptedAt": "2026-03-31T16:48:53.915Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+        "lastTrackKey": "youtube:xd9fiOrfEqI",
+        "lastTrackTitle": "Berserk - S3RL ft Iceman"
+      },
+      "details": {
+        "queuePosition": 2,
+        "activeRequestsForRequester": 2,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "683c9dd8-c162-46e3-9119-55fe50f39162",
+      "createdAt": "2026-03-31T16:48:33.656Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl play it loud",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "1b99f380-177c-4198-9bdc-f87368489e44",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=Pnp-vIrNaYc",
+        "title": "Play It Loud - S3RL & Remzcore 📢 DEFI BRILATOR",
+        "key": "youtube:Pnp-vIrNaYc",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/Pnp-vIrNaYc/maxresdefault.jpg",
+        "durationSeconds": 154,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "0a4685bb-4128-4386-a657-802e140c7e00",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:48:33.656Z",
+        "lastAcceptedAt": "2026-03-31T16:48:33.656Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl play it loud",
+        "lastTrackKey": "youtube:Pnp-vIrNaYc",
+        "lastTrackTitle": "Play It Loud - S3RL & Remzcore 📢 DEFI BRILATOR"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
       "id": "70fdba73-ab94-4246-8522-18cf8e306d07",
       "createdAt": "2026-03-21T20:07:39.537Z",
       "source": "twitch_chat",
@@ -173,6 +417,25 @@
       "lastInput": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
       "lastTrackKey": "youtube:9hGcJA8fXvU",
       "lastTrackTitle": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)"
+    },
+    "dashboard": {
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "totalRequests": 4,
+      "acceptedRequests": 4,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 4,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-03-31T16:53:30.669Z",
+      "lastAcceptedAt": "2026-03-31T16:53:30.669Z",
+      "lastOutcome": "accepted",
+      "lastSource": "dashboard_queue",
+      "lastInput": "alligatoah",
+      "lastTrackKey": "youtube:SPkVRk4rWzg",
+      "lastTrackTitle": "Alligatoah - Verloren"
     }
   }
 }

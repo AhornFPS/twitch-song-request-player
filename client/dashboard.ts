@@ -17,6 +17,7 @@ let isSavingSettings = false;
 let isHydratingForm = false;
 let availableThemes = [];
 let lastSavedTheme = "aurora";
+let lastSavedOverlayScalePercent = 100;
 let lastTwitchAuthState = "";
 let chatSuppressedCategories = [];
 let playbackSuppressedCategories = [];
@@ -33,6 +34,14 @@ let playlistPayload = null;
 let playlistReviewPayload = null;
 let activeTab = "overview";
 let isQueueSubmitting = false;
+let isOverviewSearchPending = false;
+let overviewSearchResults = [];
+let overviewProgressTimer = null;
+let overviewProgressTrackId = "";
+let overviewProgressElapsedSeconds = 0;
+let overviewProgressDurationSeconds = 0;
+let overviewProgressLastSyncAt = 0;
+let overviewProgressIsRunning = false;
 let isPlaybackCommandPending = false;
 let isGuiPlayerSaving = false;
 let guiPlayerVolume = 100;
@@ -91,6 +100,21 @@ function renderDashboard() {
             <label class="control-field">
               <span class="control-field__label">Overlay theme</span>
               <select id="theme-select"></select>
+            </label>
+            <label class="control-field control-field--slider">
+              <span class="control-field__label">Overlay scale</span>
+              <div class="control-range">
+                <input
+                  id="overlay-scale-slider"
+                  class="control-range__input"
+                  type="range"
+                  min="50"
+                  max="200"
+                  step="5"
+                  value="100"
+                />
+                <span id="overlay-scale-value" class="control-range__value">100%</span>
+              </div>
             </label>
             <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
             <button id="save-button" class="primary-button" type="button">Save settings</button>
@@ -159,6 +183,15 @@ function renderDashboard() {
             <div class="playback-card">
               <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
               <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <div id="overview-progress" class="playback-progress" hidden>
+                <div class="playback-progress__labels">
+                  <span id="overview-progress-elapsed">0:00</span>
+                  <span id="overview-progress-duration">0:00</span>
+                </div>
+                <div class="playback-progress__track" aria-hidden="true">
+                  <div id="overview-progress-fill" class="playback-progress__fill"></div>
+                </div>
+              </div>
               <div class="playback-controls">
                 <button id="overview-play-pause" class="primary-button" type="button">Play</button>
                 <button id="overview-stop" class="secondary-button" type="button">Stop</button>
@@ -166,9 +199,14 @@ function renderDashboard() {
               </div>
               <form id="overview-queue-form" class="queue-add-form">
                 <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
-                <button id="overview-queue-button" class="secondary-button" type="submit">Add to queue</button>
+                <div class="overview-queue-actions">
+                  <button id="overview-queue-button" class="secondary-button" type="submit">Add to queue</button>
+                  <button id="overview-search-button" class="ghost-button" type="button">Search</button>
+                </div>
               </form>
+              <p class="field__hint">Paste a direct link to queue it immediately, or search first and choose a result.</p>
               <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
+              <div id="overview-search-results" class="history-list" hidden></div>
               <ul id="queue-preview" class="queue-preview"></ul>
             </div>
           </section>
@@ -811,6 +849,29 @@ function renderThemeOptions(selectedTheme) {
   select.value = selectedTheme || "aurora";
 }
 
+function normalizeOverlayScalePercent(value) {
+  const parsedValue = Number.parseInt(String(value ?? 100), 10);
+  if (!Number.isFinite(parsedValue)) {
+    return 100;
+  }
+
+  return Math.min(200, Math.max(50, parsedValue));
+}
+
+function renderOverlayScaleControl(scalePercent) {
+  const slider = el("overlay-scale-slider");
+  const valueLabel = el("overlay-scale-value");
+  const normalizedScale = normalizeOverlayScalePercent(scalePercent);
+
+  if (slider) {
+    slider.value = String(normalizedScale);
+  }
+
+  if (valueLabel) {
+    valueLabel.textContent = `${normalizedScale}%`;
+  }
+}
+
 function getRequestPolicy() {
   return settingsPayload?.settings?.requestPolicy ?? {
     requestsEnabled: true,
@@ -1225,6 +1286,9 @@ function collectSettingsPayload() {
       : false,
     guiPlayerEnabled: settingsPayload?.settings?.guiPlayerEnabled === true,
     guiPlayerVolume,
+    overlayScalePercent: normalizeOverlayScalePercent(
+      el("overlay-scale-slider")?.value || lastSavedOverlayScalePercent
+    ),
     playerStartupTimeoutSeconds: Number.parseInt(el("playback-startup-timeout-seconds")?.value || "15", 10) || 0,
     requestPolicyAutosaveEnabled: getRequestPolicyAutosaveEnabled(),
     requestPolicy: collectRequestPolicyPayload(),
@@ -1260,6 +1324,9 @@ async function loadSettings() {
   settingsPayload = await fetchJson("/api/settings");
   availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
   lastSavedTheme = settingsPayload.settings.theme || "aurora";
+  lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
+    settingsPayload.settings.overlayScalePercent
+  );
   chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
     ? [...settingsPayload.settings.chatSuppressedCategories]
     : [];
@@ -1285,6 +1352,7 @@ function applySettingsPayload() {
   isHydratingForm = true;
   requestPolicyDraft = null;
   renderThemeOptions(settingsPayload.settings.theme);
+  renderOverlayScaleControl(settingsPayload.settings.overlayScalePercent);
   setValue("twitchChannel", settingsPayload.settings.twitchChannel || "");
   setValue("twitchUsername", settingsPayload.settings.twitchUsername || "");
   setValue("twitchOauthToken", settingsPayload.settings.twitchOauthToken || "");
@@ -1567,6 +1635,10 @@ function scheduleGuiPlayerVolumeSave() {
 }
 
 function describeRequester(track) {
+  if (track?.origin === "radio") {
+    return "Automatic radio track";
+  }
+
   const requester = track?.requestedBy?.displayName || track?.requestedBy?.username;
   return requester ? `Requested by ${requester}` : "Fallback playlist track";
 }
@@ -1637,7 +1709,9 @@ function renderFullQueue(queue) {
 
   tableBody.innerHTML = "";
   queue.forEach((track, index) => {
-    const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    const requester = track.origin === "radio"
+      ? "radio"
+      : track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
     const row = document.createElement("tr");
     const isBusy = queueActionTrackId === track.id;
     row.innerHTML = `
@@ -1869,6 +1943,7 @@ function applyPlaybackState() {
     playbackStatus,
     queueLength: queue.length
   }));
+  syncOverviewProgress(visibleTrack, playbackStatus);
 
   if (playbackPill) {
     playbackPill.className = pillState.className;
@@ -1884,6 +1959,7 @@ function applyPlaybackState() {
   const stopButton = el("overview-stop");
   const nextButton = el("overview-next");
   const queueButton = el("overview-queue-button");
+  const searchButton = el("overview-search-button");
   const restartStoppedButton = el("playback-restart-stopped");
 
   if (playPauseButton) {
@@ -1900,7 +1976,11 @@ function applyPlaybackState() {
   }
 
   if (queueButton) {
-    queueButton.disabled = isQueueSubmitting;
+    queueButton.disabled = isQueueSubmitting || isOverviewSearchPending;
+  }
+
+  if (searchButton) {
+    searchButton.disabled = isQueueSubmitting || isOverviewSearchPending;
   }
 
   if (restartStoppedButton) {
@@ -1935,6 +2015,100 @@ function applyPlaybackState() {
   renderFullQueue(queue);
   renderHistory(history);
   renderAdminEvents(adminEvents);
+  renderOverviewSearchResults();
+}
+
+function syncOverviewProgress(track, playbackStatus) {
+  overviewProgressTrackId = track?.id || "";
+  overviewProgressElapsedSeconds = Number.isFinite(track?.elapsedSeconds)
+    ? Math.max(track.elapsedSeconds, 0)
+    : 0;
+  overviewProgressDurationSeconds = Number.isFinite(track?.durationSeconds)
+    ? Math.max(track.durationSeconds, 0)
+    : 0;
+  overviewProgressLastSyncAt = Date.now();
+  overviewProgressIsRunning = playbackStatus === "playing" && Boolean(track?.id);
+  renderOverviewProgress();
+}
+
+function renderOverviewProgress() {
+  const progress = el("overview-progress");
+  const fill = el("overview-progress-fill");
+
+  if (!progress || !fill) {
+    return;
+  }
+
+  if (!overviewProgressTrackId) {
+    progress.hidden = true;
+    fill.style.width = "0%";
+    setText("overview-progress-elapsed", "0:00");
+    setText("overview-progress-duration", "0:00");
+    return;
+  }
+
+  progress.hidden = false;
+
+  let elapsedSeconds = overviewProgressElapsedSeconds;
+  if (overviewProgressIsRunning && overviewProgressLastSyncAt > 0) {
+    elapsedSeconds += (Date.now() - overviewProgressLastSyncAt) / 1000;
+  }
+
+  if (overviewProgressDurationSeconds > 0) {
+    elapsedSeconds = Math.min(elapsedSeconds, overviewProgressDurationSeconds);
+  }
+
+  const safeElapsedSeconds = Math.max(elapsedSeconds, 0);
+  const fillPercent = overviewProgressDurationSeconds > 0
+    ? Math.max(0, Math.min(100, (safeElapsedSeconds / overviewProgressDurationSeconds) * 100))
+    : 0;
+
+  fill.style.width = `${fillPercent}%`;
+  setText("overview-progress-elapsed", formatDuration(safeElapsedSeconds));
+  setText(
+    "overview-progress-duration",
+    overviewProgressDurationSeconds > 0 ? formatDuration(overviewProgressDurationSeconds) : "--:--"
+  );
+}
+
+function formatDuration(totalSeconds) {
+  const safeSeconds = Math.max(Number.parseInt(String(totalSeconds), 10) || 0, 0);
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const seconds = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+function renderOverviewSearchResults() {
+  const searchResults = el("overview-search-results");
+  if (!searchResults) {
+    return;
+  }
+
+  searchResults.innerHTML = "";
+  searchResults.hidden = overviewSearchResults.length === 0;
+
+  overviewSearchResults.forEach((track, index) => {
+    const item = document.createElement("article");
+    item.className = "history-item";
+    const sourceLabel = track.sourceName || track.requestedFromName || track.provider || "unknown";
+    item.innerHTML = `
+      <div class="history-item__main">
+        <strong>${htmlEscape(track.title || "Unknown track")}</strong>
+        <div class="command-table__description">${htmlEscape(sourceLabel)}${track.durationSeconds ? ` • ${htmlEscape(formatDuration(track.durationSeconds))}` : ""}</div>
+      </div>
+      <div class="history-item__meta">
+        <span class="provider-chip">${htmlEscape(track.provider || "unknown")}</span>
+        <button class="secondary-button" type="button" data-overview-search-add-index="${index}">Add</button>
+      </div>
+    `;
+    searchResults.appendChild(item);
+  });
 }
 
 function formatLibraryHealthReason(reason) {
@@ -2254,12 +2428,16 @@ async function saveSettings(event) {
   isSavingSettings = true;
   const saveButton = el("save-button");
   const themeSelect = el("theme-select");
+  const overlayScaleSlider = el("overlay-scale-slider");
 
   if (saveButton) {
     saveButton.disabled = true;
   }
   if (themeSelect) {
     themeSelect.disabled = true;
+  }
+  if (overlayScaleSlider) {
+    overlayScaleSlider.disabled = true;
   }
   applyRequestAutosaveState();
   setFeedback("Saving settings...");
@@ -2268,6 +2446,9 @@ async function saveSettings(event) {
     settingsPayload = await persistSettings(collectSettingsPayload());
     availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
     lastSavedTheme = settingsPayload.settings.theme || "aurora";
+    lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
+      settingsPayload.settings.overlayScalePercent
+    );
     chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
       ? [...settingsPayload.settings.chatSuppressedCategories]
       : [];
@@ -2295,6 +2476,9 @@ async function saveSettings(event) {
     }
     if (el("theme-select")) {
       el("theme-select").disabled = false;
+    }
+    if (el("overlay-scale-slider")) {
+      el("overlay-scale-slider").disabled = false;
     }
     applyRequestAutosaveState();
     if (hasPendingRequestPolicyAutosave && getRequestPolicyAutosaveEnabled()) {
@@ -2463,6 +2647,33 @@ async function saveThemeSelection(nextTheme) {
   }
 }
 
+async function saveOverlayScaleSelection(nextScale) {
+  const normalizedScale = normalizeOverlayScalePercent(nextScale);
+  if (normalizedScale === lastSavedOverlayScalePercent) {
+    renderOverlayScaleControl(lastSavedOverlayScalePercent);
+    return;
+  }
+
+  try {
+    settingsPayload = await persistSettings({
+      overlayScalePercent: normalizedScale
+    });
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
+    lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
+      settingsPayload.settings.overlayScalePercent
+    );
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
+    applySettingsPayload();
+    setFeedback("Overlay scale saved.", "success");
+  } catch (error) {
+    renderOverlayScaleControl(lastSavedOverlayScalePercent);
+    setFeedback(error?.message || "Could not save overlay scale.", "error");
+  }
+}
+
 async function saveGuiPlayerEnabled(nextValue) {
   if (!settingsPayload || settingsPayload.settings.guiPlayerEnabled === nextValue) {
     return;
@@ -2586,6 +2797,44 @@ async function addPlaylistTrack(event) {
   }
 }
 
+function applyOverviewQueueFeedback(payload, action = "Added") {
+  const duplicateType = payload.track?.duplicateType;
+  if (duplicateType === "playing") {
+    setOverviewFeedback(`Track is already playing: ${payload.track.title}`, "warning");
+  } else if (duplicateType === "queue") {
+    setOverviewFeedback(`Track is already queued: ${payload.track.title}`, "warning");
+  } else if (duplicateType === "stopped") {
+    setOverviewFeedback(`Track is stopped and ready to restart: ${payload.track.title}`, "warning");
+  } else if (duplicateType === "history") {
+    setOverviewFeedback(`Track was played recently: ${payload.track.title}`, "warning");
+  } else {
+    setOverviewFeedback(`${action} ${payload.track.title} to the queue.`, "success");
+  }
+}
+
+async function queueOverviewTrack(input, {
+  clearInput = false,
+  action = "Added"
+} = {}) {
+  const payload = await fetchJson("/api/queue", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({ input })
+  });
+
+  playbackState = payload.state;
+  applyPlaybackState();
+
+  if (clearInput) {
+    setValue("overview-queue-input", "");
+  }
+
+  applyOverviewQueueFeedback(payload, action);
+  return payload;
+}
+
 async function addOverviewQueueTrack(event) {
   event.preventDefault();
   const input = el("overview-queue-input")?.value.trim() || "";
@@ -2600,7 +2849,34 @@ async function addOverviewQueueTrack(event) {
   setOverviewFeedback("Adding track to the queue...");
 
   try {
-    const payload = await fetchJson("/api/queue", {
+    await queueOverviewTrack(input, {
+      clearInput: true,
+      action: "Added"
+    });
+    overviewSearchResults = [];
+    applyPlaybackState();
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not add track to the queue.", "error");
+  } finally {
+    isQueueSubmitting = false;
+    applyPlaybackState();
+  }
+}
+
+async function searchOverviewTracks() {
+  const input = el("overview-queue-input")?.value.trim() || "";
+
+  if (!input) {
+    setOverviewFeedback("Enter a link or search before searching.", "warning");
+    return;
+  }
+
+  isOverviewSearchPending = true;
+  applyPlaybackState();
+  setOverviewFeedback("Searching for tracks...");
+
+  try {
+    const payload = await fetchJson("/api/search", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
@@ -2608,24 +2884,38 @@ async function addOverviewQueueTrack(event) {
       body: JSON.stringify({ input })
     });
 
-    playbackState = payload.state;
+    overviewSearchResults = Array.isArray(payload.tracks) ? payload.tracks : [];
     applyPlaybackState();
-    setValue("overview-queue-input", "");
-
-    const duplicateType = payload.track?.duplicateType;
-    if (duplicateType === "playing") {
-      setOverviewFeedback(`Track is already playing: ${payload.track.title}`, "warning");
-    } else if (duplicateType === "queue") {
-      setOverviewFeedback(`Track is already queued: ${payload.track.title}`, "warning");
-    } else if (duplicateType === "stopped") {
-      setOverviewFeedback(`Track is stopped and ready to restart: ${payload.track.title}`, "warning");
-    } else if (duplicateType === "history") {
-      setOverviewFeedback(`Track was played recently: ${payload.track.title}`, "warning");
-    } else {
-      setOverviewFeedback(`Added ${payload.track.title} to the queue.`, "success");
-    }
+    setOverviewFeedback(
+      `Found ${overviewSearchResults.length} track${overviewSearchResults.length === 1 ? "" : "s"}.`,
+      "success"
+    );
   } catch (error) {
-    setOverviewFeedback(error?.message || "Could not add track to the queue.", "error");
+    overviewSearchResults = [];
+    applyPlaybackState();
+    setOverviewFeedback(error?.message || "Could not search tracks.", "error");
+  } finally {
+    isOverviewSearchPending = false;
+    applyPlaybackState();
+  }
+}
+
+async function queueOverviewSearchResult(index) {
+  const track = overviewSearchResults[index];
+  if (!track?.url) {
+    return;
+  }
+
+  isQueueSubmitting = true;
+  applyPlaybackState();
+  setOverviewFeedback("Adding selected search result...");
+
+  try {
+    await queueOverviewTrack(track.url, {
+      action: "Added"
+    });
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not add the selected track to the queue.", "error");
   } finally {
     isQueueSubmitting = false;
     applyPlaybackState();
@@ -3045,6 +3335,10 @@ function handleUpdaterStatus(status) {
 
 renderDashboard();
 
+overviewProgressTimer = window.setInterval(() => {
+  renderOverviewProgress();
+}, 500);
+
 root.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
@@ -3140,6 +3434,15 @@ root.addEventListener("click", (event) => {
     }
   }
 
+  const overviewSearchAddButton = event.target.closest("[data-overview-search-add-index]");
+  if (overviewSearchAddButton) {
+    const index = Number.parseInt(overviewSearchAddButton.getAttribute("data-overview-search-add-index") || "-1", 10);
+    if (index >= 0) {
+      void queueOverviewSearchResult(index);
+    }
+    return;
+  }
+
   if (event.target.id === "save-button") {
     void saveSettings();
   } else if (event.target.id === "open-appdata-button") {
@@ -3204,6 +3507,8 @@ root.addEventListener("click", (event) => {
     void stopOverviewPlayback();
   } else if (event.target.id === "overview-next") {
     void playNextOverviewTrack();
+  } else if (event.target.id === "overview-search-button") {
+    void searchOverviewTracks();
   } else if (event.target.id === "playback-restart-stopped") {
     void restartStoppedTrack();
   } else if (event.target.id === "overview-gui-player-toggle") {
@@ -3236,6 +3541,10 @@ root.addEventListener("change", async (event) => {
 
   if (target.id === "theme-select" && target instanceof HTMLSelectElement && !isHydratingForm) {
     await saveThemeSelection(target.value);
+  }
+
+  if (target.id === "overlay-scale-slider" && target instanceof HTMLInputElement && !isHydratingForm) {
+    await saveOverlayScaleSelection(target.value);
   }
 
   if (target.id === "playlist-sort-select" && target instanceof HTMLSelectElement) {
@@ -3353,6 +3662,8 @@ root.addEventListener("input", (event) => {
       playlistPage = 1;
       void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
     }, 180);
+  } else if (target.id === "overlay-scale-slider" && target instanceof HTMLInputElement) {
+    renderOverlayScaleControl(target.value);
   } else if (
     (
       target.id === "requests-max-queue-length" ||

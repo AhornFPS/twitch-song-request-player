@@ -179,6 +179,10 @@ a {
   min-width: 220px;
 }
 
+.control-field--slider {
+  min-width: 260px;
+}
+
 .control-input,
 .control-field select,
 .field input,
@@ -198,6 +202,30 @@ a {
 .field select:focus {
   outline: 2px solid color-mix(in srgb, var(--accent) 52%, transparent);
   outline-offset: 2px;
+}
+
+.control-range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.control-range__input {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.control-range__input:disabled {
+  opacity: 0.55;
+}
+
+.control-range__value {
+  min-width: 3.5rem;
+  color: var(--text);
+  font-family: var(--mono-font);
+  font-size: 0.78rem;
+  text-align: right;
 }
 
 .status-pill {
@@ -410,6 +438,35 @@ a {
   margin: 10px 0 0;
 }
 
+.playback-progress {
+  margin-top: 14px;
+}
+
+.playback-progress__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.playback-progress__track {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.playback-progress__fill {
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #78e5c9 0%, #5bc0ff 100%);
+  transition: width 220ms linear;
+}
+
 .playback-panel__header-actions {
   display: flex;
   gap: 10px;
@@ -438,6 +495,13 @@ a {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   margin-top: 14px;
+}
+
+.overview-queue-actions {
+  display: inline-flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .queue-preview li {
@@ -965,6 +1029,7 @@ a {
   .appearance-controls--single,
   .playback-controls,
   .queue-add-form,
+  .overview-queue-actions,
   .playlist-tools__body,
   .playlist-add-form,
   .copy-row,

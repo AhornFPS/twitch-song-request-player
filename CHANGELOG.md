@@ -4,6 +4,13 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Changed the Winamp overlay theme so unsaved tracks display in red.
+- Added an automatic 3-song radio run after the last queued request, seeded from that final request and filtered to skip tracks already saved in the fallback playlist.
+- Changed radio tracks that finish naturally to be saved into the fallback playlist automatically.
+- Added an Overview search picker so moderators can search for tracks there, preview matches, and add the chosen result to the live queue.
+- Added a simple Overview playback progress readout with elapsed time, total duration, and a live progress bar for the current track.
+- Added a saved overlay scale slider so theme sizes can be adjusted sharply inside the browser source instead of relying on blurry OBS window scaling.
+
 ## 2.7.0 - 2026-03-28
 
 - Added a new Slate overlay theme with a cleaner lower-third layout and a readable subtitle line.

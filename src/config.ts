@@ -127,6 +127,15 @@ function normalizePercent(value, fallback = 100) {
   return Math.min(100, Math.max(0, parsedValue));
 }
 
+function normalizeOverlayScalePercent(value, fallback = 100) {
+  const parsedValue = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsedValue)) {
+    return fallback;
+  }
+
+  return Math.min(200, Math.max(50, parsedValue));
+}
+
 function normalizeLimit(value, fallback = 0) {
   const parsedValue = Number.parseInt(String(value ?? fallback), 10);
   if (!Number.isFinite(parsedValue) || parsedValue < 0) {
@@ -255,6 +264,10 @@ function normalizeSettings(raw) {
     startWithWindows: normalizeBoolean(raw.startWithWindows, false),
     guiPlayerEnabled: normalizeBoolean(raw.guiPlayerEnabled, false),
     guiPlayerVolume: normalizePercent(raw.guiPlayerVolume, 100),
+    overlayScalePercent: normalizeOverlayScalePercent(
+      raw.overlayScalePercent ?? raw.OVERLAY_SCALE_PERCENT,
+      100
+    ),
     playerStartupTimeoutSeconds: normalizeLimit(raw.playerStartupTimeoutSeconds, 15),
     requestPolicyAutosaveEnabled: normalizeBoolean(raw.requestPolicyAutosaveEnabled, false),
     requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
@@ -332,6 +345,13 @@ function normalizeOverrideSettings(raw) {
     overrides.startWithWindows = normalizeBoolean(raw.startWithWindows, false);
   }
 
+  if (hasOwnSetting(raw, ["overlayScalePercent", "OVERLAY_SCALE_PERCENT"])) {
+    overrides.overlayScalePercent = normalizeOverlayScalePercent(
+      raw.overlayScalePercent ?? raw.OVERLAY_SCALE_PERCENT,
+      100
+    );
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, "playerStartupTimeoutSeconds")) {
     overrides.playerStartupTimeoutSeconds = normalizeLimit(raw.playerStartupTimeoutSeconds, 15);
   }
@@ -385,6 +405,13 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.guiPlayerVolume === "number"
         ? normalizePercent(overridingSettings.guiPlayerVolume, baseSettings.guiPlayerVolume ?? 100)
         : (baseSettings.guiPlayerVolume ?? 100),
+    overlayScalePercent:
+      typeof overridingSettings.overlayScalePercent === "number"
+        ? normalizeOverlayScalePercent(
+            overridingSettings.overlayScalePercent,
+            baseSettings.overlayScalePercent ?? 100
+          )
+        : (baseSettings.overlayScalePercent ?? 100),
     playerStartupTimeoutSeconds:
       typeof overridingSettings.playerStartupTimeoutSeconds === "number"
         ? normalizeLimit(overridingSettings.playerStartupTimeoutSeconds, baseSettings.playerStartupTimeoutSeconds ?? 15)
@@ -431,6 +458,7 @@ function normalizeBundledSettings(raw) {
     startWithWindows: false,
     guiPlayerEnabled: false,
     guiPlayerVolume: 100,
+    overlayScalePercent: 100,
     playerStartupTimeoutSeconds: 15,
     requestPolicyAutosaveEnabled: false,
     requestPolicy: normalizeRequestPolicy(),
@@ -559,6 +587,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
     startWithWindows: runtimeConfig.settings.startWithWindows,
     guiPlayerEnabled: runtimeConfig.settings.guiPlayerEnabled,
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
+    overlayScalePercent: runtimeConfig.settings.overlayScalePercent,
     playerStartupTimeoutSeconds: runtimeConfig.settings.playerStartupTimeoutSeconds,
     requestPolicyAutosaveEnabled: runtimeConfig.settings.requestPolicyAutosaveEnabled,
     requestPolicy: runtimeConfig.settings.requestPolicy,
