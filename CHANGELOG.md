@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.8.0 - 2026-03-31
+
 - Changed the Winamp overlay theme so unsaved tracks display in red.
 - Added an automatic 3-song radio run after the last queued request, seeded from that final request and filtered to skip tracks already saved in the fallback playlist.
 - Changed radio tracks that finish naturally to be saved into the fallback playlist automatically.
