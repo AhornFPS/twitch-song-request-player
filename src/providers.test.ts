@@ -428,6 +428,155 @@ test("youtube radio search skips alternate uploads of the seed song", async (t) 
   );
 });
 
+test("youtube radio search skips repeated song titles from different artists and uploader prefixes", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "gentle-remastered"
+                },
+                snippet: {
+                  title: "Gentle On My Mind (Remastered 2001)",
+                  channelTitle: "Glen Campbell - Topic",
+                  channelId: "UCglen-topic",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "rhinestone"
+                },
+                snippet: {
+                  title: "Rhinestone Cowboy",
+                  channelTitle: "Glen Campbell - Topic",
+                  channelId: "UCglen-topic",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "gentle-live"
+                },
+                snippet: {
+                  title: "Glen Campbell Sings \"Gentle On My Mind\" (Original Live)",
+                  channelTitle: "BringBackMyYesterday",
+                  channelId: "UCarchive",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "wichita"
+                },
+                snippet: {
+                  title: "Wichita Lineman",
+                  channelTitle: "Glen Campbell - Topic",
+                  channelId: "UCglen-topic",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "gentle-remastered",
+                snippet: {
+                  title: "Gentle On My Mind (Remastered 2001)",
+                  channelId: "UCglen-topic",
+                  channelTitle: "Glen Campbell - Topic",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "rhinestone",
+                snippet: {
+                  title: "Rhinestone Cowboy",
+                  channelId: "UCglen-topic",
+                  channelTitle: "Glen Campbell - Topic",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "gentle-live",
+                snippet: {
+                  title: "Glen Campbell Sings \"Gentle On My Mind\" (Original Live)",
+                  channelId: "UCarchive",
+                  channelTitle: "BringBackMyYesterday",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "wichita",
+                snippet: {
+                  title: "Wichita Lineman",
+                  channelId: "UCglen-topic",
+                  channelTitle: "Glen Campbell - Topic",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/gentle-seed",
+    title: "Bobbie Gentry - Topic - Gentle On My Mind",
+    key: "youtube:gentle-seed",
+    sourceName: "Bobbie Gentry - Topic"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Glen Campbell - Topic - Rhinestone Cowboy", "Glen Campbell - Topic - Wichita Lineman"]
+  );
+});
+
 test("spotify track links resolve into playable YouTube tracks using Spotify metadata", async (t) => {
   const originalFetch = global.fetch;
   const requestedUrls = [];

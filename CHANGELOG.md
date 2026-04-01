@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed radio picks so same-title covers and Topic-channel reuploads are skipped within the same radio run.
+
 ## 2.8.1 - 2026-04-01
 
 - Fixed radio picks so alternate uploads of the same song are skipped instead of filling the 3-song radio run with repeat versions.

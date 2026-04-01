@@ -616,7 +616,9 @@ function isLikelySameTrack(candidate, seedTrack) {
     key: candidateKey,
     title: candidate?.title || candidate?.snippet?.title,
     sourceName: candidate?.sourceName || candidate?.snippet?.channelTitle
-  }, seedTrack)) {
+  }, seedTrack, {
+    titleOnly: true
+  })) {
     return true;
   }
 

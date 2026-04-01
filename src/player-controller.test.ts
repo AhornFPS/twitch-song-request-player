@@ -672,6 +672,69 @@ test("radio skips alternate uploads of the seed song before queueing the next pi
   );
 });
 
+test("radio skips repeated song titles even when they come from different artists or channels", async () => {
+  const { controller } = createController({
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/gentle-remastered",
+        title: "Glen Campbell - Topic - Gentle On My Mind (Remastered 2001)",
+        key: "youtube:gentle-remastered",
+        artworkUrl: "",
+        sourceName: "Glen Campbell - Topic"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/rhinestone",
+        title: "Glen Campbell - Topic - Rhinestone Cowboy",
+        key: "youtube:rhinestone",
+        artworkUrl: "",
+        sourceName: "Glen Campbell - Topic"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/gentle-live",
+        title: "BringBackMyYesterday - Glen Campbell Sings \"Gentle On My Mind\" (Original Live)",
+        key: "youtube:gentle-live",
+        artworkUrl: "",
+        sourceName: "BringBackMyYesterday"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/wichita",
+        title: "Glen Campbell - Topic - Wichita Lineman",
+        key: "youtube:wichita",
+        artworkUrl: "",
+        sourceName: "Glen Campbell - Topic"
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/gentle-seed",
+    title: "Bobbie Gentry - Topic - Gentle On My Mind",
+    key: "youtube:gentle-seed",
+    artworkUrl: "",
+    sourceName: "Bobbie Gentry - Topic",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Glen Campbell - Topic - Rhinestone Cowboy");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Glen Campbell - Topic - Wichita Lineman"]
+  );
+});
+
 test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
   const { controller } = createController({
     getRadioTracks: async ({ seedTrack }) => {

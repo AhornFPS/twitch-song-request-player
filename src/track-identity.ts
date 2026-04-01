@@ -141,8 +141,9 @@ function extractQuotedTitle(value) {
     .replace(/["'][^"']{2,120}["']/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  const quotedTitleSignal = /\b(sings|singing|performs|performed|performing|plays|playing|cover|covered|version|live|original)\b/i;
 
-  if (!isDescriptorFragment(outsideText)) {
+  if (!isDescriptorFragment(outsideText) && !quotedTitleSignal.test(outsideText)) {
     return normalizedValue;
   }
 
@@ -222,18 +223,59 @@ function extractCoreTrackTitle(value) {
   return normalizeTrackText(currentValue, "");
 }
 
-export function getTrackIdentity(track) {
+function stripArtistPrefixFromTitle(value, artist) {
+  const normalizedValue = normalizeTrackText(value, "");
+  const normalizedArtist = normalizeTrackText(artist, "");
+
+  if (!normalizedValue || !normalizedArtist) {
+    return normalizedValue;
+  }
+
+  const lowerValue = normalizedValue.toLowerCase();
+  const lowerArtist = normalizedArtist.toLowerCase();
+
+  if (lowerValue === lowerArtist) {
+    return normalizedValue;
+  }
+
+  for (const separator of [" - ", " – ", " — ", ": ", " | "]) {
+    const prefixedArtist = `${lowerArtist}${separator}`;
+
+    if (!lowerValue.startsWith(prefixedArtist)) {
+      continue;
+    }
+
+    return normalizeTrackText(
+      normalizedValue.slice(normalizedArtist.length + separator.length),
+      normalizedValue
+    );
+  }
+
+  return normalizedValue;
+}
+
+export function getTrackIdentity(track, options = {}) {
+  const {
+    titleOnly = false
+  } = options;
+  const fullTitle = track?.requestedFromTitle || track?.title || "";
   const separatedTitle = splitArtistAndTitle(
-    track?.requestedFromTitle || track?.title || ""
+    fullTitle
   );
-  const rawTitle = separatedTitle?.trackTitle || track?.requestedFromTitle || track?.title || "";
   const rawArtist =
     track?.requestedFromName ||
     track?.sourceName ||
     separatedTitle?.artist ||
     "";
+  const sourceStrippedTitle = stripArtistPrefixFromTitle(fullTitle, rawArtist);
+  const rawTitle = sourceStrippedTitle !== fullTitle
+    ? sourceStrippedTitle
+    : stripArtistPrefixFromTitle(
+      separatedTitle?.trackTitle || fullTitle,
+      rawArtist
+    );
   const title = normalizeMatchText(extractCoreTrackTitle(rawTitle));
-  const artist = normalizeMatchText(rawArtist);
+  const artist = titleOnly ? "" : normalizeMatchText(rawArtist);
 
   return {
     title,
@@ -241,9 +283,16 @@ export function getTrackIdentity(track) {
   };
 }
 
-export function tracksShareIdentity(firstTrack, secondTrack) {
-  const firstIdentity = getTrackIdentity(firstTrack);
-  const secondIdentity = getTrackIdentity(secondTrack);
+export function tracksShareIdentity(firstTrack, secondTrack, options = {}) {
+  const {
+    titleOnly = false
+  } = options;
+  const firstIdentity = getTrackIdentity(firstTrack, {
+    titleOnly
+  });
+  const secondIdentity = getTrackIdentity(secondTrack, {
+    titleOnly
+  });
 
   if (!firstIdentity.title || !secondIdentity.title) {
     return false;

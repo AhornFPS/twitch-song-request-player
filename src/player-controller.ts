@@ -1708,7 +1708,9 @@ export class PlayerController {
           continue;
         }
 
-        if (excludedTracks.some((track) => tracksShareIdentity(track, radioTrack))) {
+        if (excludedTracks.some((track) => tracksShareIdentity(track, radioTrack, {
+          titleOnly: true
+        }))) {
           continue;
         }
 
