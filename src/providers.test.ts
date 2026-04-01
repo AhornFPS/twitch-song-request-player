@@ -554,6 +554,18 @@ test("youtube radio search skips repeated song titles from different artists and
       };
     }
 
+    if (requestedUrl.hostname === "www.youtube.com" && requestedUrl.pathname.startsWith("/shorts/")) {
+      const videoId = requestedUrl.pathname.split("/").filter(Boolean).at(-1);
+
+      return {
+        ok: true,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        async text() {
+          return "";
+        }
+      };
+    }
+
     throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
   };
 
@@ -574,6 +586,153 @@ test("youtube radio search skips repeated song titles from different artists and
   assert.deepEqual(
     tracks.map((track) => track.title),
     ["Glen Campbell - Topic - Rhinestone Cowboy", "Glen Campbell - Topic - Wichita Lineman"]
+  );
+});
+
+test("youtube radio search skips YouTube Shorts results", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "short-track"
+                },
+                snippet: {
+                  title: "Artist - Tiny Song",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "full-track"
+                },
+                snippet: {
+                  title: "Artist - Full Song One",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "full-track-two"
+                },
+                snippet: {
+                  title: "Artist - Full Song Two",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "short-track",
+                snippet: {
+                  title: "Artist - Tiny Song",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT45S"
+                }
+              },
+              {
+                id: "full-track",
+                snippet: {
+                  title: "Artist - Full Song One",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "full-track-two",
+                snippet: {
+                  title: "Artist - Full Song Two",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M10S"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.hostname === "www.youtube.com" && requestedUrl.pathname === "/shorts/short-track") {
+      return {
+        ok: true,
+        url: requestedUrl.toString(),
+        async text() {
+          return "";
+        }
+      };
+    }
+
+    if (requestedUrl.hostname === "www.youtube.com" && requestedUrl.pathname.startsWith("/shorts/")) {
+      const videoId = requestedUrl.pathname.split("/").filter(Boolean).at(-1);
+
+      return {
+        ok: true,
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        async text() {
+          return "";
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/seed-song",
+    title: "Artist - Seed Song",
+    key: "youtube:seed-song",
+    sourceName: "Artist"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Artist - Full Song One", "Artist - Full Song Two"]
   );
 });
 

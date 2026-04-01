@@ -673,6 +673,26 @@ async function searchYouTubeVideos(query, youtubeApiKey, {
   return Array.isArray(response.items) ? response.items : [];
 }
 
+async function isYouTubeShortVideo(videoId) {
+  const normalizedVideoId = typeof videoId === "string" ? videoId.trim() : "";
+
+  if (!normalizedVideoId) {
+    return false;
+  }
+
+  try {
+    const response = await fetch(`https://www.youtube.com/shorts/${normalizedVideoId}`, {
+      headers: {
+        "User-Agent": "Mozilla/5.0"
+      }
+    });
+
+    return /youtube\.com\/shorts\//i.test(response.url || "");
+  } catch {
+    return false;
+  }
+}
+
 function buildYouTubeTrackFromSearchItem(item) {
   const videoId = typeof item?.id?.videoId === "string" ? item.id.videoId.trim() : "";
   const snippet = item?.snippet ?? {};
@@ -895,6 +915,15 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
       if (
         excludedKeys.has(track.key) ||
         identityExcludedTracks.some((excludedTrack) => isLikelySameTrack(track, excludedTrack))
+      ) {
+        continue;
+      }
+
+      if (
+        Number.isFinite(track.durationSeconds) &&
+        track.durationSeconds > 0 &&
+        track.durationSeconds <= 180 &&
+        await isYouTubeShortVideo(videoId)
       ) {
         continue;
       }

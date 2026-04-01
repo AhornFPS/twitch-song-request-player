@@ -1083,20 +1083,35 @@ function postPlayerEvent(eventPayload) {
     body: JSON.stringify(eventPayload)
   });
 }
+function getReportedDurationSeconds(value = currentDurationSeconds) {
+  const durationSeconds = Number(value);
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+    return null;
+  }
+  return Math.floor(durationSeconds);
+}
 function emitStatus(status, extra = {}) {
   if (!currentTrackId) {
     return;
   }
-  const dedupeKey = `${currentTrackId}:${status}`;
-  if (lastReportedStatus === dedupeKey) {
-    return;
-  }
-  lastReportedStatus = dedupeKey;
   const eventPayload = {
     trackId: currentTrackId,
     status,
     ...extra
   };
+  if (status === "playing") {
+    const reportedDurationSeconds = getReportedDurationSeconds(eventPayload.durationSeconds);
+    if (reportedDurationSeconds !== null) {
+      eventPayload.durationSeconds = reportedDurationSeconds;
+    } else {
+      delete eventPayload.durationSeconds;
+    }
+  }
+  const dedupeKey = status === "playing" && Number.isFinite(eventPayload.durationSeconds) ? `${currentTrackId}:${status}:${eventPayload.durationSeconds}` : `${currentTrackId}:${status}`;
+  if (lastReportedStatus === dedupeKey) {
+    return;
+  }
+  lastReportedStatus = dedupeKey;
   if (socketConnected) {
     sendClientLog("info", "Sending player event over socket", eventPayload);
     socket.emit("player:event", eventPayload);

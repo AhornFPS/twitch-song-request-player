@@ -1,6 +1,67 @@
 {
   "events": [
     {
+      "id": "376ffadd-ff57-46e9-84ed-94b1a051ccc4",
+      "createdAt": "2026-04-01T01:53:15.681Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://youtu.be/ZEAKJw8Cz1c",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "dc96dbed-cc2a-4f82-8173-7b0d66a986cc",
+        "provider": "youtube",
+        "url": "https://youtu.be/ZEAKJw8Cz1c",
+        "title": "Desire - Under Your Spell",
+        "key": "youtube:ZEAKJw8Cz1c",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/ZEAKJw8Cz1c/hqdefault.jpg",
+        "durationSeconds": null,
+        "isLive": false,
+        "sourceName": "jglopur",
+        "sourceChannelId": "",
+        "sourceUrl": "https://www.youtube.com/@jglopur"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "f85dbb30-453c-4c61-bc1f-ce5aecf40d3d",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 5,
+        "acceptedRequests": 5,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 5,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-01T01:53:15.681Z",
+        "lastAcceptedAt": "2026-04-01T01:53:15.681Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://youtu.be/ZEAKJw8Cz1c",
+        "lastTrackKey": "youtube:ZEAKJw8Cz1c",
+        "lastTrackTitle": "Desire - Under Your Spell"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
       "id": "839ca7f6-d993-4600-85f5-fab1dc77604e",
       "createdAt": "2026-03-31T16:53:30.669Z",
       "source": "dashboard_queue",
@@ -423,19 +484,19 @@
         "username": "dashboard",
         "displayName": "Dashboard"
       },
-      "totalRequests": 4,
-      "acceptedRequests": 4,
+      "totalRequests": 5,
+      "acceptedRequests": 5,
       "duplicateRequests": 0,
       "rejectedRequests": 0,
-      "youtubeRequests": 4,
+      "youtubeRequests": 5,
       "soundcloudRequests": 0,
-      "lastRequestedAt": "2026-03-31T16:53:30.669Z",
-      "lastAcceptedAt": "2026-03-31T16:53:30.669Z",
+      "lastRequestedAt": "2026-04-01T01:53:15.681Z",
+      "lastAcceptedAt": "2026-04-01T01:53:15.681Z",
       "lastOutcome": "accepted",
       "lastSource": "dashboard_queue",
-      "lastInput": "alligatoah",
-      "lastTrackKey": "youtube:SPkVRk4rWzg",
-      "lastTrackTitle": "Alligatoah - Verloren"
+      "lastInput": "https://youtu.be/ZEAKJw8Cz1c",
+      "lastTrackKey": "youtube:ZEAKJw8Cz1c",
+      "lastTrackTitle": "Desire - Under Your Spell"
     }
   }
 }

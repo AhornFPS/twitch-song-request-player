@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed the Dashboard overview player so its total track time refreshes from the live playback metadata instead of staying stuck on stale request metadata.
+- Fixed radio picks so YouTube Shorts are skipped instead of entering the automatic radio run.
+
 ## 2.8.2 - 2026-04-01
 
 - Fixed radio picks so same-title covers and Topic-channel reuploads are skipped within the same radio run.

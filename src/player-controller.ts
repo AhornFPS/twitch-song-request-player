@@ -47,6 +47,15 @@ function normalizeAllowedProviders(value) {
   return allowedProviders;
 }
 
+function normalizeDurationSeconds(value) {
+  const parsedValue = Number(value);
+  if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+    return null;
+  }
+
+  return Math.floor(parsedValue);
+}
+
 function normalizeRequestPolicy(requestPolicy = {}) {
   const accessLevel = typeof requestPolicy.accessLevel === "string"
     ? requestPolicy.accessLevel.trim().toLowerCase()
@@ -1268,20 +1277,55 @@ export class PlayerController {
 
     logInfo("Received player event", payload);
 
+    const durationUpdated = this.updateCurrentTrackDurationSeconds(payload.durationSeconds);
+
     if (payload.status === "playing") {
-      await this.confirmCurrentTrackPlayback(payload);
+      await this.confirmCurrentTrackPlayback(payload, { durationUpdated });
       return;
     }
 
     await this.finishCurrentTrack(payload);
   }
 
-  async confirmCurrentTrackPlayback(payload) {
+  updateCurrentTrackDurationSeconds(durationSeconds) {
+    if (!this.currentTrack) {
+      return false;
+    }
+
+    const nextDurationSeconds = normalizeDurationSeconds(durationSeconds);
+    if (nextDurationSeconds === null) {
+      return false;
+    }
+
+    const currentDurationSeconds = normalizeDurationSeconds(this.currentTrack.durationSeconds);
+    if (currentDurationSeconds === nextDurationSeconds) {
+      return false;
+    }
+
+    this.currentTrack.durationSeconds = nextDurationSeconds;
+    this.currentTrackElapsedSeconds = this.clampElapsedSeconds(
+      this.currentTrack,
+      this.currentTrackElapsedSeconds
+    );
+    this.currentTrack.elapsedSeconds = this.currentTrackElapsedSeconds;
+
+    logInfo("Updated current track duration from player metadata", {
+      track: formatTrack(this.currentTrack),
+      durationSeconds: nextDurationSeconds
+    });
+
+    return true;
+  }
+
+  async confirmCurrentTrackPlayback(payload, { durationUpdated = false } = {}) {
     if (!this.currentTrack || this.currentTrack.id !== payload.trackId) {
       return;
     }
 
     if (this.currentTrack.playbackConfirmed) {
+      if (durationUpdated) {
+        this.broadcastState();
+      }
       return;
     }
 

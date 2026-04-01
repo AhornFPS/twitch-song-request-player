@@ -269,6 +269,38 @@ test("current track elapsed time advances while playing and freezes while paused
   }
 });
 
+test("playing events can refresh the current track duration after playback confirmation", async () => {
+  const { controller } = createController();
+
+  await controller.addRequest({
+    provider: "soundcloud",
+    url: "https://soundcloud.com/example/refreshed-duration",
+    title: "Refreshed Duration",
+    key: "soundcloud:refreshed-duration",
+    artworkUrl: "",
+    durationSeconds: 35,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  const trackId = controller.getCurrentTrack()?.id;
+
+  await controller.handlePlayerEvent({
+    trackId,
+    status: "playing"
+  });
+
+  await controller.handlePlayerEvent({
+    trackId,
+    status: "playing",
+    durationSeconds: 233.8
+  });
+
+  assert.equal(controller.getPublicState().currentTrack?.durationSeconds, 233);
+});
+
 test("stop keeps the current track ready to restart without auto-advancing", async () => {
   const { controller, emittedEvents } = createController();
 
