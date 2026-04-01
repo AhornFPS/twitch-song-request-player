@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { tracksShareIdentity } from "./track-identity.js";
 const YOUTUBE_HOSTS = new Set([
   "youtube.com",
   "www.youtube.com",
@@ -611,6 +612,14 @@ function isLikelySameTrack(candidate, seedTrack) {
     return true;
   }
 
+  if (tracksShareIdentity({
+    key: candidateKey,
+    title: candidate?.title || candidate?.snippet?.title,
+    sourceName: candidate?.sourceName || candidate?.snippet?.channelTitle
+  }, seedTrack)) {
+    return true;
+  }
+
   const candidateTitle = normalizeTrackTitle(candidate?.title || candidate?.snippet?.title, "");
   const candidateSource = normalizeTrackTitle(candidate?.sourceName || candidate?.snippet?.channelTitle, "");
   const separatedSeedTitle = splitArtistAndTitle(seedTrack?.requestedFromTitle || seedTrack?.title || "");
@@ -826,6 +835,7 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
   }
 
   const tracks = [];
+  const identityExcludedTracks = [seedTrack];
 
   for (const query of queries) {
     if (tracks.length >= normalizedLimit) {
@@ -880,7 +890,10 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
         searchItem.snippet?.thumbnails?.default?.url ||
         "";
 
-      if (excludedKeys.has(track.key) || isLikelySameTrack(track, seedTrack)) {
+      if (
+        excludedKeys.has(track.key) ||
+        identityExcludedTracks.some((excludedTrack) => isLikelySameTrack(track, excludedTrack))
+      ) {
         continue;
       }
 
@@ -892,6 +905,7 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
       }
 
       excludedKeys.add(track.key);
+      identityExcludedTracks.push(track);
       tracks.push(track);
     }
   }

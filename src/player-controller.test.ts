@@ -609,6 +609,69 @@ test("radio queues three related tracks after the final queued request finishes"
   );
 });
 
+test("radio skips alternate uploads of the seed song before queueing the next picks", async () => {
+  const { controller } = createController({
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/another-time-live",
+        title: "Cat Clyde - Another Time (Live Video)",
+        key: "youtube:another-time-live",
+        artworkUrl: "",
+        sourceName: "Cat Clyde"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/goodnight-lovers",
+        title: "Cat Clyde - Goodnight Lovers",
+        key: "youtube:goodnight-lovers",
+        artworkUrl: "",
+        sourceName: "Cat Clyde"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/another-time-session",
+        title: "Cat Clyde - 'Another Time' live session #newsong #indiefolk",
+        key: "youtube:another-time-session",
+        artworkUrl: "",
+        sourceName: "Cat Clyde"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/find-you-out",
+        title: "Cat Clyde - Find You Out",
+        key: "youtube:find-you-out",
+        artworkUrl: "",
+        sourceName: "Cat Clyde"
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/another-time-seed",
+    title: "Cat Clyde - Another Time (Official Audio)",
+    key: "youtube:another-time-seed",
+    artworkUrl: "",
+    sourceName: "Cat Clyde",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Cat Clyde - Goodnight Lovers");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Cat Clyde - Find You Out"]
+  );
+});
+
 test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
   const { controller } = createController({
     getRadioTracks: async ({ seedTrack }) => {

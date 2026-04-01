@@ -1,6 +1,7 @@
 // @ts-nocheck
 import crypto from "node:crypto";
 import { formatTrack, logInfo, logWarn } from "./logger.js";
+import { tracksShareIdentity } from "./track-identity.js";
 
 const validRequestAccessLevels = new Set([
   "everyone",
@@ -1662,6 +1663,17 @@ export class PlayerController {
     return Array.from(excludedTrackKeys);
   }
 
+  collectRadioExcludedTracks(seedTrack = null) {
+    return [
+      seedTrack,
+      this.currentTrack,
+      this.stoppedTrack,
+      ...this.queue,
+      ...this.radioQueue,
+      ...this.history.map((entry) => entry?.track).filter(Boolean)
+    ].filter(Boolean);
+  }
+
   async rebuildRadioQueue(seedTrack) {
     this.radioQueue = [];
 
@@ -1689,8 +1701,14 @@ export class PlayerController {
     }
 
     if (Array.isArray(radioTracks)) {
+      const excludedTracks = this.collectRadioExcludedTracks(seedTrack);
+
       for (const radioTrack of radioTracks) {
         if (!radioTrack?.key || this.playlistRepository.hasTrack(radioTrack) || this.findDuplicateTrack(radioTrack.key)) {
+          continue;
+        }
+
+        if (excludedTracks.some((track) => tracksShareIdentity(track, radioTrack))) {
           continue;
         }
 
@@ -1700,6 +1718,7 @@ export class PlayerController {
           origin: "radio",
           requestedBy: null
         });
+        excludedTracks.push(radioTrack);
 
         if (this.radioQueue.length >= 3) {
           break;

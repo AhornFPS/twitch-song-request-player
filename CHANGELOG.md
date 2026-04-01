@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed radio picks so alternate uploads of the same song are skipped instead of filling the 3-song radio run with repeat versions.
+
 ## 2.8.0 - 2026-03-31
 
 - Changed the Winamp overlay theme so unsaved tracks display in red.

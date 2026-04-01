@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  findYouTubeRadioTracks,
   resolveSongRequest,
   resolveTrackFromUrl,
   resolveYouTubePlaylistFromApi,
@@ -271,6 +272,159 @@ test("search-based song requests can be disabled independently from direct links
       allowSearchRequests: false
     }),
     /Search-based song requests are disabled/
+  );
+});
+
+test("youtube radio search skips alternate uploads of the seed song", async (t) => {
+  const originalFetch = global.fetch;
+  let searchRequestCount = 0;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      searchRequestCount += 1;
+
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "another-time-live"
+                },
+                snippet: {
+                  title: "Cat Clyde - Another Time (Live Video)",
+                  channelTitle: "Cat Clyde",
+                  channelId: "UCcat",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "goodnight-lovers"
+                },
+                snippet: {
+                  title: "Cat Clyde - Goodnight Lovers",
+                  channelTitle: "Cat Clyde",
+                  channelId: "UCcat",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "another-time-session"
+                },
+                snippet: {
+                  title: "Cat Clyde - 'Another Time' live session #newsong #indiefolk",
+                  channelTitle: "Cat Clyde",
+                  channelId: "UCcat",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "find-you-out"
+                },
+                snippet: {
+                  title: "Cat Clyde - Find You Out",
+                  channelTitle: "Cat Clyde",
+                  channelId: "UCcat",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "another-time-live",
+                snippet: {
+                  title: "Cat Clyde - Another Time (Live Video)",
+                  channelId: "UCcat",
+                  channelTitle: "Cat Clyde",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "goodnight-lovers",
+                snippet: {
+                  title: "Cat Clyde - Goodnight Lovers",
+                  channelId: "UCcat",
+                  channelTitle: "Cat Clyde",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "another-time-session",
+                snippet: {
+                  title: "Cat Clyde - 'Another Time' live session #newsong #indiefolk",
+                  channelId: "UCcat",
+                  channelTitle: "Cat Clyde",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              },
+              {
+                id: "find-you-out",
+                snippet: {
+                  title: "Cat Clyde - Find You Out",
+                  channelId: "UCcat",
+                  channelTitle: "Cat Clyde",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT3M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/another-time-seed",
+    title: "Cat Clyde - Another Time (Official Audio)",
+    key: "youtube:another-time-seed",
+    sourceName: "Cat Clyde"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.equal(searchRequestCount >= 1, true);
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Cat Clyde - Goodnight Lovers", "Cat Clyde - Find You Out"]
   );
 });
 
