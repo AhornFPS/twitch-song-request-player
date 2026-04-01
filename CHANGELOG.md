@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.8.1 - 2026-04-01
+
 - Fixed radio picks so alternate uploads of the same song are skipped instead of filling the 3-song radio run with repeat versions.
 
 ## 2.8.0 - 2026-03-31
