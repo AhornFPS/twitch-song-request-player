@@ -70,6 +70,21 @@ const themeOptions = [
     id: "arcade",
     label: "Arcade",
     description: "Chunky retro cabinet styling with bright pixel-block accents."
+  },
+  {
+    id: "ticker",
+    label: "Ticker",
+    description: "Flat broadcast ticker strip: LIVE badge on left, scrolling title in the middle, badges on the right."
+  },
+  {
+    id: "hud",
+    label: "HUD",
+    description: "Tactical amber readout with diagonal clip-path corner cuts and phosphor-glow text."
+  },
+  {
+    id: "stage",
+    label: "Stage",
+    description: "Concert-screen display: large circular artwork centered above a bold title with no queue clutter."
   }
 ];
 const validThemeIds = new Set(themeOptions.map((theme) => theme.id));

@@ -247,3 +247,72 @@
   --overlay-queue-item-end: rgba(255, 255, 255, 0.03);
   --overlay-progress-end: #ff4d6d;
 }
+
+/* Ticker – horizontal news-strip */
+:root[data-theme="ticker"] {
+  --panel: rgba(4, 6, 16, 0.96);
+  --panel-border: rgba(220, 60, 60, 0.5);
+  --panel-highlight: rgba(255, 90, 90, 0.18);
+  --text: #f8f6f2;
+  --muted: #b0a898;
+  --accent: #e83a3a;
+  --accent-strong: #ffd47f;
+  --shadow: 0 4px 28px rgba(0, 0, 0, 0.65);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-strong: rgba(255, 255, 255, 0.1);
+  --overlay-card-start: rgba(8, 10, 24, 0.97);
+  --overlay-card-end: rgba(4, 6, 16, 0.98);
+  --overlay-orb-left: rgba(220, 60, 60, 0.12);
+  --overlay-orb-right: rgba(255, 180, 80, 0.1);
+  --overlay-artwork-start: rgba(16, 18, 36, 0.98);
+  --overlay-artwork-end: rgba(6, 8, 20, 0.99);
+  --overlay-queue-item-start: rgba(255, 255, 255, 0.06);
+  --overlay-queue-item-end: rgba(255, 255, 255, 0.02);
+  --overlay-progress-end: #ffd47f;
+}
+
+/* HUD – angular tactical overlay */
+:root[data-theme="hud"] {
+  --panel: rgba(8, 4, 0, 0.98);
+  --panel-border: rgba(255, 170, 0, 0.55);
+  --panel-highlight: rgba(255, 200, 60, 0.14);
+  --text: #ffaa00;
+  --muted: #7a5500;
+  --accent: #ffaa00;
+  --accent-strong: #ffffff;
+  --shadow: none;
+  --surface: rgba(255, 170, 0, 0.05);
+  --surface-strong: rgba(255, 170, 0, 0.1);
+  --overlay-card-start: rgba(14, 7, 0, 0.98);
+  --overlay-card-end: rgba(6, 3, 0, 0.99);
+  --overlay-orb-left: rgba(0, 0, 0, 0);
+  --overlay-orb-right: rgba(0, 0, 0, 0);
+  --overlay-artwork-start: rgba(22, 12, 0, 0.98);
+  --overlay-artwork-end: rgba(8, 4, 0, 0.99);
+  --overlay-queue-item-start: rgba(255, 170, 0, 0.08);
+  --overlay-queue-item-end: rgba(255, 170, 0, 0.03);
+  --overlay-progress-end: #ffffff;
+}
+
+/* Stage – centered concert display */
+:root[data-theme="stage"] {
+  --panel: rgba(6, 4, 18, 0.95);
+  --panel-border: rgba(200, 150, 255, 0.2);
+  --panel-highlight: rgba(180, 100, 255, 0.16);
+  --text: #ffffff;
+  --muted: #9880b8;
+  --accent: #c46eff;
+  --accent-strong: #ffcc66;
+  --shadow: 0 32px 80px rgba(0, 0, 0, 0.92);
+  --surface: rgba(180, 100, 255, 0.06);
+  --surface-strong: rgba(180, 100, 255, 0.12);
+  --overlay-card-start: rgba(18, 10, 38, 0.96);
+  --overlay-card-end: rgba(6, 4, 18, 0.98);
+  --overlay-orb-left: rgba(196, 110, 255, 0.22);
+  --overlay-orb-right: rgba(120, 40, 200, 0.18);
+  --overlay-artwork-start: rgba(30, 14, 55, 0.98);
+  --overlay-artwork-end: rgba(10, 6, 22, 0.99);
+  --overlay-queue-item-start: rgba(200, 150, 255, 0.1);
+  --overlay-queue-item-end: rgba(200, 150, 255, 0.03);
+  --overlay-progress-end: #ffcc66;
+}

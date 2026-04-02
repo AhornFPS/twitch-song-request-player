@@ -133,7 +133,7 @@ body {
   display: grid;
   place-items: center;
   background:
-    radial-gradient(circle at top left, rgba(120, 229, 201, 0.35), transparent 46%),
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 35%, transparent), transparent 46%),
     linear-gradient(145deg, var(--overlay-artwork-start), var(--overlay-artwork-end));
   color: var(--text);
   font-size: 1.35rem;
@@ -257,7 +257,7 @@ body {
   height: 8px;
   border-radius: 999px;
   background: var(--accent);
-  box-shadow: 0 0 0 6px rgba(120, 229, 201, 0.12);
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .timeline {
@@ -288,7 +288,7 @@ body {
   width: 0%;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent), var(--overlay-progress-end));
-  box-shadow: 0 0 18px rgba(120, 229, 201, 0.24);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 #queue-count {
@@ -319,9 +319,9 @@ body {
   align-items: center;
   padding: 4px 7px;
   border-radius: 999px;
-  background: rgba(120, 229, 201, 0.2);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent);
-  border: 1px solid rgba(120, 229, 201, 0.18);
+  border: 1px solid color-mix(in srgb, var(--accent) 18%, transparent);
   font-weight: 500;
   font-size: 0.58rem;
 }
@@ -340,9 +340,9 @@ body {
 }
 
 .save-badge--saved {
-  background: rgba(255, 203, 119, 0.2);
+  background: color-mix(in srgb, var(--accent-strong) 20%, transparent);
   color: var(--accent-strong);
-  border-color: rgba(255, 203, 119, 0.18);
+  border-color: color-mix(in srgb, var(--accent-strong) 18%, transparent);
 }
 
 .save-badge--idle {
@@ -594,17 +594,17 @@ body {
 
 @keyframes timeline-glow {
   0% {
-    box-shadow: 0 0 0 rgba(120, 229, 201, 0);
+    box-shadow: none;
     filter: brightness(0.9);
   }
 
   50% {
-    box-shadow: 0 0 16px rgba(120, 229, 201, 0.28);
+    box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 28%, transparent);
     filter: brightness(1.1);
   }
 
   100% {
-    box-shadow: 0 0 18px rgba(120, 229, 201, 0.24);
+    box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 24%, transparent);
     filter: brightness(1);
   }
 }
@@ -932,6 +932,7 @@ body {
 
 /* ── Copy zone should not pad extra height ── */
 [data-theme="compact"] .player-card__copy {
+  width: 100%;
   min-height: 0;
   align-items: flex-start;
   padding-top: 2px;
@@ -1324,6 +1325,7 @@ body {
 }
 
 [data-theme="terminal"] .player-card__copy {
+  width: 100%;
   min-height: 0;
   padding: 0;
 }
@@ -1499,6 +1501,7 @@ body {
 }
 
 [data-theme="synthwave"] .player-card__copy {
+  width: 100%;
   min-height: 0;
 }
 
@@ -1929,6 +1932,7 @@ body {
 }
 
 [data-theme="noir"] .player-card__copy {
+  width: 100%;
   min-height: 0;
 }
 
@@ -2225,3 +2229,427 @@ body {
     grid-template-columns: 1fr;
   }
 }
+
+/* =====================================================
+   Ticker – horizontal live broadcast strip
+   Layout: flat bar, no card shape.
+   LIVE badge on left · scrolling title in middle ·
+   provider + queue count on right.
+   ===================================================== */
+
+[data-theme="ticker"] .player-card {
+  /* Override column layout to a single horizontal bar */
+  flex-direction: row;
+  align-items: stretch;
+  width: min(900px, calc(100vw - 16px));
+  height: 48px;
+  min-height: 48px;
+  padding: 0 14px 0 76px; /* 76px clears the LIVE badge */
+  border-radius: 0;
+  border: none;
+  border-top: 2px solid var(--accent);
+  gap: 0;
+  overflow: hidden;
+  backdrop-filter: blur(18px);
+  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.04), 0 4px 28px rgba(0, 0, 0, 0.65);
+}
+
+/* Repurpose orb ::before as the solid "LIVE" badge on the left */
+[data-theme="ticker"] .player-card::before {
+  content: "LIVE";
+  inset: 0 auto 0 0;
+  width: 62px;
+  height: 100%;
+  border-radius: 0;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  color: rgba(255, 255, 255, 0.95);
+  z-index: 3;
+  pointer-events: none;
+}
+
+[data-theme="ticker"] .player-card__glow { display: none; }
+
+/* player-card__top fills the middle of the bar */
+[data-theme="ticker"] .player-card__top {
+  display: flex; /* override grid */
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 0;
+  overflow: hidden;
+}
+
+[data-theme="ticker"] .player-card__media { display: none; }
+
+[data-theme="ticker"] .player-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+[data-theme="ticker"] .player-card__header {
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+[data-theme="ticker"] .player-card__copy {
+  min-height: 0;
+  gap: 0;
+  justify-content: center;
+}
+
+[data-theme="ticker"] #current-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+[data-theme="ticker"] .current-meta { display: none; }
+
+/* Status badges sit flush right inside the bar */
+[data-theme="ticker"] .player-card__status {
+  flex-direction: row;
+  align-items: center;
+  justify-items: end;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+[data-theme="ticker"] .status-pill {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.1);
+  padding: 3px 8px;
+  gap: 5px;
+}
+
+[data-theme="ticker"] .timeline { display: none; }
+[data-theme="ticker"] .queue-panel { display: none; }
+
+/* =====================================================
+   HUD – tactical angular overlay
+   Unique feature: clip-path diagonal corner cuts.
+   Amber phosphor on black, no backdrop blur.
+   ===================================================== */
+
+[data-theme="hud"] .player-card {
+  width: min(460px, calc(100vw - 16px));
+  padding: 22px 18px 14px;
+  border-radius: 0;
+  border: none;
+  background: var(--overlay-card-start);
+  backdrop-filter: none;
+  box-shadow: none;
+  gap: 10px;
+  /* Diagonal corner cuts – unique to this theme */
+  clip-path: polygon(
+    20px 0%, 100% 0%,
+    100% calc(100% - 20px),
+    calc(100% - 20px) 100%,
+    0% 100%, 0% 20px
+  );
+  /* Border glow follows the clip shape via drop-shadow */
+  filter:
+    drop-shadow(0 0 1px rgba(255, 170, 0, 0.9))
+    drop-shadow(0 0 22px rgba(255, 130, 0, 0.32));
+}
+
+/* Top label bar */
+[data-theme="hud"] .player-card::before {
+  content: "◈ AUDIO.SYS";
+  inset: 0 0 auto 0;
+  width: 100%;
+  height: 22px;
+  border-radius: 0;
+  background: rgba(255, 170, 0, 0.1);
+  border-bottom: 1px solid rgba(255, 170, 0, 0.28);
+  color: var(--accent);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  display: flex;
+  align-items: center;
+  padding-left: 14px;
+  z-index: 2;
+  pointer-events: none;
+}
+
+[data-theme="hud"] .player-card__glow { display: none; }
+
+[data-theme="hud"] .player-card__top {
+  padding-top: 16px; /* room below the label bar */
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 12px;
+}
+
+[data-theme="hud"] .player-card__media {
+  width: 54px;
+  height: 54px;
+}
+
+/* Square, beveled artwork – no rounding at all */
+[data-theme="hud"] .artwork-image,
+[data-theme="hud"] .artwork-fallback {
+  border-radius: 0;
+  border: 1px solid rgba(255, 170, 0, 0.4);
+  box-shadow: inset 0 0 0 1px rgba(255, 170, 0, 0.12);
+}
+
+[data-theme="hud"] .artwork-fallback {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.7rem;
+}
+
+[data-theme="hud"] .player-card__copy {
+  min-height: 0;
+}
+
+[data-theme="hud"] #current-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(0.88rem, 2vw, 1.08rem);
+  font-weight: 500;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(255, 170, 0, 0.45);
+}
+
+/* Diamond dot */
+[data-theme="hud"] .status-pill {
+  background: rgba(255, 170, 0, 0.07);
+  border-color: rgba(255, 170, 0, 0.28);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+[data-theme="hud"] .status-pill__dot {
+  border-radius: 0;
+  transform: rotate(45deg);
+  box-shadow: 0 0 6px currentColor;
+}
+
+[data-theme="hud"] .provider-badge {
+  border-radius: 0;
+  background: rgba(255, 170, 0, 0.1);
+  color: var(--accent);
+  border-color: rgba(255, 170, 0, 0.28);
+}
+
+[data-theme="hud"] .save-badge--saved {
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--accent-strong);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+[data-theme="hud"] .save-badge--idle {
+  border-radius: 0;
+  background: transparent;
+  color: var(--muted);
+  border-color: rgba(255, 170, 0, 0.14);
+}
+
+[data-theme="hud"] .timeline__track {
+  height: 6px;
+  border-radius: 0;
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid rgba(255, 170, 0, 0.22);
+  box-shadow: none;
+}
+
+[data-theme="hud"] .timeline__fill {
+  border-radius: 0;
+  box-shadow: 0 0 10px rgba(255, 170, 0, 0.45);
+}
+
+[data-theme="hud"] .timeline__time {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.64rem;
+  text-shadow: 0 0 5px currentColor;
+}
+
+[data-theme="hud"] .queue-panel {
+  border-top: 1px solid rgba(255, 170, 0, 0.18);
+  padding-top: 8px;
+}
+
+[data-theme="hud"] .queue-panel__header {
+  display: none;
+}
+
+[data-theme="hud"] .queue-list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+[data-theme="hud"] .queue-list::before {
+  content: "QUEUE/";
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-right: 10px;
+}
+
+[data-theme="hud"] .queue-item {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+[data-theme="hud"] .queue-item + .queue-item,
+[data-theme="hud"] .queue-meta {
+  display: none;
+}
+
+[data-theme="hud"] .queue-title {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* =====================================================
+   Stage – centered concert / album-art display
+   Layout: circular artwork on top, centered title
+   below it, minimal status row, no queue panel.
+   Portrait-oriented; totally different from all others.
+   ===================================================== */
+
+[data-theme="stage"] .player-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: min(420px, calc(100vw - 16px));
+  padding: 24px 20px 20px;
+  border-radius: 28px;
+  gap: 18px;
+  overflow: hidden;
+}
+
+[data-theme="stage"] .player-card::before {
+  /* Soft ambient glow behind the artwork, positioned top-center */
+  inset: -40px auto auto 50%;
+  transform: translateX(-50%);
+  width: 220px;
+  height: 220px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--overlay-orb-left), transparent 66%);
+}
+
+[data-theme="stage"] .player-card__glow { display: none; }
+
+/* Flip the grid: artwork on top, info below (column layout) */
+[data-theme="stage"] .player-card__top {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  grid-template-columns: unset;
+  gap: 18px;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Large circular artwork as the visual anchor */
+[data-theme="stage"] .player-card__media {
+  width: 128px;
+  height: 128px;
+  align-self: center;
+  order: -1;
+}
+
+[data-theme="stage"] .artwork-image,
+[data-theme="stage"] .artwork-fallback {
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.14);
+  box-shadow:
+    0 0 0 8px color-mix(in srgb, var(--accent) 12%, transparent),
+    0 24px 56px rgba(0, 0, 0, 0.7);
+}
+
+[data-theme="stage"] .player-card__main {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+[data-theme="stage"] .player-card__header {
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+[data-theme="stage"] .player-card__copy {
+  width: 100%;
+  align-items: center;
+  min-height: 0;
+  gap: 6px;
+}
+
+/* Large bold centered title — the main event */
+[data-theme="stage"] #current-title {
+  font-size: clamp(1.6rem, 4vw, 2.4rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+}
+
+[data-theme="stage"] .current-meta {
+  display: block;
+  text-align: center;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* Status row: centered inline badges */
+[data-theme="stage"] .player-card__status {
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-theme="stage"] .status-pill {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="stage"] .badge-row {
+  max-width: none;
+  justify-content: center;
+}
+
+[data-theme="stage"] .timeline {
+  width: 100%;
+  gap: 10px;
+}
+
+[data-theme="stage"] .timeline__track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+/* No queue on stage — the song is the whole show */
+[data-theme="stage"] .queue-panel { display: none; }
