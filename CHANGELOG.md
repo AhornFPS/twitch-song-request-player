@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.0 - 2026-04-02
+
 - Fixed six hardcoded Aurora-cyan colours in the base overlay CSS so provider badges, save badges, status-pill glows, artwork fallbacks, progress-bar glows, and the track-enter timeline animation now follow the active theme instead of always showing Aurora tints.
 - Fixed title marquee scrolling not activating in Compact, Terminal, Synthwave, Noir, and Stage overlay themes when the track name was longer than the visible area.
 - Added three new structurally distinct overlay themes: Ticker (flat broadcast ticker strip with LIVE badge), HUD (angular clip-path tactical readout with amber phosphor glow), and Stage (portrait-oriented concert display with large circular artwork and centred title).
