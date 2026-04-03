@@ -3,12 +3,24 @@
 const TRACK_DESCRIPTOR_WORDS = new Set([
   "acoustic",
   "album",
+  "alternate",
+  "anniversary",
   "audio",
+  "at",
+  "bootleg",
   "clean",
   "clip",
+  "cut",
+  "demo",
+  "deluxe",
+  "dub",
   "edit",
+  "extended",
   "explicit",
+  "feat",
+  "featuring",
   "full",
+  "ft",
   "hd",
   "hq",
   "instrumental",
@@ -23,23 +35,71 @@ const TRACK_DESCRIPTOR_WORDS = new Set([
   "new",
   "newsong",
   "official",
+  "on",
   "out",
   "performance",
   "premiere",
   "release",
   "remaster",
   "remastered",
+  "remix",
+  "reupload",
+  "reverb",
+  "recorded",
+  "recording",
   "session",
   "short",
   "shorts",
   "single",
+  "slowed",
   "song",
+  "sped",
   "stereo",
   "stream",
   "streaming",
+  "take",
   "teaser",
   "trailer",
   "uhd",
+  "unplugged",
+  "version",
+  "video",
+  "visualiser",
+  "visualizer",
+  "with"
+]);
+
+const TRACK_VARIANT_SIGNAL_WORDS = new Set([
+  "acoustic",
+  "alternate",
+  "bootleg",
+  "clean",
+  "cut",
+  "demo",
+  "dub",
+  "edit",
+  "explicit",
+  "feat",
+  "featuring",
+  "ft",
+  "instrumental",
+  "karaoke",
+  "live",
+  "lyric",
+  "lyrics",
+  "performance",
+  "recorded",
+  "recording",
+  "remaster",
+  "remastered",
+  "remix",
+  "reupload",
+  "reverb",
+  "session",
+  "slowed",
+  "sped",
+  "take",
+  "unplugged",
   "version",
   "video",
   "visualiser",
@@ -64,7 +124,7 @@ function normalizeTrackText(value, fallback = "") {
 
 function splitArtistAndTitle(value) {
   const normalizedValue = normalizeTrackText(value, "");
-  const match = normalizedValue.match(/^(.+?)\s[-–—]\s(.+)$/);
+  const match = normalizedValue.match(/^(.+?)\s(?:[-–—]|:|\|)\s(.+)$/);
 
   if (!match) {
     return null;
@@ -111,16 +171,37 @@ function isDescriptorFragment(value) {
   }
 
   let descriptorTokenCount = 0;
+  let hasVariantSignal = false;
+  let hasNumericHint = false;
 
   for (const token of tokens) {
     if (TRACK_DESCRIPTOR_WORDS.has(token) || /^\d+(?:k)?$/.test(token)) {
       descriptorTokenCount += 1;
     }
+
+    if (TRACK_VARIANT_SIGNAL_WORDS.has(token)) {
+      hasVariantSignal = true;
+    }
+
+    if (/^\d{4}$/.test(token)) {
+      hasNumericHint = true;
+    }
   }
+
+  const descriptorRatio = descriptorTokenCount / tokens.length;
 
   return (
     descriptorTokenCount === tokens.length ||
-    descriptorTokenCount / tokens.length >= 0.75
+    descriptorRatio >= 0.75 ||
+    (
+      hasVariantSignal &&
+      descriptorRatio >= 0.5
+    ) ||
+    (
+      hasVariantSignal &&
+      hasNumericHint &&
+      descriptorRatio >= 0.34
+    )
   );
 }
 

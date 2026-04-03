@@ -589,6 +589,155 @@ test("youtube radio search skips repeated song titles from different artists and
   );
 });
 
+test("youtube radio search skips renamed uploads of the same song when the title only changes by version text", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "hotel-live"
+                },
+                snippet: {
+                  title: "Hotel California (Live on MTV, 1994)",
+                  channelTitle: "Eagles",
+                  channelId: "UCeagles",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "new-kid"
+                },
+                snippet: {
+                  title: "Eagles - New Kid In Town",
+                  channelTitle: "Eagles",
+                  channelId: "UCeagles",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "hotel-rhino"
+                },
+                snippet: {
+                  title: "Hotel California [Official Music Video]",
+                  channelTitle: "RHINO",
+                  channelId: "UCrhino",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "one-of-these-nights"
+                },
+                snippet: {
+                  title: "Eagles - One of These Nights",
+                  channelTitle: "Eagles",
+                  channelId: "UCeagles",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "hotel-live",
+                snippet: {
+                  title: "Hotel California (Live on MTV, 1994)",
+                  channelId: "UCeagles",
+                  channelTitle: "Eagles",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT6M"
+                }
+              },
+              {
+                id: "new-kid",
+                snippet: {
+                  title: "Eagles - New Kid In Town",
+                  channelId: "UCeagles",
+                  channelTitle: "Eagles",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT5M"
+                }
+              },
+              {
+                id: "hotel-rhino",
+                snippet: {
+                  title: "Hotel California [Official Music Video]",
+                  channelId: "UCrhino",
+                  channelTitle: "RHINO",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT6M"
+                }
+              },
+              {
+                id: "one-of-these-nights",
+                snippet: {
+                  title: "Eagles - One of These Nights",
+                  channelId: "UCeagles",
+                  channelTitle: "Eagles",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT5M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/hotel-seed",
+    title: "Eagles - Hotel California",
+    key: "youtube:hotel-seed",
+    sourceName: "Eagles"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Eagles - New Kid In Town", "Eagles - One of These Nights"]
+  );
+});
+
 test("youtube radio search skips YouTube Shorts results", async (t) => {
   const originalFetch = global.fetch;
 

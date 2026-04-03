@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed radio picks so renamed uploads and version-labelled repeats of the same song are skipped within the same automatic radio run.
+
 ## 2.9.0 - 2026-04-02
 
 - Fixed six hardcoded Aurora-cyan colours in the base overlay CSS so provider badges, save badges, status-pill glows, artwork fallbacks, progress-bar glows, and the track-enter timeline animation now follow the active theme instead of always showing Aurora tints.

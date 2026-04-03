@@ -767,6 +767,69 @@ test("radio skips repeated song titles even when they come from different artist
   );
 });
 
+test("radio skips renamed uploads of the same song when only version text changes", async () => {
+  const { controller } = createController({
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/hotel-live",
+        title: "Eagles - Hotel California (Live on MTV, 1994)",
+        key: "youtube:hotel-live",
+        artworkUrl: "",
+        sourceName: "Eagles"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/new-kid",
+        title: "Eagles - New Kid In Town",
+        key: "youtube:new-kid",
+        artworkUrl: "",
+        sourceName: "Eagles"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/hotel-rhino",
+        title: "RHINO - Hotel California [Official Music Video]",
+        key: "youtube:hotel-rhino",
+        artworkUrl: "",
+        sourceName: "RHINO"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/one-of-these-nights",
+        title: "Eagles - One of These Nights",
+        key: "youtube:one-of-these-nights",
+        artworkUrl: "",
+        sourceName: "Eagles"
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/hotel-seed",
+    title: "Eagles - Hotel California",
+    key: "youtube:hotel-seed",
+    artworkUrl: "",
+    sourceName: "Eagles",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Eagles - New Kid In Town");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Eagles - One of These Nights"]
+  );
+});
+
 test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
   const { controller } = createController({
     getRadioTracks: async ({ seedTrack }) => {
