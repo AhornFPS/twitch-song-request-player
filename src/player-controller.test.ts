@@ -893,6 +893,65 @@ test("radio skips fuzzy title duplicates when descriptor words differ without br
   );
 });
 
+test("radio rebuilds when the last radio track finishes and the queue is still empty", async () => {
+  let radioCallCount = 0;
+  const { controller } = createController({
+    getRadioTracks: async ({ seedTrack }) => {
+      radioCallCount += 1;
+
+      if (radioCallCount === 1) {
+        return [
+          {
+            provider: "youtube",
+            url: "https://youtu.be/radio-a1",
+            title: "Artist - Radio A1",
+            key: "youtube:radio-a1",
+            artworkUrl: ""
+          }
+        ];
+      }
+
+      return [
+        {
+          provider: "youtube",
+          url: "https://youtu.be/radio-b1",
+          title: "Artist - Radio B1",
+          key: "youtube:radio-b1",
+          artworkUrl: ""
+        }
+      ];
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/seed",
+    title: "Artist - Seed Song",
+    key: "youtube:seed",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(radioCallCount, 1);
+  assert.equal(controller.getCurrentTrack()?.title, "Artist - Radio A1");
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(radioCallCount, 2);
+  assert.equal(controller.getCurrentTrack()?.title, "Artist - Radio B1");
+});
+
 test("radio skips tracks longer than ten minutes before queueing picks", async () => {
   const { controller } = createController({
     getRadioTracks: async () => [
