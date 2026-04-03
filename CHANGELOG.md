@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added a Check for updates button in the dashboard so installed desktop builds can manually query new releases.
+
 ## 2.9.3 - 2026-04-03
 
 - Improved radio duplicate detection so fuzzy title matches and alternate versions of previously played tracks are filtered out across the full play history, not just the seed track.

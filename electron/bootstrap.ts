@@ -39,7 +39,13 @@ class UpdateService extends EventEmitter {
     });
 
     this.autoUpdater.on("update-not-available", () => {
-      this.updateStatus({ state: "idle" });
+      this.updateStatus({
+        state: "idle",
+        version: null,
+        releaseNotes: null,
+        progress: 0,
+        error: null
+      });
     });
 
     this.autoUpdater.on("error", (error) => {
@@ -71,7 +77,11 @@ class UpdateService extends EventEmitter {
   }
 
   checkForUpdates() {
-    this.updateStatus({ error: null });
+    this.updateStatus({
+      state: "checking",
+      error: null,
+      progress: 0
+    });
     this.autoUpdater.checkForUpdates().catch((err) => {
       this.updateStatus({
         state: "error",

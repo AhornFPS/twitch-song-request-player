@@ -420,6 +420,17 @@ export async function startAppServer({
     response.json(updateService.getStatus());
   });
 
+  app.post("/api/updater/check", (_request, response) => {
+    if (!updateService) {
+      return response.status(409).json({
+        error: "Update checks are only available in installed desktop builds."
+      });
+    }
+
+    updateService.checkForUpdates();
+    response.json(updateService.getStatus());
+  });
+
   app.post("/api/updater/download", (_request, response) => {
     if (updateService) {
       updateService.downloadUpdate();

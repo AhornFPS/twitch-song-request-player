@@ -47,6 +47,7 @@ let isGuiPlayerSaving = false;
 let guiPlayerVolume = 100;
 let guiPlayerVolumeSaveTimer = null;
 let isGuiPlayerVolumeSaving = false;
+let isManualUpdateCheckPending = false;
 let queueActionTrackId = "";
 let requestPolicyDraft = null;
 let requestPolicyAutosaveTimer = null;
@@ -116,6 +117,7 @@ function renderDashboard() {
                 <span id="overlay-scale-value" class="control-range__value">100%</span>
               </div>
             </label>
+            <button id="check-for-updates-button" class="secondary-button" type="button">Check for updates</button>
             <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
             <button id="save-button" class="primary-button" type="button">Save settings</button>
           </div>
@@ -3294,6 +3296,16 @@ function formatMarkdown(text) {
     .replace(/<\/ul>\s*<ul>/g, "");
 }
 
+function syncUpdateCheckButton(isChecking) {
+  const button = el("check-for-updates-button");
+  if (!button) {
+    return;
+  }
+
+  button.disabled = isChecking;
+  button.textContent = isChecking ? "Checking..." : "Check for updates";
+}
+
 function handleUpdaterStatus(status) {
   if (status.appVersion) {
     setText("app-version-badge", `v${status.appVersion}`);
@@ -3304,6 +3316,7 @@ function handleUpdaterStatus(status) {
 
   updateErrorText.hidden = true;
   updateProgressContainer.hidden = true;
+  syncUpdateCheckButton(status.state === "checking");
 
   if (status.state === "available") {
     updateVersionText.textContent = `Version ${status.version} is now available.`;
@@ -3311,6 +3324,14 @@ function handleUpdaterStatus(status) {
     updateActionBtn.textContent = "Download Update";
     updateActionBtn.disabled = false;
     updateModal.classList.add("is-visible");
+    if (isManualUpdateCheckPending) {
+      setFeedback("Update found. Review the release notes below.", "success");
+      isManualUpdateCheckPending = false;
+    }
+  } else if (status.state === "checking") {
+    if (isManualUpdateCheckPending) {
+      setFeedback("Checking for updates...");
+    }
   } else if (status.state === "downloading") {
     updateModal.classList.add("is-visible");
     updateProgressContainer.hidden = false;
@@ -3328,8 +3349,37 @@ function handleUpdaterStatus(status) {
     updateErrorText.hidden = false;
     updateActionBtn.disabled = false;
     updateActionBtn.textContent = "Try Again";
+    if (isManualUpdateCheckPending) {
+      setFeedback(status.error || "Could not check for updates.", "error");
+      isManualUpdateCheckPending = false;
+    }
   } else {
     updateModal.classList.remove("is-visible");
+    if (isManualUpdateCheckPending) {
+      setFeedback("You're already on the latest version.", "success");
+      isManualUpdateCheckPending = false;
+    }
+  }
+}
+
+async function checkForUpdates() {
+  if (isManualUpdateCheckPending) {
+    return;
+  }
+
+  isManualUpdateCheckPending = true;
+  setFeedback("Checking for updates...");
+  syncUpdateCheckButton(true);
+
+  try {
+    const status = await fetchJson("/api/updater/check", {
+      method: "POST"
+    });
+    handleUpdaterStatus(status);
+  } catch (error) {
+    isManualUpdateCheckPending = false;
+    syncUpdateCheckButton(false);
+    setFeedback(error?.message || "Could not check for updates.", "error");
   }
 }
 
@@ -3445,6 +3495,8 @@ root.addEventListener("click", (event) => {
 
   if (event.target.id === "save-button") {
     void saveSettings();
+  } else if (event.target.id === "check-for-updates-button") {
+    void checkForUpdates();
   } else if (event.target.id === "open-appdata-button") {
     fetch("/api/open-runtime-dir", { method: "POST" }).catch(() => {});
   } else if (event.target.id === "export-diagnostics-button") {

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import fs from "node:fs/promises";
 import net from "node:net";
 import os from "node:os";
@@ -223,6 +224,185 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.match(overlayLoaderHtml, /Twitch Song Request Player OBS Loader/);
   assert.equal(overlayLoaderHtml.includes(appServer.urls.overlayUrl), true);
   assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
+});
+
+test("manual updater checks return an error when the desktop updater is unavailable", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const response = await fetch(new URL("/api/updater/check", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+
+  assert.equal(response.status, 409);
+  assert.deepEqual(await response.json(), {
+    error: "Update checks are only available in installed desktop builds."
+  });
+});
+
+test("updater routes expose status and invoke the desktop updater controls", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  class StubUpdateService extends EventEmitter {
+    constructor() {
+      super();
+      this.status = {
+        state: "idle",
+        version: null,
+        releaseNotes: null,
+        progress: 0,
+        error: null
+      };
+      this.checkCalls = 0;
+      this.downloadCalls = 0;
+      this.installCalls = 0;
+    }
+
+    getStatus() {
+      return {
+        ...this.status,
+        appVersion: "9.9.9"
+      };
+    }
+
+    checkForUpdates() {
+      this.checkCalls += 1;
+      this.status = {
+        ...this.status,
+        state: "checking"
+      };
+      this.emit("status-changed", this.getStatus());
+    }
+
+    downloadUpdate() {
+      this.downloadCalls += 1;
+    }
+
+    installUpdate() {
+      this.installCalls += 1;
+    }
+  }
+
+  const updateService = new StubUpdateService();
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Test Track\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    updateService,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const statusResponse = await fetch(new URL("/api/updater", appServer.urls.dashboardUrl));
+  assert.equal(statusResponse.ok, true);
+  assert.deepEqual(await statusResponse.json(), {
+    state: "idle",
+    version: null,
+    releaseNotes: null,
+    progress: 0,
+    error: null,
+    appVersion: "9.9.9"
+  });
+
+  const checkResponse = await fetch(new URL("/api/updater/check", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(checkResponse.ok, true);
+  assert.deepEqual(await checkResponse.json(), {
+    state: "checking",
+    version: null,
+    releaseNotes: null,
+    progress: 0,
+    error: null,
+    appVersion: "9.9.9"
+  });
+  assert.equal(updateService.checkCalls, 1);
+
+  const downloadResponse = await fetch(new URL("/api/updater/download", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(downloadResponse.status, 204);
+  assert.equal(updateService.downloadCalls, 1);
+
+  const installResponse = await fetch(new URL("/api/updater/install", appServer.urls.dashboardUrl), {
+    method: "POST"
+  });
+  assert.equal(installResponse.status, 204);
+  assert.equal(updateService.installCalls, 1);
 });
 
 test("partial settings save updates only the theme without touching other fields", async (t) => {
