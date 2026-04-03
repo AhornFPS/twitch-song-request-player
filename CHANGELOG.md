@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.3 - 2026-04-03
+
 - Improved radio duplicate detection so fuzzy title matches and alternate versions of previously played tracks are filtered out across the full play history, not just the seed track.
 
 ## 2.9.2 - 2026-04-03
