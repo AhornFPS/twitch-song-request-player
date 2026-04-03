@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.2 - 2026-04-03
+
 - Fixed automatic radio picks so tracks longer than 10 minutes are skipped instead of queueing long mixes or extended uploads.
 
 ## 2.9.1 - 2026-04-03
