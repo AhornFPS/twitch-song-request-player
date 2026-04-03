@@ -830,6 +830,127 @@ test("radio skips renamed uploads of the same song when only version text change
   );
 });
 
+test("radio skips fuzzy title duplicates when descriptor words differ without brackets", async () => {
+  const { controller } = createController({
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/comfortably-remastered",
+        title: "Pink Floyd - Comfortably Numb Remastered 2011",
+        key: "youtube:comfortably-remastered",
+        artworkUrl: "",
+        sourceName: "Pink Floyd"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/wish-you",
+        title: "Pink Floyd - Wish You Were Here",
+        key: "youtube:wish-you",
+        artworkUrl: "",
+        sourceName: "Pink Floyd"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/comfortably-live",
+        title: "Pink Floyd - Comfortably Numb Live Pulse Concert",
+        key: "youtube:comfortably-live",
+        artworkUrl: "",
+        sourceName: "Pink Floyd"
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/another-brick",
+        title: "Pink Floyd - Another Brick In The Wall",
+        key: "youtube:another-brick",
+        artworkUrl: "",
+        sourceName: "Pink Floyd"
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/comfortably-seed",
+    title: "Pink Floyd - Comfortably Numb",
+    key: "youtube:comfortably-seed",
+    artworkUrl: "",
+    sourceName: "Pink Floyd",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Pink Floyd - Wish You Were Here");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Pink Floyd - Another Brick In The Wall"]
+  );
+});
+
+test("radio skips tracks longer than ten minutes before queueing picks", async () => {
+  const { controller } = createController({
+    getRadioTracks: async () => [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/long-mix",
+        title: "Artist - Long Mix",
+        key: "youtube:long-mix",
+        artworkUrl: "",
+        sourceName: "Artist",
+        durationSeconds: 721
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/radio-one",
+        title: "Artist - Radio One",
+        key: "youtube:radio-one",
+        artworkUrl: "",
+        sourceName: "Artist",
+        durationSeconds: 240
+      },
+      {
+        provider: "youtube",
+        url: "https://youtu.be/radio-two",
+        title: "Artist - Radio Two",
+        key: "youtube:radio-two",
+        artworkUrl: "",
+        sourceName: "Artist",
+        durationSeconds: 300
+      }
+    ]
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/seed-track",
+    title: "Artist - Seed Track",
+    key: "youtube:seed-track",
+    artworkUrl: "",
+    sourceName: "Artist",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "Artist - Radio One");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Artist - Radio Two"]
+  );
+});
+
 test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
   const { controller } = createController({
     getRadioTracks: async ({ seedTrack }) => {

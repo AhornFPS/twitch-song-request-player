@@ -383,11 +383,12 @@ export async function startAppServer({
     runtimeStateStore,
     requestAuditStore,
     requestPolicy: currentSettings.requestPolicy,
-    getRadioTracks: async ({ seedTrack, excludeTrackKeys = [], count = 3 }) =>
+    getRadioTracks: async ({ seedTrack, excludeTrackKeys = [], excludeTracks = [], count = 3 }) =>
       findYouTubeRadioTracks(seedTrack, currentSettings.youtubeApiKey, {
         safeSearch: currentSettings.requestPolicy?.youtubeSafeSearch,
         limit: count,
         excludeTrackKeys,
+        excludeTracks,
         isTrackAllowed: async (track) => !playlistRepository.hasTrack(track)
       })
   });

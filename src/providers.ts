@@ -601,6 +601,8 @@ function buildYouTubeRadioQueries(seedTrack) {
   return queries;
 }
 
+const MAX_RADIO_TRACK_DURATION_SECONDS = 10 * 60;
+
 function isLikelySameTrack(candidate, seedTrack) {
   const candidateKey = typeof candidate?.key === "string"
     ? candidate.key.trim()
@@ -831,6 +833,7 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
   safeSearch = "none",
   limit = 3,
   excludeTrackKeys = [],
+  excludeTracks = [],
   isTrackAllowed = null
 } = {}) {
   const normalizedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 3, 1), 10);
@@ -857,7 +860,10 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
   }
 
   const tracks = [];
-  const identityExcludedTracks = [seedTrack];
+  const identityExcludedTracks = [
+    seedTrack,
+    ...(Array.isArray(excludeTracks) ? excludeTracks.filter(Boolean) : [])
+  ];
 
   for (const query of queries) {
     if (tracks.length >= normalizedLimit) {
@@ -915,6 +921,13 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
       if (
         excludedKeys.has(track.key) ||
         identityExcludedTracks.some((excludedTrack) => isLikelySameTrack(track, excludedTrack))
+      ) {
+        continue;
+      }
+
+      if (
+        Number.isFinite(track.durationSeconds) &&
+        track.durationSeconds > MAX_RADIO_TRACK_DURATION_SECONDS
       ) {
         continue;
       }

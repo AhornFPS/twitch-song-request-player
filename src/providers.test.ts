@@ -738,6 +738,131 @@ test("youtube radio search skips renamed uploads of the same song when the title
   );
 });
 
+test("youtube radio search skips tracks longer than ten minutes", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "long-mix"
+                },
+                snippet: {
+                  title: "Artist - Long Mix",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "radio-one"
+                },
+                snippet: {
+                  title: "Artist - Radio One",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "radio-two"
+                },
+                snippet: {
+                  title: "Artist - Radio Two",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "long-mix",
+                snippet: {
+                  title: "Artist - Long Mix",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT12M1S"
+                }
+              },
+              {
+                id: "radio-one",
+                snippet: {
+                  title: "Artist - Radio One",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "radio-two",
+                snippet: {
+                  title: "Artist - Radio Two",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT5M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/seed-track",
+    title: "Artist - Seed Track",
+    key: "youtube:seed-track",
+    sourceName: "Artist"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Artist - Radio One", "Artist - Radio Two"]
+  );
+});
+
 test("youtube radio search skips YouTube Shorts results", async (t) => {
   const originalFetch = global.fetch;
 
@@ -882,6 +1007,140 @@ test("youtube radio search skips YouTube Shorts results", async (t) => {
   assert.deepEqual(
     tracks.map((track) => track.title),
     ["Artist - Full Song One", "Artist - Full Song Two"]
+  );
+});
+
+test("youtube radio search skips candidates matching excludeTracks via fuzzy identity", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "numb-remastered"
+                },
+                snippet: {
+                  title: "Pink Floyd - Comfortably Numb Remastered 2011",
+                  channelTitle: "Pink Floyd",
+                  channelId: "UCpf",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "wish-you"
+                },
+                snippet: {
+                  title: "Pink Floyd - Wish You Were Here",
+                  channelTitle: "Pink Floyd",
+                  channelId: "UCpf",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "another-brick"
+                },
+                snippet: {
+                  title: "Pink Floyd - Another Brick In The Wall",
+                  channelTitle: "Pink Floyd",
+                  channelId: "UCpf",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "numb-remastered",
+                snippet: {
+                  title: "Pink Floyd - Comfortably Numb Remastered 2011",
+                  channelId: "UCpf",
+                  channelTitle: "Pink Floyd",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT6M"
+                }
+              },
+              {
+                id: "wish-you",
+                snippet: {
+                  title: "Pink Floyd - Wish You Were Here",
+                  channelId: "UCpf",
+                  channelTitle: "Pink Floyd",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT5M30S"
+                }
+              },
+              {
+                id: "another-brick",
+                snippet: {
+                  title: "Pink Floyd - Another Brick In The Wall",
+                  channelId: "UCpf",
+                  channelTitle: "Pink Floyd",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/seed-song",
+    title: "Pink Floyd - Money",
+    key: "youtube:seed-song",
+    sourceName: "Pink Floyd"
+  }, "api-key", {
+    limit: 2,
+    excludeTracks: [
+      {
+        provider: "youtube",
+        url: "https://youtu.be/numb-original",
+        title: "Pink Floyd - Comfortably Numb",
+        key: "youtube:numb-original",
+        sourceName: "Pink Floyd"
+      }
+    ]
+  });
+
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Pink Floyd - Wish You Were Here", "Pink Floyd - Another Brick In The Wall"]
   );
 });
 

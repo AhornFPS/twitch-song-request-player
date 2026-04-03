@@ -1,7 +1,7 @@
 // @ts-nocheck
 import crypto from "node:crypto";
 import { formatTrack, logInfo, logWarn } from "./logger.js";
-import { tracksShareIdentity } from "./track-identity.js";
+import { tracksShareIdentity, trackTitlesOverlap } from "./track-identity.js";
 
 const validRequestAccessLevels = new Set([
   "everyone",
@@ -17,6 +17,8 @@ const validProviders = new Set([
   "spotify",
   "suno"
 ]);
+
+const MAX_RADIO_TRACK_DURATION_SECONDS = 10 * 60;
 
 function normalizeRequestPolicyList(value, { lowerCase = false } = {}) {
   const list = Array.isArray(value)
@@ -1735,7 +1737,8 @@ export class PlayerController {
         seedTrack: {
           ...seedTrack
         },
-        excludeTrackKeys: this.collectRadioExcludedTrackKeys(seedTrack)
+        excludeTrackKeys: this.collectRadioExcludedTrackKeys(seedTrack),
+        excludeTracks: this.collectRadioExcludedTracks(seedTrack)
       });
     } catch (error) {
       logWarn("Failed to build radio queue", {
@@ -1752,9 +1755,16 @@ export class PlayerController {
           continue;
         }
 
+        if (
+          Number.isFinite(radioTrack.durationSeconds) &&
+          radioTrack.durationSeconds > MAX_RADIO_TRACK_DURATION_SECONDS
+        ) {
+          continue;
+        }
+
         if (excludedTracks.some((track) => tracksShareIdentity(track, radioTrack, {
           titleOnly: true
-        }))) {
+        }) || trackTitlesOverlap(track, radioTrack))) {
           continue;
         }
 

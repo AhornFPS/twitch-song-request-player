@@ -364,6 +364,37 @@ export function getTrackIdentity(track, options = {}) {
   };
 }
 
+export function trackTitlesOverlap(firstTrack, secondTrack) {
+  const firstIdentity = getTrackIdentity(firstTrack, { titleOnly: true });
+  const secondIdentity = getTrackIdentity(secondTrack, { titleOnly: true });
+
+  if (!firstIdentity.title || !secondIdentity.title) {
+    return false;
+  }
+
+  if (firstIdentity.title === secondIdentity.title) {
+    return true;
+  }
+
+  const firstContentTokens = getIdentityTokens(firstIdentity.title)
+    .filter((token) => !TRACK_DESCRIPTOR_WORDS.has(token) && !/^\d+(?:k)?$/.test(token));
+  const secondContentTokens = getIdentityTokens(secondIdentity.title)
+    .filter((token) => !TRACK_DESCRIPTOR_WORDS.has(token) && !/^\d+(?:k)?$/.test(token));
+
+  if (firstContentTokens.length < 2 || secondContentTokens.length < 2) {
+    return false;
+  }
+
+  const [shorterTokens, longerTokens] = firstContentTokens.length <= secondContentTokens.length
+    ? [firstContentTokens, secondContentTokens]
+    : [secondContentTokens, firstContentTokens];
+
+  const longerSet = new Set(longerTokens);
+  const matchCount = shorterTokens.filter((token) => longerSet.has(token)).length;
+
+  return matchCount === shorterTokens.length;
+}
+
 export function tracksShareIdentity(firstTrack, secondTrack, options = {}) {
   const {
     titleOnly = false
