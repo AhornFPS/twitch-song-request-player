@@ -1399,10 +1399,7 @@ export class PlayerController {
       });
     }
 
-    if (this.queue.length === 0 && (
-      finishedTrack.origin === "queue" ||
-      (finishedTrack.origin === "radio" && this.radioQueue.length === 0)
-    )) {
+    if (finishedTrack.origin === "queue" && this.queue.length === 0) {
       await this.rebuildRadioQueue(finishedTrack);
     }
 
