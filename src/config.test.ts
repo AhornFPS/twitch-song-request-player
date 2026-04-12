@@ -206,6 +206,30 @@ test("stored category suppression lists are normalized and preserved", async (t)
   assert.deepEqual(settings.playbackSuppressedCategories, ["Just Chatting", "Music"]);
 });
 
+test("stored source-only shared chat toggle is normalized and preserved", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      twitchSharedChatForSourceOnly: "true"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.twitchSharedChatForSourceOnly, true);
+});
+
 test("new overlay themes are exposed and accepted as valid saved settings", async (t) => {
   const restoreEnv = captureEnv(["THEME"]);
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));

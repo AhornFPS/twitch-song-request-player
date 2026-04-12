@@ -2,7 +2,7 @@
 const TWITCH_AUTH_BASE_URL = "https://id.twitch.tv/oauth2";
 const TWITCH_VALIDATE_URL = "https://id.twitch.tv/oauth2/validate";
 
-export const TWITCH_BOT_SCOPES = ["chat:read", "chat:edit"];
+export const TWITCH_BOT_SCOPES = ["chat:read", "chat:edit", "user:write:chat", "user:bot"];
 
 async function parseJsonResponse(response) {
   const text = await response.text();

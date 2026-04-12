@@ -11,7 +11,8 @@ function buildConfigSignature(settings) {
     twitchOauthToken: settings.twitchOauthToken,
     twitchRefreshToken: settings.twitchRefreshToken,
     twitchClientId: settings.twitchClientId,
-    twitchClientSecret: settings.twitchClientSecret
+    twitchClientSecret: settings.twitchClientSecret,
+    twitchSharedChatForSourceOnly: settings.twitchSharedChatForSourceOnly
   });
 }
 
@@ -24,6 +25,7 @@ function toBotConfig(settings) {
       refreshToken: settings.twitchRefreshToken,
       clientId: settings.twitchClientId,
       clientSecret: settings.twitchClientSecret,
+      sharedChatForSourceOnly: settings.twitchSharedChatForSourceOnly,
       chatSuppressedCategories: settings.chatSuppressedCategories,
       playbackSuppressedCategories: settings.playbackSuppressedCategories
     },

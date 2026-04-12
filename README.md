@@ -49,7 +49,8 @@ You do not need Node.js if you use the packaged releases.
    - `TWITCH_USERNAME`: Optional if you use the in-app Twitch login flow
    - `TWITCH_OAUTH_TOKEN`: Optional if you use the in-app Twitch login flow
    - `TWITCH_CLIENT_ID`: Required for the in-app Twitch device login flow and Twitch category-aware suppression
-   - `TWITCH_CLIENT_SECRET`: Optional advanced setting
+   - `TWITCH_CLIENT_SECRET`: Optional advanced setting; required for source-only Shared Chat replies
+   - `TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY`: Optional Shared Chat source-only bot reply toggle
    - `YOUTUBE_API_KEY`: Required for search requests, Spotify link matching, and YouTube metadata repair
 
 4. Start the desktop app:

@@ -1039,6 +1039,7 @@ export async function startAppServer({
         "twitchRefreshToken",
         "twitchClientId",
         "twitchClientSecret",
+        "twitchSharedChatForSourceOnly",
         "chatSuppressedCategories",
         "playbackSuppressedCategories",
         "youtubeApiKey",

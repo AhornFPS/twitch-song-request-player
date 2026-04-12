@@ -22,6 +22,8 @@ function createBotHarness({
   requestPolicy = {
     requestsEnabled: true
   },
+  sharedChatForSourceOnly = false,
+  chatApi = null,
   queueSummary = [],
   queuePosition = null,
   removeOwnRequestResult = null,
@@ -95,7 +97,8 @@ function createBotHarness({
         username: "botuser",
         oauthToken: "oauth:test",
         clientId: "",
-        clientSecret: ""
+        clientSecret: "",
+        sharedChatForSourceOnly
       },
       chatCommands,
       requestPolicy
@@ -103,6 +106,7 @@ function createBotHarness({
     playerController,
     client,
     channelInfo,
+    chatApi,
     songRequestResolver: async () => resolvedTrack,
     youtubePlaylistResolver: async () => resolvedPlaylist,
     updateSettings
@@ -117,6 +121,43 @@ function createBotHarness({
     }
   };
 }
+
+test("source-only shared chat toggle sends replies through the Twitch chat API", async () => {
+  const apiMessages = [];
+  const harness = createBotHarness({
+    currentTrack: {
+      title: "Current Track",
+      url: "https://youtu.be/current",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    },
+    sharedChatForSourceOnly: true,
+    chatApi: {
+      async sendMessage(payload) {
+        apiMessages.push(payload);
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!currentsong");
+
+  assert.deepEqual(harness.sentMessages, []);
+  assert.deepEqual(apiMessages, [
+    {
+      channelName: "testchannel",
+      senderLogin: "botuser",
+      clientId: "",
+      clientSecret: "",
+      message: "Current song: Current Track https://youtu.be/current, requested by ViewerOne",
+      forSourceOnly: true
+    }
+  ]);
+});
 
 test("youtube playlist import command adds the full playlist to the fallback playlist instead of the queue", async () => {
   const appendedTracks = [];

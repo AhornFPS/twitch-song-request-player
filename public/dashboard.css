@@ -583,21 +583,23 @@ a {
 }
 
 .overview-player-frame-wrap {
-  min-height: 320px;
+  min-height: 260px;
   overflow: hidden;
   border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background:
     radial-gradient(circle at top, rgba(120, 229, 201, 0.08), transparent 42%),
     rgba(0, 0, 0, 0.22);
+  transition: min-height 0.3s ease;
 }
 
 .overview-player-frame {
   display: block;
   width: 100%;
-  min-height: 320px;
+  min-height: 260px;
   border: 0;
   background: transparent;
+  transition: min-height 0.3s ease;
 }
 
 .field__label {

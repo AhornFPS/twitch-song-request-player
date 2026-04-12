@@ -85,6 +85,21 @@ const themeOptions = [
     id: "stage",
     label: "Stage",
     description: "Concert-screen display: large circular artwork centered above a bold title with no queue clutter."
+  },
+  {
+    id: "vinyl",
+    label: "Vinyl",
+    description: "Turntable-inspired with rotating disc artwork and analog tonearm aesthetics."
+  },
+  {
+    id: "waveform",
+    label: "Waveform",
+    description: "Audio visualization-centric player with oscilloscope-style progress display."
+  },
+  {
+    id: "kiosk",
+    label: "Kiosk",
+    description: "Vertical digital signage poster with stacked info blocks and bold typography."
   }
 ];
 const validThemeIds = new Set(themeOptions.map((theme) => theme.id));
@@ -267,6 +282,10 @@ function normalizeSettings(raw) {
     twitchRefreshToken: trimValue(raw.twitchRefreshToken ?? raw.TWITCH_REFRESH_TOKEN),
     twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
     twitchClientSecret: trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET),
+    twitchSharedChatForSourceOnly: normalizeBoolean(
+      raw.twitchSharedChatForSourceOnly ?? raw.TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY,
+      false
+    ),
     chatSuppressedCategories: normalizeCategoryList(
       raw.chatSuppressedCategories ?? raw.CHAT_SUPPRESSED_CATEGORIES,
       ["Music", "DJs"]
@@ -336,6 +355,14 @@ function normalizeOverrideSettings(raw) {
     overrides.twitchClientSecret = trimValue(raw.twitchClientSecret ?? raw.TWITCH_CLIENT_SECRET);
   }
 
+  if (Object.prototype.hasOwnProperty.call(raw, "twitchSharedChatForSourceOnly") ||
+    Object.prototype.hasOwnProperty.call(raw, "TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY")) {
+    overrides.twitchSharedChatForSourceOnly = normalizeBoolean(
+      raw.twitchSharedChatForSourceOnly ?? raw.TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY,
+      false
+    );
+  }
+
   if (hasOwnSetting(raw, ["chatSuppressedCategories", "CHAT_SUPPRESSED_CATEGORIES"])) {
     overrides.chatSuppressedCategories = normalizeCategoryList(
       raw.chatSuppressedCategories ?? raw.CHAT_SUPPRESSED_CATEGORIES
@@ -402,6 +429,10 @@ function mergeSettings(baseSettings, overridingSettings) {
     twitchRefreshToken: overridingSettings.twitchRefreshToken || baseSettings.twitchRefreshToken,
     twitchClientId: overridingSettings.twitchClientId || baseSettings.twitchClientId,
     twitchClientSecret: overridingSettings.twitchClientSecret || baseSettings.twitchClientSecret,
+    twitchSharedChatForSourceOnly:
+      typeof overridingSettings.twitchSharedChatForSourceOnly === "boolean"
+        ? overridingSettings.twitchSharedChatForSourceOnly
+        : (baseSettings.twitchSharedChatForSourceOnly ?? false),
     chatSuppressedCategories:
       overridingSettings.chatSuppressedCategories || baseSettings.chatSuppressedCategories || [],
     playbackSuppressedCategories:
@@ -466,6 +497,7 @@ function normalizeBundledSettings(raw) {
     twitchRefreshToken: "",
     twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
     twitchClientSecret: "",
+    twitchSharedChatForSourceOnly: false,
     chatSuppressedCategories: ["Music", "DJs"],
     playbackSuppressedCategories: [],
     youtubeApiKey: "",
@@ -595,6 +627,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
       refreshToken: runtimeConfig.settings.twitchRefreshToken,
       clientId: runtimeConfig.settings.twitchClientId,
       clientSecret: runtimeConfig.settings.twitchClientSecret,
+      sharedChatForSourceOnly: runtimeConfig.settings.twitchSharedChatForSourceOnly,
       chatSuppressedCategories: runtimeConfig.settings.chatSuppressedCategories,
       playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },

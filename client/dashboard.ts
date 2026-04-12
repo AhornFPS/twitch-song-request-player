@@ -545,6 +545,23 @@ function renderDashboard() {
                   <input id="twitchOauthToken" name="twitchOauthToken" class="control-input" type="password" autocomplete="off" />
                   <span class="field__hint">Manual tokens should keep the oauth: prefix and include chat scopes. <a class="field__link" href="https://dev.twitch.tv/docs/irc/authenticate-bot" target="_blank" rel="noopener noreferrer">How to get this token</a></span>
                 </label>
+                <label class="field">
+                  <span class="field__label">Twitch Client ID</span>
+                  <input id="twitchClientId" name="twitchClientId" class="control-input" type="text" autocomplete="off" />
+                  <span class="field__hint">Used for Twitch API calls. Leave bundled value unless using your own Twitch app.</span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Twitch Client Secret</span>
+                  <input id="twitchClientSecret" name="twitchClientSecret" class="control-input" type="password" autocomplete="off" />
+                  <span class="field__hint">Needed only for source-only Shared Chat messages.</span>
+                </label>
+                <label class="toggle-card field--full" for="twitch-shared-chat-source-only-toggle">
+                  <span class="toggle-card__copy">
+                    <span class="toggle-card__title">Source-only Shared Chat messages</span>
+                    <span class="toggle-card__body">Bot replies stay in the configured channel during Shared Chat. Requires a Twitch Client Secret and updated bot login scopes.</span>
+                  </span>
+                  <input id="twitch-shared-chat-source-only-toggle" type="checkbox" />
+                </label>
                 <label class="field field--full">
                   <span class="field__label">YouTube API key</span>
                   <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" />
@@ -1281,6 +1298,11 @@ function collectSettingsPayload() {
     twitchChannel: el("twitchChannel")?.value.trim() || "",
     twitchUsername: el("twitchUsername")?.value.trim() || "",
     twitchOauthToken: el("twitchOauthToken")?.value.trim() || "",
+    twitchClientId: el("twitchClientId")?.value.trim() || "",
+    twitchClientSecret: el("twitchClientSecret")?.value.trim() || "",
+    twitchSharedChatForSourceOnly: el("twitch-shared-chat-source-only-toggle") instanceof HTMLInputElement
+      ? el("twitch-shared-chat-source-only-toggle").checked
+      : false,
     youtubeApiKey: el("youtubeApiKey")?.value.trim() || "",
     port: Number.parseInt(el("port")?.value || "3000", 10) || 3000,
     startWithWindows: el("start-with-windows-toggle") instanceof HTMLInputElement
@@ -1358,6 +1380,12 @@ function applySettingsPayload() {
   setValue("twitchChannel", settingsPayload.settings.twitchChannel || "");
   setValue("twitchUsername", settingsPayload.settings.twitchUsername || "");
   setValue("twitchOauthToken", settingsPayload.settings.twitchOauthToken || "");
+  setValue("twitchClientId", settingsPayload.settings.twitchClientId || "");
+  setValue("twitchClientSecret", settingsPayload.settings.twitchClientSecret || "");
+  const sharedChatSourceOnlyToggle = el("twitch-shared-chat-source-only-toggle");
+  if (sharedChatSourceOnlyToggle instanceof HTMLInputElement) {
+    sharedChatSourceOnlyToggle.checked = settingsPayload.settings.twitchSharedChatForSourceOnly === true;
+  }
   setValue("youtubeApiKey", settingsPayload.settings.youtubeApiKey || "");
   setValue("port", settingsPayload.settings.port || 3000);
   renderCategorySelect("chat-category-select", chatSuppressedCategories);
@@ -2725,7 +2753,9 @@ async function startTwitchAuth() {
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        twitchChannel: el("twitchChannel")?.value.trim() || ""
+        twitchChannel: el("twitchChannel")?.value.trim() || "",
+        twitchClientId: el("twitchClientId")?.value.trim() || settingsPayload?.settings?.twitchClientId || "",
+        twitchClientSecret: el("twitchClientSecret")?.value.trim() || settingsPayload?.settings?.twitchClientSecret || ""
       })
     });
     applySettingsPayload();
@@ -3843,6 +3873,22 @@ window.setInterval(() => {
       .catch(() => {});
   }
 }, 3000);
+
+// Listen for overlay size reports from the embedded player iframe
+window.addEventListener("message", (event) => {
+  const data = event.data;
+  if (data && data.type === "tsrp:overlay-size") {
+    const frameWrap = document.getElementById("overview-player-frame-wrap");
+    const frame = document.getElementById("overview-player-frame") as HTMLIFrameElement | null;
+    if (frameWrap && data.height > 0) {
+      // Add 8px buffer so the player card doesn't feel cramped against the container edges
+      frameWrap.style.minHeight = `${data.height + 8}px`;
+    }
+    if (frame && data.height > 0) {
+      frame.style.minHeight = `${data.height + 8}px`;
+    }
+  }
+});
 
 void Promise.all([loadSettings(), loadPlaybackState(), loadPlaylist()]).catch((error) => {
   setFeedback(error?.message || "Could not load dashboard data.", "error");

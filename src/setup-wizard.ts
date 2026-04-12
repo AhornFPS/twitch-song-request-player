@@ -9,6 +9,7 @@ function sanitizeSettings(raw) {
     twitchOauthToken: raw.twitchOauthToken?.trim() ?? "",
     twitchClientId: raw.twitchClientId?.trim() ?? "",
     twitchClientSecret: raw.twitchClientSecret?.trim() ?? "",
+    twitchSharedChatForSourceOnly: raw.twitchSharedChatForSourceOnly === true,
     youtubeApiKey: raw.youtubeApiKey?.trim() ?? "",
     port: Number.isInteger(raw.port) ? raw.port : Number.parseInt(String(raw.port ?? "3000"), 10) || 3000
   };

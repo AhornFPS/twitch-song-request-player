@@ -1,6 +1,189 @@
 {
   "events": [
     {
+      "id": "6ededdb0-87d2-4025-82b1-a932e512b155",
+      "createdAt": "2026-04-08T22:11:50.808Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "b73f0faa-db85-48c4-958d-d630d4a206bd",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=FPs325BkBzs",
+        "title": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII",
+        "key": "youtube:FPs325BkBzs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/FPs325BkBzs/maxresdefault.jpg",
+        "durationSeconds": 197,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "b736ef12-a4b8-4307-bd0a-df86f6de6286",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 8,
+        "acceptedRequests": 8,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 8,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-08T22:11:50.808Z",
+        "lastAcceptedAt": "2026-04-08T22:11:50.808Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl",
+        "lastTrackKey": "youtube:FPs325BkBzs",
+        "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "f4fb4997-40a2-4983-94a1-b0ff137a76d6",
+      "createdAt": "2026-04-08T21:49:00.953Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "e09aff43-9f4d-4712-9ca9-74d966027a05",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=FPs325BkBzs",
+        "title": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII",
+        "key": "youtube:FPs325BkBzs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/FPs325BkBzs/maxresdefault.jpg",
+        "durationSeconds": 197,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "b4d92eef-55ae-49b0-8462-bd76614524f8",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 7,
+        "acceptedRequests": 7,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 7,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-08T21:49:00.953Z",
+        "lastAcceptedAt": "2026-04-08T21:49:00.953Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl",
+        "lastTrackKey": "youtube:FPs325BkBzs",
+        "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "584fd938-7180-426f-9de5-6651b9773353",
+      "createdAt": "2026-04-07T18:33:21.176Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://open.spotify.com/intl-de/track/5kV68VhPRX61l7v30bqAEI?go=1&sp_cid=3fac4fc263e2a77ef919c2e02f528eea&utm_source=embed_player_p&utm_medium=desktop&nd=1&dlsi=121a84a0ff174fb8",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "202eddd2-d87f-4652-b0c8-bad822956fcb",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=_p2TkvuNYVU",
+        "title": "RAMØN - Topic - The Third Dome",
+        "key": "youtube:_p2TkvuNYVU",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/_p2TkvuNYVU/maxresdefault.jpg",
+        "durationSeconds": 181,
+        "isLive": false,
+        "sourceName": "RAMØN - Topic",
+        "sourceChannelId": "UCsBN78ZmuIUzLethp16YE7Q",
+        "sourceUrl": "https://www.youtube.com/channel/UCsBN78ZmuIUzLethp16YE7Q"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "aed77df3-aacf-49de-af8b-946cc533b50e",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 6,
+        "acceptedRequests": 6,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 6,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-07T18:33:21.176Z",
+        "lastAcceptedAt": "2026-04-07T18:33:21.176Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://open.spotify.com/intl-de/track/5kV68VhPRX61l7v30bqAEI?go=1&sp_cid=3fac4fc263e2a77ef919c2e02f528eea&utm_source=embed_player_p&utm_medium=desktop&nd=1&dlsi=121a84a0ff174fb8",
+        "lastTrackKey": "youtube:_p2TkvuNYVU",
+        "lastTrackTitle": "RAMØN - Topic - The Third Dome"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
       "id": "376ffadd-ff57-46e9-84ed-94b1a051ccc4",
       "createdAt": "2026-04-01T01:53:15.681Z",
       "source": "dashboard_queue",
@@ -484,19 +667,19 @@
         "username": "dashboard",
         "displayName": "Dashboard"
       },
-      "totalRequests": 5,
-      "acceptedRequests": 5,
+      "totalRequests": 8,
+      "acceptedRequests": 8,
       "duplicateRequests": 0,
       "rejectedRequests": 0,
-      "youtubeRequests": 5,
+      "youtubeRequests": 8,
       "soundcloudRequests": 0,
-      "lastRequestedAt": "2026-04-01T01:53:15.681Z",
-      "lastAcceptedAt": "2026-04-01T01:53:15.681Z",
+      "lastRequestedAt": "2026-04-08T22:11:50.808Z",
+      "lastAcceptedAt": "2026-04-08T22:11:50.808Z",
       "lastOutcome": "accepted",
       "lastSource": "dashboard_queue",
-      "lastInput": "https://youtu.be/ZEAKJw8Cz1c",
-      "lastTrackKey": "youtube:ZEAKJw8Cz1c",
-      "lastTrackTitle": "Desire - Under Your Spell"
+      "lastInput": "s3rl",
+      "lastTrackKey": "youtube:FPs325BkBzs",
+      "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
     }
   }
 }

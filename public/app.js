@@ -73,6 +73,32 @@ const youtubeStartupRecoveryStorageKey = "youtube-startup-recovery";
 function applyOverlayTheme(themeId) {
   document.documentElement.dataset.theme = themeId || "aurora";
 }
+function reportOverlaySize() {
+  try {
+    if (!window.parent || window.parent === window) return;
+    const card = document.getElementById("player-card");
+    if (!card) return;
+    void card.offsetHeight;
+    const rect = card.getBoundingClientRect();
+    window.parent.postMessage({
+      type: "tsrp:overlay-size",
+      width: Math.ceil(rect.width),
+      height: Math.ceil(rect.height)
+    }, "*");
+  } catch (_error) {
+  }
+}
+function startSizeObserver() {
+  try {
+    const card = document.getElementById("player-card");
+    if (!card || !window.ResizeObserver) return;
+    const observer = new ResizeObserver(() => {
+      requestAnimationFrame(() => reportOverlaySize());
+    });
+    observer.observe(card);
+  } catch (_error) {
+  }
+}
 function normalizeOverlayScalePercent(value) {
   const parsedValue = Number.parseInt(String(value ?? 100), 10);
   if (!Number.isFinite(parsedValue)) {
@@ -960,9 +986,11 @@ function updateState(state) {
     applyOverlayTheme(state.theme);
     if (state.theme !== previousTheme || overlayScaleChanged) {
       scheduleTitleMarqueeUpdate();
+      requestAnimationFrame(() => reportOverlaySize());
     }
   } else if (overlayScaleChanged) {
     scheduleTitleMarqueeUpdate();
+    requestAnimationFrame(() => reportOverlaySize());
   }
   if (Object.prototype.hasOwnProperty.call(state, "playerStartupTimeoutSeconds")) {
     applyStartupTimeoutSetting(state.playerStartupTimeoutSeconds);
@@ -1071,7 +1099,9 @@ function handleSocketConnect() {
   socketConnected = true;
   sendClientLog("info", "Socket connected");
   stopStatePolling();
-  void fetchState().catch(() => {
+  void fetchState().then(() => {
+    requestAnimationFrame(() => reportOverlaySize());
+  }).catch(() => {
   });
 }
 function postPlayerEvent(eventPayload) {
@@ -1582,6 +1612,7 @@ if (socket) {
     }
     if (themeChanged || overlayScaleChanged) {
       scheduleTitleMarqueeUpdate();
+      requestAnimationFrame(() => reportOverlaySize());
     }
     if (Object.prototype.hasOwnProperty.call(payload ?? {}, "playerStartupTimeoutSeconds")) {
       applyStartupTimeoutSetting(payload.playerStartupTimeoutSeconds);
@@ -1597,6 +1628,10 @@ if (window.YT?.Player) {
   sendClientLog("info", "YouTube API was already available on script load");
   ensureYouTubePlayerReady();
 }
+startSizeObserver();
+requestAnimationFrame(() => {
+  requestAnimationFrame(() => reportOverlaySize());
+});
 startStatePolling();
 void fetchState().catch(() => {
   reportClientError("Could not reach the player service.");

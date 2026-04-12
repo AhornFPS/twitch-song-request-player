@@ -1,8 +1,9 @@
 // @ts-nocheck
 import tmi from "tmi.js";
-import { logInfo } from "./logger.js";
+import { logInfo, logWarn } from "./logger.js";
 import { findChatCommandAction, getDefaultChatCommands } from "./chat-commands.js";
 import { resolveSongRequest, resolveYouTubePlaylistFromApi } from "./providers.js";
+import { TwitchChatApi } from "./twitch-chat-api.js";
 import { TwitchChannelInfo } from "./twitch-channel-info.js";
 
 function getViewerRoleState(tags, channelName) {
@@ -223,6 +224,7 @@ export class TwitchBot {
     playerController,
     client = null,
     channelInfo = null,
+    chatApi = null,
     songRequestResolver = resolveSongRequest,
     youtubePlaylistResolver = resolveYouTubePlaylistFromApi,
     updateSettings = async () => null
@@ -232,6 +234,7 @@ export class TwitchBot {
     this.songRequestResolver = songRequestResolver;
     this.youtubePlaylistResolver = youtubePlaylistResolver;
     this.updateSettings = updateSettings;
+    this.chatApi = chatApi ?? new TwitchChatApi();
     this.channelInfo = channelInfo ?? new TwitchChannelInfo({
       channelName: config.twitch.channel,
       clientId: config.twitch.clientId,
@@ -859,6 +862,25 @@ export class TwitchBot {
     }
 
     const safeMessage = message.length > 450 ? `${message.slice(0, 447)}...` : message;
+    if (this.config.twitch.sharedChatForSourceOnly === true) {
+      try {
+        await this.chatApi.sendMessage({
+          channelName: this.config.twitch.channel,
+          senderLogin: this.config.twitch.username,
+          clientId: this.config.twitch.clientId,
+          clientSecret: this.config.twitch.clientSecret,
+          message: safeMessage,
+          forSourceOnly: true
+        });
+        return;
+      } catch (error) {
+        logWarn("Could not send Twitch source-only chat message; falling back to IRC", {
+          channel: this.config.twitch.channel,
+          message: error?.message ?? String(error)
+        });
+      }
+    }
+
     await this.client.say(channel, safeMessage);
   }
 

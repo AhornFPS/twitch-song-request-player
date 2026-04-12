@@ -316,3 +316,72 @@
   --overlay-queue-item-end: rgba(200, 150, 255, 0.03);
   --overlay-progress-end: #ffcc66;
 }
+
+/* Vinyl – turntable-inspired analog warmth */
+:root[data-theme="vinyl"] {
+  --panel: rgba(18, 12, 8, 0.96);
+  --panel-border: rgba(180, 140, 90, 0.35);
+  --panel-highlight: rgba(220, 170, 100, 0.14);
+  --text: #f5ede3;
+  --muted: #a89880;
+  --accent: #d4a45a;
+  --accent-strong: #ffe4b0;
+  --shadow: 0 24px 60px rgba(0, 0, 0, 0.78);
+  --surface: rgba(220, 170, 100, 0.06);
+  --surface-strong: rgba(220, 170, 100, 0.12);
+  --overlay-card-start: rgba(30, 20, 12, 0.97);
+  --overlay-card-end: rgba(10, 7, 4, 0.98);
+  --overlay-orb-left: rgba(212, 164, 90, 0.18);
+  --overlay-orb-right: rgba(180, 140, 90, 0.12);
+  --overlay-artwork-start: rgba(42, 30, 18, 0.98);
+  --overlay-artwork-end: rgba(14, 10, 6, 0.99);
+  --overlay-queue-item-start: rgba(220, 170, 100, 0.08);
+  --overlay-queue-item-end: rgba(220, 170, 100, 0.03);
+  --overlay-progress-end: #ffe4b0;
+}
+
+/* Waveform – oscilloscope green on deep black */
+:root[data-theme="waveform"] {
+  --panel: rgba(2, 4, 2, 0.98);
+  --panel-border: rgba(0, 255, 128, 0.4);
+  --panel-highlight: rgba(0, 255, 128, 0.12);
+  --text: #c8ffe0;
+  --muted: #4a9e72;
+  --accent: #00ff80;
+  --accent-strong: #80ffcc;
+  --shadow: 0 0 32px rgba(0, 255, 128, 0.22);
+  --surface: rgba(0, 255, 128, 0.05);
+  --surface-strong: rgba(0, 255, 128, 0.1);
+  --overlay-card-start: rgba(4, 10, 4, 0.99);
+  --overlay-card-end: rgba(1, 3, 1, 0.99);
+  --overlay-orb-left: rgba(0, 255, 128, 0.12);
+  --overlay-orb-right: rgba(0, 255, 128, 0.08);
+  --overlay-artwork-start: rgba(6, 16, 6, 0.99);
+  --overlay-artwork-end: rgba(2, 6, 2, 0.99);
+  --overlay-queue-item-start: rgba(0, 255, 128, 0.06);
+  --overlay-queue-item-end: rgba(0, 255, 128, 0.02);
+  --overlay-progress-end: #80ffcc;
+}
+
+/* Kiosk – vertical digital signage */
+:root[data-theme="kiosk"] {
+  --panel: rgba(10, 14, 24, 0.97);
+  --panel-border: rgba(100, 140, 255, 0.3);
+  --panel-highlight: rgba(80, 120, 255, 0.16);
+  --text: #e8f0ff;
+  --muted: #7a8aaa;
+  --accent: #6490ff;
+  --accent-strong: #ffd700;
+  --shadow: 0 28px 70px rgba(0, 0, 0, 0.82);
+  --surface: rgba(100, 140, 255, 0.06);
+  --surface-strong: rgba(100, 140, 255, 0.12);
+  --overlay-card-start: rgba(16, 22, 38, 0.98);
+  --overlay-card-end: rgba(6, 8, 16, 0.99);
+  --overlay-orb-left: rgba(100, 140, 255, 0.16);
+  --overlay-orb-right: rgba(80, 120, 255, 0.12);
+  --overlay-artwork-start: rgba(24, 34, 56, 0.98);
+  --overlay-artwork-end: rgba(10, 14, 26, 0.99);
+  --overlay-queue-item-start: rgba(100, 140, 255, 0.08);
+  --overlay-queue-item-end: rgba(100, 140, 255, 0.03);
+  --overlay-progress-end: #ffd700;
+}
