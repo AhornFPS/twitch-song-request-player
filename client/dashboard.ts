@@ -614,6 +614,28 @@ function renderDashboard() {
           <section class="panel card-panel">
             <div class="panel__header">
               <div>
+                <p class="panel__eyebrow">Radio</p>
+                <h2>Automatic radio</h2>
+              </div>
+            </div>
+            <div class="request-limit-grid">
+              <label class="toggle-card" for="radio-mode-enabled-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Automatic radio</span>
+                  <span class="toggle-card__body">Queue related tracks after the last viewer request finishes.</span>
+                </span>
+                <input id="radio-mode-enabled-toggle" type="checkbox" />
+              </label>
+              <label class="field">
+                <span class="field__label">Radio songs</span>
+                <input id="radio-track-count" class="control-input" type="number" min="1" max="10" step="1" />
+                <span class="field__hint">Queues this many automatic tracks after the last viewer request.</span>
+              </label>
+            </div>
+          </section>
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
                 <p class="panel__eyebrow">Desktop</p>
                 <h2>Windows startup</h2>
               </div>
@@ -1314,6 +1336,10 @@ function collectSettingsPayload() {
       el("overlay-scale-slider")?.value || lastSavedOverlayScalePercent
     ),
     playerStartupTimeoutSeconds: Number.parseInt(el("playback-startup-timeout-seconds")?.value || "15", 10) || 0,
+    radioModeEnabled: el("radio-mode-enabled-toggle") instanceof HTMLInputElement
+      ? el("radio-mode-enabled-toggle").checked
+      : true,
+    radioTrackCount: Number.parseInt(el("radio-track-count")?.value || "3", 10) || 3,
     requestPolicyAutosaveEnabled: getRequestPolicyAutosaveEnabled(),
     requestPolicy: collectRequestPolicyPayload(),
     chatCommands: collectChatCommandsPayload(),
@@ -1399,6 +1425,16 @@ function applySettingsPayload() {
     "playback-startup-timeout-seconds",
     settingsPayload.settings.playerStartupTimeoutSeconds ?? 15
   );
+  const radioModeEnabledToggle = el("radio-mode-enabled-toggle");
+  const radioTrackCountInput = el("radio-track-count");
+  const radioModeEnabled = settingsPayload.settings.radioModeEnabled !== false;
+  if (radioModeEnabledToggle instanceof HTMLInputElement) {
+    radioModeEnabledToggle.checked = radioModeEnabled;
+  }
+  if (radioTrackCountInput instanceof HTMLInputElement) {
+    radioTrackCountInput.value = String(settingsPayload.settings.radioTrackCount ?? 3);
+    radioTrackCountInput.disabled = !radioModeEnabled;
+  }
   applyRequestPolicyState();
   applyRuntimeState();
   applyGuiPlayerState();
@@ -3627,6 +3663,13 @@ root.addEventListener("change", async (event) => {
 
   if (target.id === "overlay-scale-slider" && target instanceof HTMLInputElement && !isHydratingForm) {
     await saveOverlayScaleSelection(target.value);
+  }
+
+  if (target.id === "radio-mode-enabled-toggle" && target instanceof HTMLInputElement) {
+    const radioTrackCountInput = el("radio-track-count");
+    if (radioTrackCountInput instanceof HTMLInputElement) {
+      radioTrackCountInput.disabled = !target.checked;
+    }
   }
 
   if (target.id === "playlist-sort-select" && target instanceof HTMLSelectElement) {

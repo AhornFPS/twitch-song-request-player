@@ -174,7 +174,13 @@ function createOverlayTestContext() {
       });
     },
     navigator: window.navigator,
-    window
+    window,
+    requestAnimationFrame: window.requestAnimationFrame,
+    cancelAnimationFrame: window.cancelAnimationFrame,
+    setTimeout: window.setTimeout,
+    clearTimeout: window.clearTimeout,
+    setInterval: window.setInterval,
+    clearInterval: window.clearInterval
   };
 
   window.fetch = context.fetch;
@@ -314,11 +320,12 @@ test("unchanged overlay state does not reschedule the title marquee", () => {
     queue: []
   };
 
+  const initialRequestAnimationFrameCalls = getRequestAnimationFrameCalls();
   vm.runInContext("updateState(__state);", context);
-  assert.equal(getRequestAnimationFrameCalls(), 1);
+  assert.equal(getRequestAnimationFrameCalls(), initialRequestAnimationFrameCalls + 1);
 
   vm.runInContext("updateState(__state);", context);
-  assert.equal(getRequestAnimationFrameCalls(), 1);
+  assert.equal(getRequestAnimationFrameCalls(), initialRequestAnimationFrameCalls + 1);
 });
 
 test("finished soundcloud playback preserves the handoff path for the next youtube track", () => {

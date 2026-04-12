@@ -88,6 +88,88 @@ test("saved GUI player state is preserved across reloads", async (t) => {
   assert.equal(settings.requestPolicyAutosaveEnabled, true);
 });
 
+test("radio mode settings default to enabled with three tracks", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({}, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.radioModeEnabled, true);
+  assert.equal(settings.radioTrackCount, 3);
+});
+
+test("radio mode settings are normalized and preserved", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      radioModeEnabled: false,
+      radioTrackCount: 6
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.radioModeEnabled, false);
+  assert.equal(settings.radioTrackCount, 6);
+
+  const savedSettings = await configStore.saveSettings({
+    ...settings,
+    radioModeEnabled: true,
+    radioTrackCount: 12
+  });
+
+  assert.equal(savedSettings.radioModeEnabled, true);
+  assert.equal(savedSettings.radioTrackCount, 10);
+});
+
+test("invalid radio track counts fall back to the default", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
+
+  t.after(async () => {
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      radioTrackCount: 0
+    }, null, 2)}\n`,
+    "utf8"
+  );
+
+  const configStore = createConfigStore({ runtimeDir });
+  const settings = await configStore.loadEffectiveSettings();
+
+  assert.equal(settings.radioTrackCount, 3);
+});
+
 test("overlay scale is clamped to a supported saved range", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 
@@ -266,7 +348,13 @@ test("new overlay themes are exposed and accepted as valid saved settings", asyn
     "broadcast",
     "mixtape",
     "noir",
-    "arcade"
+    "arcade",
+    "ticker",
+    "hud",
+    "stage",
+    "vinyl",
+    "waveform",
+    "kiosk"
   ]);
 });
 

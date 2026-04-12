@@ -20,6 +20,15 @@ const validProviders = new Set([
 
 const MAX_RADIO_TRACK_DURATION_SECONDS = 10 * 60;
 
+function normalizeRadioTrackCount(value, fallback = 3) {
+  const parsedValue = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+    return fallback;
+  }
+
+  return Math.min(10, parsedValue);
+}
+
 function normalizeRequestPolicyList(value, { lowerCase = false } = {}) {
   const list = Array.isArray(value)
     ? value
@@ -108,6 +117,8 @@ export class PlayerController {
     historyLimit = 25,
     requestAuditLimit = 1000,
     requestPolicy = {},
+    radioModeEnabled = true,
+    radioTrackCount = 3,
     getRadioTracks = null
   }) {
     this.io = io;
@@ -117,6 +128,8 @@ export class PlayerController {
     this.historyLimit = historyLimit;
     this.requestAuditLimit = requestAuditLimit;
     this.requestPolicy = normalizeRequestPolicy(requestPolicy);
+    this.radioModeEnabled = radioModeEnabled !== false;
+    this.radioTrackCount = normalizeRadioTrackCount(radioTrackCount, 3);
     this.queue = [];
     this.radioQueue = [];
     this.currentTrack = null;
@@ -547,6 +560,33 @@ export class PlayerController {
 
   setRequestPolicy(requestPolicy = {}) {
     this.requestPolicy = normalizeRequestPolicy(requestPolicy);
+  }
+
+  async setRadioSettings({
+    enabled = this.radioModeEnabled,
+    trackCount = this.radioTrackCount
+  } = {}) {
+    const previousEnabled = this.radioModeEnabled;
+    const previousTrackCount = this.radioTrackCount;
+    const previousQueueLength = this.radioQueue.length;
+
+    this.radioModeEnabled = enabled !== false;
+    this.radioTrackCount = normalizeRadioTrackCount(trackCount, this.radioTrackCount);
+
+    if (!this.radioModeEnabled) {
+      this.radioQueue = [];
+    } else if (this.radioQueue.length > this.radioTrackCount) {
+      this.radioQueue = this.radioQueue.slice(0, this.radioTrackCount);
+    }
+
+    if (
+      previousEnabled !== this.radioModeEnabled ||
+      previousTrackCount !== this.radioTrackCount ||
+      previousQueueLength !== this.radioQueue.length
+    ) {
+      await this.persistRuntimeState();
+      this.broadcastState();
+    }
   }
 
   recordAdminEvent(action, {
@@ -1156,6 +1196,11 @@ export class PlayerController {
       this.radioQueue = Array.isArray(persistedState.radioQueue)
         ? persistedState.radioQueue.map((track) => ({ ...track }))
         : [];
+      if (!this.radioModeEnabled) {
+        this.radioQueue = [];
+      } else if (this.radioQueue.length > this.radioTrackCount) {
+        this.radioQueue = this.radioQueue.slice(0, this.radioTrackCount);
+      }
       this.stoppedTrack = persistedState.stoppedTrack
         ? { ...persistedState.stoppedTrack }
         : null;
@@ -1723,7 +1768,7 @@ export class PlayerController {
   async rebuildRadioQueue(seedTrack) {
     this.radioQueue = [];
 
-    if (!this.getRadioTracks || !seedTrack) {
+    if (!this.radioModeEnabled || !this.getRadioTracks || !seedTrack) {
       await this.persistRuntimeState();
       this.broadcastState();
       return;
@@ -1733,7 +1778,7 @@ export class PlayerController {
 
     try {
       radioTracks = await this.getRadioTracks({
-        count: 3,
+        count: this.radioTrackCount,
         seedTrack: {
           ...seedTrack
         },
@@ -1776,7 +1821,7 @@ export class PlayerController {
         });
         excludedTracks.push(radioTrack);
 
-        if (this.radioQueue.length >= 3) {
+        if (this.radioQueue.length >= this.radioTrackCount) {
           break;
         }
       }

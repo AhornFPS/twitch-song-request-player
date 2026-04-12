@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added settings for turning automatic radio on or off and choosing how many radio songs queue after the last request.
+- Tightened automatic radio picks to stay in YouTube's music category and skip livestreams, completed live broadcasts, and duplicate song versions.
+
 ## 2.9.4 - 2026-04-12
 
 - Added a Twitch Shared Chat source-only toggle for bot replies, using the Send Chat Message API `for_source_only` option when enabled.

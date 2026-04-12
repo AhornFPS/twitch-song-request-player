@@ -214,6 +214,8 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.equal(settingsResponse.ok, true);
 
   const settingsPayload = await settingsResponse.json();
+  assert.equal(settingsPayload.settings.radioModeEnabled, true);
+  assert.equal(settingsPayload.settings.radioTrackCount, 3);
   const overlayLoaderFilePath = settingsPayload.runtime.overlayLoaderFilePath;
   assert.equal(
     overlayLoaderFilePath,
@@ -1236,6 +1238,8 @@ test("settings API persists request policy and configurable chat commands", asyn
     body: JSON.stringify({
       startWithWindows: true,
       playerStartupTimeoutSeconds: 8,
+      radioModeEnabled: false,
+      radioTrackCount: 5,
       requestPolicyAutosaveEnabled: true,
       requestPolicy: {
         requestsEnabled: false,
@@ -1338,6 +1342,8 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(payload.desktopIntegration.supported, true);
   assert.equal(payload.desktopIntegration.enabled, true);
   assert.equal(payload.settings.playerStartupTimeoutSeconds, 8);
+  assert.equal(payload.settings.radioModeEnabled, false);
+  assert.equal(payload.settings.radioTrackCount, 5);
   assert.equal(payload.settings.requestPolicyAutosaveEnabled, true);
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
   assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
@@ -1366,6 +1372,8 @@ test("settings API persists request policy and configurable chat commands", asyn
   );
   assert.equal(persistedSettings.startWithWindows, true);
   assert.equal(persistedSettings.playerStartupTimeoutSeconds, 8);
+  assert.equal(persistedSettings.radioModeEnabled, false);
+  assert.equal(persistedSettings.radioTrackCount, 5);
   assert.equal(persistedSettings.requestPolicyAutosaveEnabled, true);
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
   assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");

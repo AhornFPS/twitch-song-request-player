@@ -175,6 +175,15 @@ function normalizeLimit(value, fallback = 0) {
   return parsedValue;
 }
 
+function normalizeRadioTrackCount(value, fallback = 3) {
+  const parsedValue = Number.parseInt(String(value ?? fallback), 10);
+  if (!Number.isFinite(parsedValue) || parsedValue < 1) {
+    return fallback;
+  }
+
+  return Math.min(10, parsedValue);
+}
+
 function normalizeBoolean(value, fallback = false) {
   if (typeof value === "boolean") {
     return value;
@@ -303,6 +312,8 @@ function normalizeSettings(raw) {
       100
     ),
     playerStartupTimeoutSeconds: normalizeLimit(raw.playerStartupTimeoutSeconds, 15),
+    radioModeEnabled: normalizeBoolean(raw.radioModeEnabled, true),
+    radioTrackCount: normalizeRadioTrackCount(raw.radioTrackCount, 3),
     requestPolicyAutosaveEnabled: normalizeBoolean(raw.requestPolicyAutosaveEnabled, false),
     requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
     chatCommands: normalizeChatCommands(raw.chatCommands),
@@ -462,6 +473,14 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.playerStartupTimeoutSeconds === "number"
         ? normalizeLimit(overridingSettings.playerStartupTimeoutSeconds, baseSettings.playerStartupTimeoutSeconds ?? 15)
         : (baseSettings.playerStartupTimeoutSeconds ?? 15),
+    radioModeEnabled:
+      typeof overridingSettings.radioModeEnabled === "boolean"
+        ? overridingSettings.radioModeEnabled
+        : (baseSettings.radioModeEnabled ?? true),
+    radioTrackCount:
+      typeof overridingSettings.radioTrackCount === "number"
+        ? normalizeRadioTrackCount(overridingSettings.radioTrackCount, baseSettings.radioTrackCount ?? 3)
+        : (baseSettings.radioTrackCount ?? 3),
     requestPolicyAutosaveEnabled:
       typeof overridingSettings.requestPolicyAutosaveEnabled === "boolean"
         ? overridingSettings.requestPolicyAutosaveEnabled
@@ -507,6 +526,8 @@ function normalizeBundledSettings(raw) {
     guiPlayerVolume: 100,
     overlayScalePercent: 100,
     playerStartupTimeoutSeconds: 15,
+    radioModeEnabled: true,
+    radioTrackCount: 3,
     requestPolicyAutosaveEnabled: false,
     requestPolicy: normalizeRequestPolicy(),
     chatCommands: normalizeChatCommands(),
@@ -637,6 +658,8 @@ export function toRuntimeAppConfig(runtimeConfig) {
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
     overlayScalePercent: runtimeConfig.settings.overlayScalePercent,
     playerStartupTimeoutSeconds: runtimeConfig.settings.playerStartupTimeoutSeconds,
+    radioModeEnabled: runtimeConfig.settings.radioModeEnabled,
+    radioTrackCount: runtimeConfig.settings.radioTrackCount,
     requestPolicyAutosaveEnabled: runtimeConfig.settings.requestPolicyAutosaveEnabled,
     requestPolicy: runtimeConfig.settings.requestPolicy,
     chatCommands: runtimeConfig.settings.chatCommands,

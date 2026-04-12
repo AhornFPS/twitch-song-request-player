@@ -383,6 +383,8 @@ export async function startAppServer({
     runtimeStateStore,
     requestAuditStore,
     requestPolicy: currentSettings.requestPolicy,
+    radioModeEnabled: currentSettings.radioModeEnabled,
+    radioTrackCount: currentSettings.radioTrackCount,
     getRadioTracks: async ({ seedTrack, excludeTrackKeys = [], excludeTracks = [], count = 3 }) =>
       findYouTubeRadioTracks(seedTrack, currentSettings.youtubeApiKey, {
         safeSearch: currentSettings.requestPolicy?.youtubeSafeSearch,
@@ -1018,6 +1020,10 @@ export async function startAppServer({
       currentSettings = nextSettings;
       playlistRepository.setYoutubeApiKey(nextSettings.youtubeApiKey);
       playerController.setRequestPolicy(nextSettings.requestPolicy);
+      await playerController.setRadioSettings({
+        enabled: nextSettings.radioModeEnabled,
+        trackCount: nextSettings.radioTrackCount
+      });
 
       if (
         Object.prototype.hasOwnProperty.call(request.body ?? {}, "startWithWindows") &&

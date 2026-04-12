@@ -863,6 +863,215 @@ test("youtube radio search skips tracks longer than ten minutes", async (t) => {
   );
 });
 
+test("youtube radio search uses music category and skips live or duplicate candidates", async (t) => {
+  const originalFetch = global.fetch;
+  let searchUrl = null;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.pathname === "/youtube/v3/search") {
+      searchUrl = requestedUrl;
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: {
+                  videoId: "live-search"
+                },
+                snippet: {
+                  title: "Artist - Live Now",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  liveBroadcastContent: "live",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "upcoming-search"
+                },
+                snippet: {
+                  title: "Artist - Premiere Soon",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  liveBroadcastContent: "upcoming",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "completed-live"
+                },
+                snippet: {
+                  title: "Artist - Completed Live",
+                  channelTitle: "Artist",
+                  channelId: "UCartist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "same-song-one"
+                },
+                snippet: {
+                  title: "Same Song",
+                  channelTitle: "Artist One",
+                  channelId: "UCartistone",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "same-song-two"
+                },
+                snippet: {
+                  title: "Same Song (Official Audio)",
+                  channelTitle: "Artist Two",
+                  channelId: "UCartisttwo",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                }
+              },
+              {
+                id: {
+                  videoId: "other-song"
+                },
+                snippet: {
+                  title: "Other Song",
+                  channelTitle: "Artist Three",
+                  channelId: "UCartistthree",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    if (requestedUrl.pathname === "/youtube/v3/videos") {
+      return {
+        ok: true,
+        async json() {
+          return {
+            items: [
+              {
+                id: "live-search",
+                snippet: {
+                  title: "Artist - Live Now",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "live",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "upcoming-search",
+                snippet: {
+                  title: "Artist - Premiere Soon",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "upcoming",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "completed-live",
+                snippet: {
+                  title: "Artist - Completed Live",
+                  channelId: "UCartist",
+                  channelTitle: "Artist",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                },
+                liveStreamingDetails: {
+                  actualEndTime: "2026-04-12T12:00:00Z"
+                }
+              },
+              {
+                id: "same-song-one",
+                snippet: {
+                  title: "Same Song",
+                  channelId: "UCartistone",
+                  channelTitle: "Artist One",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "same-song-two",
+                snippet: {
+                  title: "Same Song (Official Audio)",
+                  channelId: "UCartisttwo",
+                  channelTitle: "Artist Two",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              },
+              {
+                id: "other-song",
+                snippet: {
+                  title: "Other Song",
+                  channelId: "UCartistthree",
+                  channelTitle: "Artist Three",
+                  liveBroadcastContent: "none",
+                  thumbnails: {}
+                },
+                contentDetails: {
+                  duration: "PT4M"
+                }
+              }
+            ]
+          };
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const tracks = await findYouTubeRadioTracks({
+    provider: "youtube",
+    url: "https://youtu.be/seed-song",
+    title: "Seed Artist - Seed Song",
+    key: "youtube:seed-song",
+    sourceName: "Seed Artist"
+  }, "api-key", {
+    limit: 2
+  });
+
+  assert.equal(searchUrl?.searchParams.get("videoCategoryId"), "10");
+  assert.deepEqual(
+    tracks.map((track) => track.title),
+    ["Artist One - Same Song", "Artist Three - Other Song"]
+  );
+});
+
 test("youtube radio search skips YouTube Shorts results", async (t) => {
   const originalFetch = global.fetch;
 

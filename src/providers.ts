@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { tracksShareIdentity } from "./track-identity.js";
+import { trackTitlesOverlap, tracksShareIdentity } from "./track-identity.js";
 const YOUTUBE_HOSTS = new Set([
   "youtube.com",
   "www.youtube.com",
@@ -603,6 +603,19 @@ function buildYouTubeRadioQueries(seedTrack) {
 
 const MAX_RADIO_TRACK_DURATION_SECONDS = 10 * 60;
 
+function getLiveBroadcastContent(item) {
+  return typeof item?.snippet?.liveBroadcastContent === "string"
+    ? item.snippet.liveBroadcastContent.trim().toLowerCase()
+    : "none";
+}
+
+function isYouTubeLiveContent(item) {
+  const liveBroadcastContent = getLiveBroadcastContent(item);
+  return liveBroadcastContent === "live" ||
+    liveBroadcastContent === "upcoming" ||
+    Boolean(item?.liveStreamingDetails);
+}
+
 function isLikelySameTrack(candidate, seedTrack) {
   const candidateKey = typeof candidate?.key === "string"
     ? candidate.key.trim()
@@ -900,12 +913,16 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
       }
 
       const trackKey = `youtube:${videoId}`;
-      if (excludedKeys.has(trackKey) || isLikelySameTrack(searchItem, seedTrack)) {
+      if (
+        excludedKeys.has(trackKey) ||
+        isYouTubeLiveContent(searchItem) ||
+        isLikelySameTrack(searchItem, seedTrack)
+      ) {
         continue;
       }
 
       const detailedItem = detailedItemsById.get(videoId);
-      if (!detailedItem) {
+      if (!detailedItem || isYouTubeLiveContent(detailedItem)) {
         continue;
       }
 
@@ -920,7 +937,13 @@ export async function findYouTubeRadioTracks(seedTrack, youtubeApiKey, {
 
       if (
         excludedKeys.has(track.key) ||
-        identityExcludedTracks.some((excludedTrack) => isLikelySameTrack(track, excludedTrack))
+        identityExcludedTracks.some((excludedTrack) =>
+          isLikelySameTrack(track, excludedTrack) ||
+          tracksShareIdentity(excludedTrack, track, {
+            titleOnly: true
+          }) ||
+          trackTitlesOverlap(excludedTrack, track)
+        )
       ) {
         continue;
       }

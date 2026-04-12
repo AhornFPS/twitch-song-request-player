@@ -7,6 +7,8 @@ function createController({
   runtimeStateStore = null,
   requestAuditStore = null,
   requestPolicy = {},
+  radioModeEnabled = true,
+  radioTrackCount = 3,
   playlistRepositoryOverrides = {},
   getRadioTracks = null
 } = {}) {
@@ -45,6 +47,8 @@ function createController({
       runtimeStateStore,
       requestAuditStore,
       requestPolicy,
+      radioModeEnabled,
+      radioTrackCount,
       getRadioTracks
     }),
     emittedEvents
@@ -639,6 +643,149 @@ test("radio queues three related tracks after the final queued request finishes"
     controller.getPublicState().radioQueue.map((track) => track.title),
     ["Radio Two", "Radio Three"]
   );
+});
+
+test("radio disabled does not fetch or queue automatic radio tracks", async () => {
+  let radioCallCount = 0;
+  const { controller } = createController({
+    radioModeEnabled: false,
+    getRadioTracks: async () => {
+      radioCallCount += 1;
+      return [
+        {
+          provider: "youtube",
+          url: "https://youtu.be/radio-one",
+          title: "Radio One",
+          key: "youtube:radio-one",
+          artworkUrl: ""
+        }
+      ];
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/final-request",
+    title: "Final Request",
+    key: "youtube:final-request",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(radioCallCount, 0);
+  assert.equal(controller.getPublicState().radioQueue.length, 0);
+});
+
+test("disabling radio clears existing radio queue", async () => {
+  let savedState = null;
+  const { controller } = createController({
+    runtimeStateStore: {
+      async save(state) {
+        savedState = JSON.parse(JSON.stringify(state));
+      }
+    }
+  });
+  controller.radioQueue = [
+    {
+      id: "radio-one",
+      provider: "youtube",
+      url: "https://youtu.be/radio-one",
+      title: "Radio One",
+      key: "youtube:radio-one",
+      origin: "radio",
+      artworkUrl: ""
+    }
+  ];
+
+  await controller.setRadioSettings({
+    enabled: false,
+    trackCount: 3
+  });
+
+  assert.equal(controller.getPublicState().radioQueue.length, 0);
+  assert.equal(savedState.radioQueue.length, 0);
+});
+
+test("radio track count controls how many automatic picks are queued", async () => {
+  const radioCalls = [];
+  const { controller } = createController({
+    radioTrackCount: 5,
+    getRadioTracks: async ({ count }) => {
+      radioCalls.push({ count });
+      return Array.from({ length: 6 }, (_, index) => ({
+        provider: "youtube",
+        url: `https://youtu.be/radio-${index + 1}`,
+        title: `Radio ${index + 1}`,
+        key: `youtube:radio-${index + 1}`,
+        artworkUrl: "",
+        sourceName: "Radio Artist"
+      }));
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/final-request",
+    title: "Final Request",
+    key: "youtube:final-request",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended"
+  });
+
+  assert.equal(radioCalls[0].count, 5);
+  assert.equal(controller.getCurrentTrack()?.title, "Radio 1");
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Radio 2", "Radio 3", "Radio 4", "Radio 5"]
+  );
+});
+
+test("lowering radio track count trims existing queued radio tracks", async () => {
+  let savedState = null;
+  const { controller } = createController({
+    radioTrackCount: 5,
+    runtimeStateStore: {
+      async save(state) {
+        savedState = JSON.parse(JSON.stringify(state));
+      }
+    }
+  });
+  controller.radioQueue = Array.from({ length: 5 }, (_, index) => ({
+    id: `radio-${index + 1}`,
+    provider: "youtube",
+    url: `https://youtu.be/radio-${index + 1}`,
+    title: `Radio ${index + 1}`,
+    key: `youtube:radio-${index + 1}`,
+    origin: "radio",
+    artworkUrl: ""
+  }));
+
+  await controller.setRadioSettings({
+    enabled: true,
+    trackCount: 2
+  });
+
+  assert.deepEqual(
+    controller.getPublicState().radioQueue.map((track) => track.title),
+    ["Radio 1", "Radio 2"]
+  );
+  assert.equal(savedState.radioQueue.length, 2);
 });
 
 test("radio skips alternate uploads of the seed song before queueing the next picks", async () => {
