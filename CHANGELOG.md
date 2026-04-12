@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.4 - 2026-04-12
+
 - Added a Twitch Shared Chat source-only toggle for bot replies, using the Send Chat Message API `for_source_only` option when enabled.
 - Added three new structurally distinct overlay themes: Vinyl (turntable-inspired with rotating disc artwork and analog warmth), Waveform (oscilloscope-style audio visualization with phosphor green readout and scanline overlay), and Kiosk (vertical digital signage poster with full-width artwork and bold blocky typography).
 - Made the dashboard Playback tab player preview area adapt to the active overlay theme size instead of using a fixed height, using a `ResizeObserver` in the overlay that reports dimensions to the parent via `postMessage` so every theme gets exactly the space it needs.
