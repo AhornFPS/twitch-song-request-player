@@ -5,6 +5,33 @@
   "history": [
     {
       "track": {
+        "id": "7507ed9b-9aae-40d3-9706-201a6cb7d851",
+        "provider": "youtube",
+        "url": "https://youtu.be/7S3DDr-TiDQ",
+        "title": "Two Steps From Hell - Norwegian Pirate (Archangel)",
+        "key": "youtube:7S3DDr-TiDQ",
+        "origin": "playlist",
+        "artworkUrl": "",
+        "audioUrl": "",
+        "durationSeconds": 179,
+        "elapsedSeconds": 178.821,
+        "sourceChannelId": "",
+        "sourceName": "",
+        "sourceUrl": "",
+        "requestedFromProvider": "",
+        "requestedFromUrl": "",
+        "requestedFromTitle": "",
+        "requestedFromName": "",
+        "requestedFromKey": "",
+        "radioSeedInput": "",
+        "isLive": false,
+        "requestedBy": null
+      },
+      "status": "ended",
+      "completedAt": "2026-04-14T10:58:51.694Z"
+    },
+    {
+      "track": {
         "id": "c498df73-e701-4342-a961-dd9212136a97",
         "provider": "youtube",
         "url": "https://youtu.be/f2KnnwVsPr4",
@@ -665,36 +692,6 @@
       },
       "status": "ended",
       "completedAt": "2026-03-31T16:51:52.032Z"
-    },
-    {
-      "track": {
-        "id": "1b99f380-177c-4198-9bdc-f87368489e44",
-        "provider": "youtube",
-        "url": "https://www.youtube.com/watch?v=Pnp-vIrNaYc",
-        "title": "Play It Loud - S3RL & Remzcore 📢 DEFI BRILATOR",
-        "key": "youtube:Pnp-vIrNaYc",
-        "origin": "queue",
-        "artworkUrl": "https://i.ytimg.com/vi/Pnp-vIrNaYc/maxresdefault.jpg",
-        "audioUrl": "",
-        "durationSeconds": null,
-        "elapsedSeconds": 0,
-        "sourceChannelId": "",
-        "sourceName": "",
-        "sourceUrl": "",
-        "requestedFromProvider": "",
-        "requestedFromUrl": "",
-        "requestedFromTitle": "",
-        "requestedFromName": "",
-        "requestedFromKey": "",
-        "radioSeedInput": "",
-        "isLive": false,
-        "requestedBy": {
-          "username": "dashboard",
-          "displayName": "Dashboard"
-        }
-      },
-      "status": "skipped",
-      "completedAt": "2026-03-31T16:49:07.617Z"
     }
   ],
   "adminEvents": [
