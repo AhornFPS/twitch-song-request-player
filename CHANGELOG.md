@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.6 - 2026-06-20
+
 - Fixed chat skip commands so SoundCloud-to-SoundCloud skips advance immediately like the in-app Next button.
 
 ## 2.9.5 - 2026-04-12
