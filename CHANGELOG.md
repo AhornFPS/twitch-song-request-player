@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed chat skip commands so SoundCloud-to-SoundCloud skips advance immediately like the in-app Next button.
+
 ## 2.9.5 - 2026-04-12
 
 - Added settings for turning automatic radio on or off and choosing how many radio songs queue after the last request.

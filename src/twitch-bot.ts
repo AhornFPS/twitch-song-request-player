@@ -710,7 +710,7 @@ export class TwitchBot {
     }
 
     if (actionId === "skip_current") {
-      const skippedTrack = await this.playerController.skipCurrentTrack(tags.username ?? "unknown");
+      const skippedTrack = await this.playerController.skipToNextTrack(tags.username ?? "unknown");
 
       if (!skippedTrack) {
         await this.reply(channel, "No song is currently playing.");
@@ -718,7 +718,6 @@ export class TwitchBot {
       }
 
       await this.reply(channel, `${tags["display-name"] ?? tags.username} skipped the current song.`);
-      await this.playerController.ensurePlayback();
       return;
     }
 

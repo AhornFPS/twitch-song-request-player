@@ -30,6 +30,10 @@ function createBotHarness({
   clearQueueResult = {
     clearedCount: 0
   },
+  skipToNextTrackResult = null,
+  skipCurrentTrackImpl = null,
+  skipToNextTrackImpl = null,
+  ensurePlaybackImpl = null,
   updateSettings = async () => ({ requestPolicy })
 }) {
   let playbackListener = null;
@@ -70,6 +74,25 @@ function createBotHarness({
     },
     async clearQueue() {
       return clearQueueResult;
+    },
+    async skipCurrentTrack(triggeredBy) {
+      if (typeof skipCurrentTrackImpl === "function") {
+        return skipCurrentTrackImpl(triggeredBy);
+      }
+
+      return null;
+    },
+    async skipToNextTrack(triggeredBy) {
+      if (typeof skipToNextTrackImpl === "function") {
+        return skipToNextTrackImpl(triggeredBy);
+      }
+
+      return skipToNextTrackResult;
+    },
+    async ensurePlayback() {
+      if (typeof ensurePlaybackImpl === "function") {
+        return ensurePlaybackImpl();
+      }
     },
     async recordRequestOutcome(event) {
       requestAuditEvents.push(event);
@@ -910,6 +933,52 @@ test("clear queue command clears every queued request for moderators", async () 
     {
       channel: "#testchannel",
       message: "Cleared 4 queued requests."
+    }
+  ]);
+});
+
+test("skip command advances with the same next-track path as the dashboard", async () => {
+  const calls = [];
+  const harness = createBotHarness({
+    skipToNextTrackResult: {
+      id: "sc-current",
+      provider: "soundcloud",
+      url: "https://soundcloud.com/artist/current",
+      title: "Current SoundCloud",
+      key: "soundcloud:https://soundcloud.com/artist/current"
+    },
+    skipCurrentTrackImpl: async () => {
+      calls.push("skipCurrentTrack");
+      return null;
+    },
+    skipToNextTrackImpl: async (triggeredBy) => {
+      calls.push(`skipToNextTrack:${triggeredBy}`);
+      return {
+        id: "sc-current",
+        provider: "soundcloud",
+        url: "https://soundcloud.com/artist/current",
+        title: "Current SoundCloud",
+        key: "soundcloud:https://soundcloud.com/artist/current"
+      };
+    },
+    ensurePlaybackImpl: async () => {
+      calls.push("ensurePlayback");
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "vipone",
+    "display-name": "VipOne",
+    badges: {
+      vip: "1"
+    }
+  }, "!skip");
+
+  assert.deepEqual(calls, ["skipToNextTrack:vipone"]);
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "VipOne skipped the current song."
     }
   ]);
 });
