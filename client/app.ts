@@ -1433,6 +1433,15 @@ function emitStatus(status, extra = {}) {
   postPlayerEvent(eventPayload).catch(() => {});
 }
 
+function isActiveProviderTrack(track, provider) {
+  return Boolean(
+    track?.id &&
+    currentTrackId === track.id &&
+    activeTrack?.id === track.id &&
+    activeTrack?.provider === provider
+  );
+}
+
 function resetPlayers() {
   youtubeEndedTrackId = "";
   stopPlaybackTimer();
@@ -1535,6 +1544,14 @@ function loadSoundCloudTrack(track) {
   };
 
   soundCloudWidget.bind(window.SC.Widget.Events.READY, () => {
+    if (!isActiveProviderTrack(track, "soundcloud")) {
+      sendClientLog("warn", "Ignoring stale SoundCloud ready event", {
+        id: track.id,
+        title: track.title
+      });
+      return;
+    }
+
     applySoundCloudVolume();
     updateDurationFromSoundCloud();
     stopSoundCloudDurationProbe();
@@ -1569,6 +1586,15 @@ function loadSoundCloudTrack(track) {
   });
 
   soundCloudWidget.bind(window.SC.Widget.Events.ERROR, (event) => {
+    if (!isActiveProviderTrack(track, "soundcloud")) {
+      sendClientLog("warn", "Ignoring stale SoundCloud error event", {
+        id: track.id,
+        title: track.title,
+        event
+      });
+      return;
+    }
+
     stopSoundCloudLoadTimeout();
     stopSoundCloudAutoplayRetry();
     stopSoundCloudDurationProbe();
@@ -1582,6 +1608,14 @@ function loadSoundCloudTrack(track) {
   });
 
   soundCloudWidget.bind(window.SC.Widget.Events.FINISH, () => {
+    if (!isActiveProviderTrack(track, "soundcloud")) {
+      sendClientLog("warn", "Ignoring stale SoundCloud finish event", {
+        id: track.id,
+        title: track.title
+      });
+      return;
+    }
+
     stopSoundCloudLoadTimeout();
     stopSoundCloudAutoplayRetry();
     stopSoundCloudDurationProbe();
@@ -1593,6 +1627,10 @@ function loadSoundCloudTrack(track) {
   });
 
   soundCloudWidget.bind(window.SC.Widget.Events.PLAY_PROGRESS, (event) => {
+    if (!isActiveProviderTrack(track, "soundcloud")) {
+      return;
+    }
+
     const currentSeconds = Number.isFinite(event.currentPosition) ? event.currentPosition / 1000 : currentPositionSeconds;
     const durationSeconds = Number.isFinite(event.duration) && event.duration > 0
       ? event.duration / 1000
