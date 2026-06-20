@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.7 - 2026-06-20
+
 - Fixed queued SoundCloud-to-SoundCloud handoffs so stale widget events from the previous track cannot end the next track.
 
 ## 2.9.6 - 2026-06-20
