@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.8 - 2026-06-28
+
 - Restricted the local dashboard service to loopback access and stopped settings responses from exposing stored Twitch secrets.
 - Fixed large playlist CSV imports from the dashboard so bigger libraries no longer fail with a payload-size error.
 - Fixed playlist edit, refresh, and delete actions for saved URLs that contain percent-encoded characters.
