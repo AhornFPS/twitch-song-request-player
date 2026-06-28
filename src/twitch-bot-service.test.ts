@@ -68,3 +68,31 @@ test("applySettings uses the validated Twitch login as the bot username", async 
 
   await service.disconnect();
 });
+
+test("disconnect clears playback suppression", async () => {
+  const suppressionCalls = [];
+  let botDisconnected = false;
+  const service = new TwitchBotService({
+    playerController: {
+      async setPlaybackSuppressed(isSuppressed) {
+        suppressionCalls.push(isSuppressed);
+      }
+    }
+  });
+  service.bot = {
+    async disconnect() {
+      botDisconnected = true;
+    }
+  };
+
+  await service.disconnect({
+    nextStatus: {
+      state: "error",
+      message: "Disconnected for test."
+    }
+  });
+
+  assert.equal(botDisconnected, true);
+  assert.deepEqual(suppressionCalls, [false]);
+  assert.equal(service.getStatus().state, "error");
+});

@@ -1167,12 +1167,10 @@ function collectChatCommandsPayload() {
   );
 }
 function collectSettingsPayload() {
-  return {
+  const payload = {
     twitchChannel: el("twitchChannel")?.value.trim() || "",
     twitchUsername: el("twitchUsername")?.value.trim() || "",
-    twitchOauthToken: el("twitchOauthToken")?.value.trim() || "",
     twitchClientId: el("twitchClientId")?.value.trim() || "",
-    twitchClientSecret: el("twitchClientSecret")?.value.trim() || "",
     twitchSharedChatForSourceOnly: el("twitch-shared-chat-source-only-toggle") instanceof HTMLInputElement ? el("twitch-shared-chat-source-only-toggle").checked : false,
     youtubeApiKey: el("youtubeApiKey")?.value.trim() || "",
     port: Number.parseInt(el("port")?.value || "3000", 10) || 3e3,
@@ -1192,6 +1190,15 @@ function collectSettingsPayload() {
     chatSuppressedCategories,
     playbackSuppressedCategories
   };
+  const twitchOauthToken = el("twitchOauthToken")?.value.trim() || "";
+  const twitchClientSecret = el("twitchClientSecret")?.value.trim() || "";
+  if (twitchOauthToken) {
+    payload.twitchOauthToken = twitchOauthToken;
+  }
+  if (twitchClientSecret) {
+    payload.twitchClientSecret = twitchClientSecret;
+  }
+  return payload;
 }
 async function fetchJson(url, options = {}) {
   const response = await fetch(url, {
@@ -1236,9 +1243,15 @@ function applySettingsPayload() {
   renderOverlayScaleControl(settingsPayload.settings.overlayScalePercent);
   setValue("twitchChannel", settingsPayload.settings.twitchChannel || "");
   setValue("twitchUsername", settingsPayload.settings.twitchUsername || "");
-  setValue("twitchOauthToken", settingsPayload.settings.twitchOauthToken || "");
+  setValue("twitchOauthToken", "");
+  if (el("twitchOauthToken") instanceof HTMLInputElement) {
+    el("twitchOauthToken").placeholder = settingsPayload.settings.hasTwitchOauthToken ? "Saved token hidden" : "";
+  }
   setValue("twitchClientId", settingsPayload.settings.twitchClientId || "");
-  setValue("twitchClientSecret", settingsPayload.settings.twitchClientSecret || "");
+  setValue("twitchClientSecret", "");
+  if (el("twitchClientSecret") instanceof HTMLInputElement) {
+    el("twitchClientSecret").placeholder = settingsPayload.settings.hasTwitchClientSecret ? "Saved secret hidden" : "";
+  }
   const sharedChatSourceOnlyToggle = el("twitch-shared-chat-source-only-toggle");
   if (sharedChatSourceOnlyToggle instanceof HTMLInputElement) {
     sharedChatSourceOnlyToggle.checked = settingsPayload.settings.twitchSharedChatForSourceOnly === true;
@@ -2373,16 +2386,20 @@ async function saveGuiPlayerEnabled(nextValue) {
 async function startTwitchAuth() {
   setFeedback("Starting Twitch login...");
   try {
+    const requestBody = {
+      twitchChannel: el("twitchChannel")?.value.trim() || "",
+      twitchClientId: el("twitchClientId")?.value.trim() || settingsPayload?.settings?.twitchClientId || ""
+    };
+    const twitchClientSecret = el("twitchClientSecret")?.value.trim() || "";
+    if (twitchClientSecret) {
+      requestBody.twitchClientSecret = twitchClientSecret;
+    }
     settingsPayload = await fetchJson("/api/twitch-auth/device/start", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify({
-        twitchChannel: el("twitchChannel")?.value.trim() || "",
-        twitchClientId: el("twitchClientId")?.value.trim() || settingsPayload?.settings?.twitchClientId || "",
-        twitchClientSecret: el("twitchClientSecret")?.value.trim() || settingsPayload?.settings?.twitchClientSecret || ""
-      })
+      body: JSON.stringify(requestBody)
     });
     applySettingsPayload();
     const verificationUrl = settingsPayload.twitchAuthStatus?.verificationUriComplete || settingsPayload.twitchAuthStatus?.verificationUri || "";
@@ -2871,7 +2888,7 @@ function formatMarkdown(text) {
   if (!text) {
     return "";
   }
-  return text.replace(/^# (.*$)/gm, "<h1>$1</h1>").replace(/^## (.*$)/gm, "<h2>$1</h2>").replace(/^### (.*$)/gm, "<h3>$1</h3>").replace(/^\* (.*$)/gm, "<li>$1</li>").replace(/^- (.*$)/gm, "<li>$1</li>").replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>").replace(/<\/ul>\s*<ul>/g, "");
+  return htmlEscape(text).replace(/^# (.*$)/gm, "<h1>$1</h1>").replace(/^## (.*$)/gm, "<h2>$1</h2>").replace(/^### (.*$)/gm, "<h3>$1</h3>").replace(/^\* (.*$)/gm, "<li>$1</li>").replace(/^- (.*$)/gm, "<li>$1</li>").replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>").replace(/<\/ul>\s*<ul>/g, "");
 }
 function syncUpdateCheckButton(isChecking) {
   const button = el("check-for-updates-button");

@@ -185,6 +185,14 @@ export class TwitchBotService {
     this.bot = null;
     this.configSignature = "";
 
+    try {
+      await this.playerController.setPlaybackSuppressed?.(false);
+    } catch (error) {
+      logWarn("Failed to clear playback suppression after Twitch bot disconnect", {
+        message: error?.message ?? String(error)
+      });
+    }
+
     if (nextStatus) {
       this.status = nextStatus;
     }

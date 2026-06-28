@@ -228,6 +228,115 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
 });
 
+test("settings API stays loopback-local and does not expose stored secrets", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  const originalFetch = global.fetch;
+  let appServer = null;
+
+  t.after(async () => {
+    global.fetch = originalFetch;
+
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+  global.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+    if (url === "https://id.twitch.tv/oauth2/validate") {
+      return createJsonResponse({
+        client_id: "client-id",
+        login: "bot_account",
+        user_id: "user-id",
+        scopes: [],
+        expires_in: 3600
+      });
+    }
+
+    return originalFetch(input, init);
+  };
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({
+      port,
+      twitchUsername: "bot_account",
+      twitchOauthToken: "oauth:stored-token",
+      twitchRefreshToken: "stored-refresh",
+      twitchClientSecret: "stored-client-secret",
+      theme: "aurora"
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\nhttps://youtu.be/dQw4w9WgXcQ,Rick Roll\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const address = appServer.server.address();
+  assert.equal(typeof address === "object" && address ? address.address : "", "127.0.0.1");
+
+  const rejectedResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    headers: {
+      Origin: "https://example.invalid"
+    }
+  });
+  assert.equal(rejectedResponse.status, 403);
+
+  const settingsResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    headers: {
+      Origin: `http://127.0.0.1:${port}`
+    }
+  });
+  assert.equal(settingsResponse.ok, true);
+  const settingsPayload = await settingsResponse.json();
+  assert.equal(settingsPayload.settings.twitchOauthToken, undefined);
+  assert.equal(settingsPayload.settings.twitchRefreshToken, undefined);
+  assert.equal(settingsPayload.settings.twitchClientSecret, undefined);
+  assert.equal(settingsPayload.settings.hasTwitchOauthToken, true);
+  assert.equal(settingsPayload.settings.hasTwitchClientSecret, true);
+
+  const saveResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      theme: "sunset"
+    })
+  });
+  assert.equal(saveResponse.ok, true);
+
+  const persistedSettings = JSON.parse(await fs.readFile(path.join(runtimeDir, "settings.json"), "utf8"));
+  assert.equal(persistedSettings.theme, "sunset");
+  assert.equal(persistedSettings.twitchOauthToken, "oauth:stored-token");
+  assert.equal(persistedSettings.twitchRefreshToken, "stored-refresh");
+  assert.equal(persistedSettings.twitchClientSecret, "stored-client-secret");
+});
+
 test("manual updater checks return an error when the desktop updater is unavailable", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
@@ -784,6 +893,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
       publicDir: path.join(appRootDir, "public")
     })
   });
+  const encodedSoundCloudKey = "soundcloud:https://soundcloud.com/artist/my%20track";
 
   const listResponse = await fetch(new URL("/api/playlist/tracks?q=rick&sortBy=title", appServer.urls.dashboardUrl));
   const listPayload = await listResponse.json();
@@ -797,7 +907,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
     },
     body: JSON.stringify({
       mode: "append",
-      csvText: "Link,Title\nhttps://soundcloud.com/artist/track,Club Mix\n"
+      csvText: "Link,Title\nhttps://soundcloud.com/artist/my%20track,Club Mix\n"
     })
   });
   assert.equal(importResponse.ok, true);
@@ -810,7 +920,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+      trackKeys: [encodedSoundCloudKey]
     })
   });
   assert.equal(bulkQueueResponse.ok, true);
@@ -819,7 +929,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
   assert.equal(bulkQueuePayload.state.queue[0].title, "Club Mix");
 
   const updateTitleResponse = await fetch(
-    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}`, appServer.urls.dashboardUrl),
+    new URL(`/api/playlist/tracks/${encodeURIComponent(encodedSoundCloudKey)}`, appServer.urls.dashboardUrl),
     {
       method: "PATCH",
       headers: {
@@ -835,7 +945,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
   assert.equal(updateTitlePayload.track.title, "Edited Club Mix");
 
   const refreshResponse = await fetch(
-    new URL(`/api/playlist/tracks/${encodeURIComponent("soundcloud:https://soundcloud.com/artist/track")}/refresh-metadata`, appServer.urls.dashboardUrl),
+    new URL(`/api/playlist/tracks/${encodeURIComponent(encodedSoundCloudKey)}/refresh-metadata`, appServer.urls.dashboardUrl),
     {
       method: "POST"
     }
@@ -850,7 +960,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+      trackKeys: [encodedSoundCloudKey]
     })
   });
   assert.equal(exportSelectedResponse.ok, true);
@@ -864,7 +974,7 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
       "Content-Type": "application/json"
     },
     body: JSON.stringify({
-      trackKeys: ["soundcloud:https://soundcloud.com/artist/track"]
+      trackKeys: [encodedSoundCloudKey]
     })
   });
   assert.equal(bulkDeleteResponse.ok, true);
@@ -874,6 +984,74 @@ test("playlist API supports listing, sorting, bulk queue/delete, import, and exp
   const exportResponse = await fetch(new URL("/api/playlist/export", appServer.urls.dashboardUrl));
   const exportText = await exportResponse.text();
   assert.doesNotMatch(exportText, /Club Mix/);
+});
+
+test("playlist import accepts large dashboard CSV payloads", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    if (appServer) {
+      await appServer.close().catch(() => {});
+    }
+
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const csvRows = ["Link,Title"];
+  for (let index = 0; index < 3500; index += 1) {
+    csvRows.push(`https://youtu.be/large-import-${index},Large Import ${index}`);
+  }
+  const csvText = csvRows.join("\n");
+  assert.equal(Buffer.byteLength(csvText, "utf8") > 100 * 1024, true);
+
+  const importResponse = await fetch(new URL("/api/playlist/import", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      mode: "append",
+      csvText
+    })
+  });
+
+  assert.equal(importResponse.ok, true);
+  const importPayload = await importResponse.json();
+  assert.equal(importPayload.importedCount, 3500);
+  assert.equal(importPayload.finalCount, 3500);
 });
 
 test("dashboard queue and playback APIs add tracks and expose transport controls", async (t) => {

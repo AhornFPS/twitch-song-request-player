@@ -43,12 +43,38 @@ function loadAppVersion() {
 }
 
 const appVersion = loadAppVersion();
+const loopbackHost = "127.0.0.1";
+const allowedOriginHostnames = new Set([
+  "localhost",
+  "127.0.0.1",
+  "::1"
+]);
 
 function buildRuntimeUrls(activePort) {
   return {
-    dashboardUrl: `http://localhost:${activePort}/`,
-    overlayUrl: `http://localhost:${activePort}/overlay`
+    dashboardUrl: `http://${loopbackHost}:${activePort}/`,
+    overlayUrl: `http://${loopbackHost}:${activePort}/overlay`
   };
+}
+
+function isAllowedLocalOrigin(origin, activePort) {
+  if (!origin) {
+    return true;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    const originPort = parsedOrigin.port ||
+      (parsedOrigin.protocol === "https:" ? "443" : parsedOrigin.protocol === "http:" ? "80" : "");
+
+    return (
+      (parsedOrigin.protocol === "http:" || parsedOrigin.protocol === "https:") &&
+      allowedOriginHostnames.has(parsedOrigin.hostname.toLowerCase()) &&
+      originPort === String(activePort)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function buildObsOverlayLoaderPath(runtimeDir) {
@@ -182,10 +208,16 @@ async function writeObsOverlayLoaderFile({ runtimeDir, overlayUrl, appVersion })
 function toClientSettings(settings) {
   const {
     twitchRefreshToken,
+    twitchOauthToken,
+    twitchClientSecret,
     ...clientSettings
   } = settings;
 
-  return clientSettings;
+  return {
+    ...clientSettings,
+    hasTwitchOauthToken: Boolean(twitchOauthToken),
+    hasTwitchClientSecret: Boolean(twitchClientSecret)
+  };
 }
 
 function settingsChanged(previousSettings, nextSettings, keys) {
@@ -330,7 +362,7 @@ async function listenOnPort(server, port) {
 
     server.once("error", handleError);
     server.once("listening", handleListening);
-    server.listen(port);
+    server.listen(port, loopbackHost);
   });
 }
 
@@ -364,7 +396,9 @@ export async function startAppServer({
   const server = http.createServer(app);
   const io = new SocketServer(server, {
     cors: {
-      origin: "*"
+      origin(origin, callback) {
+        callback(null, isAllowedLocalOrigin(origin, activePort));
+      }
     }
   });
   const activeConnections = new Set();
@@ -413,7 +447,31 @@ export async function startAppServer({
     });
   }
 
-  app.use(express.json());
+  app.use((request, response, next) => {
+    if (!isAllowedLocalOrigin(request.headers.origin, activePort)) {
+      response.status(403).json({
+        error: "Requests to the local player service must come from the local dashboard."
+      });
+      return;
+    }
+
+    next();
+  });
+
+  app.use(express.json({
+    limit: "10mb"
+  }));
+
+  app.use((error, _request, response, next) => {
+    if (error?.type === "entity.too.large" || error?.status === 413) {
+      response.status(413).json({
+        error: "The request payload is too large."
+      });
+      return;
+    }
+
+    next(error);
+  });
 
   app.get("/api/updater", (_request, response) => {
     if (!updateService) {
@@ -807,7 +865,7 @@ export async function startAppServer({
 
   app.delete("/api/playlist/tracks/:trackKey", async (request, response) => {
     try {
-      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const trackKey = request.params.trackKey || "";
       const removed = await playlistRepository.removeTrackByKey(trackKey);
 
       if (!removed) {
@@ -831,7 +889,7 @@ export async function startAppServer({
 
   app.patch("/api/playlist/tracks/:trackKey", async (request, response) => {
     try {
-      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const trackKey = request.params.trackKey || "";
       const updatedTrack = await playlistRepository.updateTrackTitleByKey(trackKey, request.body?.title);
 
       if (!updatedTrack) {
@@ -857,7 +915,7 @@ export async function startAppServer({
 
   app.post("/api/playlist/tracks/:trackKey/refresh-metadata", async (request, response) => {
     try {
-      const trackKey = decodeURIComponent(request.params.trackKey || "");
+      const trackKey = request.params.trackKey || "";
       const refreshedTrack = await playlistRepository.refreshTrackMetadataByKey(trackKey);
 
       if (!refreshedTrack) {

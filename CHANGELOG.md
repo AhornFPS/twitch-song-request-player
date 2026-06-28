@@ -4,6 +4,12 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Restricted the local dashboard service to loopback access and stopped settings responses from exposing stored Twitch secrets.
+- Fixed large playlist CSV imports from the dashboard so bigger libraries no longer fail with a payload-size error.
+- Fixed playlist edit, refresh, and delete actions for saved URLs that contain percent-encoded characters.
+- Fixed update release notes so HTML in release text is escaped before being shown in the dashboard.
+- Fixed Twitch category playback suppression so it clears when the bot disconnects.
+
 ## 2.9.7 - 2026-06-20
 
 - Fixed queued SoundCloud-to-SoundCloud handoffs so stale widget events from the previous track cannot end the next track.
