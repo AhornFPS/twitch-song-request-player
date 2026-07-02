@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.9.9 - 2026-07-02
+
 - Added Twitch chat explanations when requested songs are skipped by embedded-player playback errors.
 - Blocked YouTube requests that metadata reports as unavailable for embedded playback before they enter the queue.
 
