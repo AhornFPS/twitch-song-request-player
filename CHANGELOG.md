@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.2 - 2026-07-02
+
 - Cleared the OBS YouTube fallback source before normal embedded playback starts, preventing stale fallback audio after an app restart.
 
 ## 2.10.1 - 2026-07-02
