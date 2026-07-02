@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.0 - 2026-07-02
+
 - Added an optional OBS Browser Source fallback for YouTube videos that block embedded playback, including a dashboard login button for opening YouTube in the configured OBS source.
 - Added Twitch chat explanations when requested songs are skipped by embedded-player playback errors.
 - Blocked YouTube requests that metadata reports as unavailable for embedded playback before they enter the queue.
