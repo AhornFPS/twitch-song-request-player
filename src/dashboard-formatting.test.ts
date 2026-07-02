@@ -32,9 +32,10 @@ function extractFunction(source, functionName) {
   throw new Error(`Could not extract ${functionName}.`);
 }
 
-test("dashboard release-note markdown escapes HTML before rendering", () => {
+function renderReleaseNotes(input) {
   const source = fs.readFileSync(path.join(appRootDir, "client", "dashboard.ts"), "utf8");
   const context = {
+    input,
     result: ""
   };
 
@@ -42,13 +43,35 @@ test("dashboard release-note markdown escapes HTML before rendering", () => {
   vm.runInContext(
     [
       extractFunction(source, "htmlEscape"),
+      extractFunction(source, "escapeReleaseNoteHtmlText"),
+      extractFunction(source, "stripUnsafeReleaseNoteBlocks"),
+      extractFunction(source, "sanitizeReleaseNotesHtml"),
+      extractFunction(source, "hasReleaseNoteHtml"),
       extractFunction(source, "formatMarkdown"),
-      "result = formatMarkdown('- safe & sound\\n- <img src=x onerror=alert(1)>');"
+      "result = formatMarkdown(input);"
     ].join("\n"),
     context
   );
 
-  assert.match(context.result, /<li>safe &amp; sound<\/li>/);
-  assert.match(context.result, /&lt;img src=x onerror=alert\(1\)&gt;/);
-  assert.doesNotMatch(context.result, /<img/);
+  return context.result;
+}
+
+test("dashboard release-note markdown escapes HTML before rendering", () => {
+  const result = renderReleaseNotes("- safe & sound\n- <img src=x onerror=alert(1)>");
+
+  assert.match(result, /<li>safe &amp; sound<\/li>/);
+  assert.match(result, /&lt;img src=x onerror=alert\(1\)&gt;/);
+  assert.doesNotMatch(result, /<img/);
+});
+
+test("dashboard release-note html renders allowed updater markup without unsafe tags", () => {
+  const result = renderReleaseNotes(
+    '<h2>2.10.0 </h2><ul><li>Added OBS fallback &amp; update notes.</li><li><img src=x onerror=alert(1)>Safe text</li></ul><script>alert("x")</script>'
+  );
+
+  assert.match(result, /<h2>2\.10\.0 <\/h2>/);
+  assert.match(result, /<ul><li>Added OBS fallback &amp; update notes\.<\/li><li>Safe text<\/li><\/ul>/);
+  assert.doesNotMatch(result, /&lt;h2/);
+  assert.doesNotMatch(result, /<img/);
+  assert.doesNotMatch(result, /onerror|script|alert/);
 });

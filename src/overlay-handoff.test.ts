@@ -85,7 +85,19 @@ function createOverlayTestContext() {
   const windowEventListeners = new Map();
   let requestAnimationFrameCalls = 0;
   const timeoutCalls = [];
+  const intervalCalls = [];
   let nextTimerId = 1;
+  let nowMs = Date.now();
+
+  class MockDate extends Date {
+    constructor(...args) {
+      super(...(args.length ? args : [nowMs]));
+    }
+
+    static now() {
+      return nowMs;
+    }
+  }
 
   function getElement(id) {
     if (!elements.has(id)) {
@@ -156,6 +168,7 @@ function createOverlayTestContext() {
     clearTimeout() {
     },
     setInterval() {
+      intervalCalls.push(Array.from(arguments));
       return nextTimerId++;
     },
     clearInterval() {
@@ -164,7 +177,7 @@ function createOverlayTestContext() {
 
   const context = {
     URL,
-    Date,
+    Date: MockDate,
     console,
     document,
     fetch() {
@@ -184,6 +197,7 @@ function createOverlayTestContext() {
   };
 
   window.fetch = context.fetch;
+  window.Date = MockDate;
 
   return {
     context,
@@ -198,6 +212,12 @@ function createOverlayTestContext() {
     },
     getTimeoutCalls() {
       return timeoutCalls;
+    },
+    getIntervalCalls() {
+      return intervalCalls;
+    },
+    advanceTime(ms) {
+      nowMs += ms;
     }
   };
 }
@@ -326,6 +346,53 @@ test("unchanged overlay state does not reschedule the title marquee", () => {
 
   vm.runInContext("updateState(__state);", context);
   assert.equal(getRequestAnimationFrameCalls(), initialRequestAnimationFrameCalls + 1);
+});
+
+test("external playback state displays track timing without loading the embedded youtube player", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getIntervalCalls, advanceTime } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+  vm.runInContext("loadYoutubeTrack = () => { throw new Error('embedded youtube loader should not run'); };", context);
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-external",
+      provider: "youtube",
+      title: "Externally Played",
+      url: "https://www.youtube.com/watch?v=external123",
+      origin: "queue",
+      durationSeconds: 120,
+      elapsedSeconds: 15,
+      playbackMode: "external",
+      playbackProvider: "obs_youtube_fallback",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Externally Played");
+  assert.equal(context.document.getElementById("current-meta").textContent, "Playing in OBS YouTube fallback");
+  assert.equal(context.document.getElementById("current-time").textContent, "0:15");
+  assert.equal(context.document.getElementById("duration-time").textContent, "2:00");
+  assert.equal(context.document.getElementById("progress-fill").style.width, "12.5%");
+
+  const timerCall = getIntervalCalls().find((call) => call[1] === 500);
+  assert.ok(timerCall, "expected an external playback progress timer");
+  advanceTime(30000);
+  timerCall[0]();
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:45");
+  assert.equal(context.document.getElementById("progress-fill").style.width, "37.5%");
 });
 
 test("finished soundcloud playback preserves the handoff path for the next youtube track", () => {

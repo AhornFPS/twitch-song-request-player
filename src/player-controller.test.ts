@@ -277,10 +277,20 @@ test("non-embeddable YouTube requests can start through external fallback playba
   });
 
   assert.equal(controller.getCurrentTrack()?.title, "No Embed");
+  assert.equal(controller.getCurrentTrack()?.playbackMode, "external");
+  assert.equal(controller.getCurrentTrack()?.playbackProvider, "obs_youtube_fallback");
   assert.equal(fallbackStarts.length, 1);
   assert.equal(fallbackStarts[0].details.reason, "metadata_embed_blocked");
   assert.deepEqual(playbackAnnouncements, ["No Embed"]);
   assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+  assert.equal(
+    emittedEvents.some(({ event, payload }) =>
+      event === "state" &&
+      payload.currentTrack?.id === controller.getCurrentTrack()?.id &&
+      payload.currentTrack?.playbackMode === "external"
+    ),
+    true
+  );
 
   await controller.handlePlayerEvent({
     trackId: controller.getCurrentTrack()?.id,
@@ -338,6 +348,7 @@ test("blocked embedded YouTube errors switch to external fallback playback inste
   });
 
   assert.equal(controller.getCurrentTrack()?.id, trackId);
+  assert.equal(controller.getCurrentTrack()?.playbackMode, "external");
   assert.equal(controller.getPublicState().history.length, 0);
   assert.equal(fallbackStarts.length, 1);
   assert.equal(fallbackStarts[0].details.reason, "youtube_150");
@@ -356,6 +367,14 @@ test("blocked embedded YouTube errors switch to external fallback playback inste
   });
 
   assert.equal(socketEvents.some(({ event }) => event === "state"), true);
+  assert.equal(
+    socketEvents.some(({ event, payload }) =>
+      event === "state" &&
+      payload.currentTrack?.id === trackId &&
+      payload.currentTrack?.playbackMode === "external"
+    ),
+    true
+  );
   assert.equal(socketEvents.some(({ event }) => event === "player:load"), false);
 });
 

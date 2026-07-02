@@ -338,6 +338,43 @@ function resetTimeline() {
   updateTimeline(0, 0);
 }
 
+function isExternalPlaybackTrack(track) {
+  return track?.playbackMode === "external" || track?.playbackProvider === "obs_youtube_fallback";
+}
+
+function startExternalPlaybackTimer(track) {
+  stopPlaybackTimer();
+
+  const startedAt = Date.now();
+  const startedElapsedSeconds = Number.isFinite(track?.elapsedSeconds)
+    ? Math.max(track.elapsedSeconds, 0)
+    : currentPositionSeconds;
+  const durationSeconds = Number.isFinite(track?.durationSeconds)
+    ? Math.max(track.durationSeconds, 0)
+    : currentDurationSeconds;
+
+  updateTimeline(startedElapsedSeconds, durationSeconds);
+
+  playbackTimer = window.setInterval(() => {
+    if (
+      !currentTrackId ||
+      currentTrackId !== track.id ||
+      activeTrack?.id !== track.id ||
+      !isExternalPlaybackTrack(activeTrack)
+    ) {
+      stopPlaybackTimer();
+      return;
+    }
+
+    let elapsedSeconds = startedElapsedSeconds + ((Date.now() - startedAt) / 1000);
+    if (durationSeconds > 0) {
+      elapsedSeconds = Math.min(elapsedSeconds, durationSeconds);
+    }
+
+    updateTimeline(elapsedSeconds, durationSeconds);
+  }, 500);
+}
+
 function stopPlaybackTimer() {
   if (!playbackTimer) {
     return;
@@ -1051,6 +1088,10 @@ function describeTrackMeta(track) {
       : "Connecting to the player service...";
   }
 
+  if (isExternalPlaybackTrack(track)) {
+    return "Playing in OBS YouTube fallback";
+  }
+
   if (track.origin === "radio") {
     return `Auto radio from ${getProviderLabel(track.provider)}`;
   }
@@ -1199,6 +1240,7 @@ function updateState(state) {
   desiredPausedState = Boolean(currentTrack?.isPaused);
   const stateSignature = JSON.stringify({
     currentTrackId: currentTrack?.id ?? null,
+    playbackMode: currentTrack?.playbackMode ?? "",
     queueLength: queue.length,
     isPaused: Boolean(currentTrack?.isPaused)
   });
@@ -1248,6 +1290,11 @@ function updateState(state) {
   }
 
   if (currentTrack) {
+    if (isExternalPlaybackTrack(currentTrack)) {
+      displayExternalPlaybackTrack(currentTrack);
+      return;
+    }
+
     loadTrack(currentTrack);
     syncPausedState();
   } else if (currentTrackId) {
@@ -1444,6 +1491,7 @@ function isActiveProviderTrack(track, provider) {
 
 function resetPlayers() {
   youtubeEndedTrackId = "";
+  pendingYoutubeTrack = null;
   stopPlaybackTimer();
   stopYouTubeAutoplayRetry();
   stopYouTubeStartupWatchdog();
@@ -1828,8 +1876,37 @@ function loadYoutubeTrack(track) {
   forceYoutubePlayback(videoId);
 }
 
+function displayExternalPlaybackTrack(track) {
+  if (!track) {
+    return;
+  }
+
+  if (track.id !== currentTrackId || !isExternalPlaybackTrack(activeTrack)) {
+    sendClientLog("info", "Displaying external playback track", {
+      id: track.id,
+      title: track.title,
+      playbackProvider: track.playbackProvider ?? ""
+    });
+    resetPlayers();
+    activeTrack = track;
+    currentTrackId = track.id;
+    lastReportedStatus = `external:${track.id}`;
+  } else {
+    activeTrack = {
+      ...activeTrack,
+      ...track
+    };
+  }
+
+  startExternalPlaybackTimer(activeTrack);
+}
+
 function syncPausedState() {
   if (!currentTrackId || !activeTrack) {
+    return;
+  }
+
+  if (isExternalPlaybackTrack(activeTrack)) {
     return;
   }
 
@@ -1979,10 +2056,28 @@ if (socket) {
       trackId: track?.id ?? null,
       title: track?.title ?? null
     });
+    if (isExternalPlaybackTrack(track)) {
+      displayExternalPlaybackTrack(track);
+      return;
+    }
+
     loadTrack(track);
   });
-  socket.on("player:stop", () => {
-    sendClientLog("info", "Received player:stop event");
+  socket.on("player:stop", (payload = {}) => {
+    sendClientLog("info", "Received player:stop event", {
+      reason: payload?.reason ?? "",
+      trackId: payload?.trackId ?? ""
+    });
+    if (payload?.reason === "obs_youtube_fallback") {
+      resetPlayers();
+      if (!payload?.trackId || payload.trackId === currentTrackId) {
+        activeTrack = null;
+        currentTrackId = null;
+        lastReportedStatus = "";
+      }
+      return;
+    }
+
     clearYouTubeStartupRecoveryAttempts(currentTrackId ?? "");
     rememberTrackForHandoff();
     activeTrack = null;

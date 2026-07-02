@@ -2995,9 +2995,71 @@ function openFieldValue(targetId) {
     window.open(url, "_blank", "noopener");
   }
 }
+function escapeReleaseNoteHtmlText(value) {
+  return String(value ?? "").replace(/&(?!(?:#\d+|#x[\da-f]+|[a-z][\da-z]+);)/gi, "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+}
+function stripUnsafeReleaseNoteBlocks(value) {
+  return String(value ?? "").replace(
+    /<\s*(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi,
+    ""
+  );
+}
+function sanitizeReleaseNotesHtml(value) {
+  const allowedTags = /* @__PURE__ */ new Set([
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "div",
+    "em",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "i",
+    "li",
+    "ol",
+    "p",
+    "pre",
+    "strong",
+    "ul"
+  ]);
+  const source = stripUnsafeReleaseNoteBlocks(value);
+  const tagPattern = /<\/?\s*([a-z][a-z0-9]*)\b[^>]*>/gi;
+  let result = "";
+  let cursor = 0;
+  for (const match of source.matchAll(tagPattern)) {
+    const matchIndex = match.index ?? 0;
+    const rawTag = match[0];
+    const tagName = match[1].toLowerCase();
+    result += escapeReleaseNoteHtmlText(source.slice(cursor, matchIndex));
+    if (allowedTags.has(tagName)) {
+      if (tagName === "br") {
+        result += "<br>";
+      } else if (/^<\s*\//.test(rawTag)) {
+        result += `</${tagName}>`;
+      } else {
+        result += `<${tagName}>`;
+      }
+    }
+    cursor = matchIndex + rawTag.length;
+  }
+  result += escapeReleaseNoteHtmlText(source.slice(cursor));
+  return result;
+}
+function hasReleaseNoteHtml(value) {
+  return /<\/?(?:a|blockquote|br|code|div|em|h[1-6]|i|li|ol|p|pre|strong|ul)\b/i.test(
+    String(value ?? "")
+  );
+}
 function formatMarkdown(text) {
   if (!text) {
     return "";
+  }
+  if (hasReleaseNoteHtml(text)) {
+    return sanitizeReleaseNotesHtml(text);
   }
   return htmlEscape(text).replace(/^# (.*$)/gm, "<h1>$1</h1>").replace(/^## (.*$)/gm, "<h2>$1</h2>").replace(/^### (.*$)/gm, "<h3>$1</h3>").replace(/^\* (.*$)/gm, "<li>$1</li>").replace(/^- (.*$)/gm, "<li>$1</li>").replace(/(<li>.*<\/li>)/gs, "<ul>$1</ul>").replace(/<\/ul>\s*<ul>/g, "");
 }

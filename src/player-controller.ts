@@ -210,7 +210,7 @@ export class PlayerController {
       return null;
     }
 
-    return {
+    const serializedTrack = {
       id: track.id,
       provider: track.provider,
       url: track.url,
@@ -230,6 +230,13 @@ export class PlayerController {
       isSaved: this.playlistRepository.hasTrack(track),
       isPaused: track.id === this.currentTrack?.id ? this.isPlaybackPaused : false
     };
+
+    if (track.id === this.currentTrack?.id && this.isExternalPlaybackActiveForTrack(track)) {
+      serializedTrack.playbackMode = "external";
+      serializedTrack.playbackProvider = "obs_youtube_fallback";
+    }
+
+    return serializedTrack;
   }
 
   getPublicState() {
@@ -1589,7 +1596,6 @@ export class PlayerController {
     }
 
     await this.persistRuntimeState();
-    this.broadcastState();
 
     if (
       await this.tryStartExternalPlayback({
@@ -1601,6 +1607,7 @@ export class PlayerController {
       return;
     }
 
+    this.broadcastState();
     this.io.emit("player:load", {
       track: this.serializeTrack(this.currentTrack)
     });

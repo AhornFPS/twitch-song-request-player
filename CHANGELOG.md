@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Kept the normal player display and progress timer active while YouTube tracks play through the OBS fallback.
+- Fixed update patch notes so HTML-formatted release notes render normally instead of showing raw tags.
+
 ## 2.10.0 - 2026-07-02
 
 - Added an optional OBS Browser Source fallback for YouTube videos that block embedded playback, including a dashboard login button for opening YouTube in the configured OBS source.
