@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.1 - 2026-07-02
+
 - Kept the normal player display and progress timer active while YouTube tracks play through the OBS fallback.
 - Fixed update patch notes so HTML-formatted release notes render normally instead of showing raw tags.
 
