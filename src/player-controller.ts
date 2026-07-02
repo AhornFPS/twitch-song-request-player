@@ -119,7 +119,8 @@ export class PlayerController {
     requestPolicy = {},
     radioModeEnabled = true,
     radioTrackCount = 3,
-    getRadioTracks = null
+    getRadioTracks = null,
+    externalPlayback = null
   }) {
     this.io = io;
     this.playlistRepository = playlistRepository;
@@ -151,6 +152,7 @@ export class PlayerController {
     this.getRadioTracks = typeof getRadioTracks === "function"
       ? getRadioTracks
       : null;
+    this.externalPlayback = externalPlayback;
   }
 
   clampElapsedSeconds(track, value) {
@@ -544,7 +546,7 @@ export class PlayerController {
     });
     socket.emit("state", this.getPublicState());
 
-    if (this.currentTrack) {
+    if (this.currentTrack && !this.isExternalPlaybackActiveForTrack(this.currentTrack)) {
       logInfo("Sending current track to newly connected browser source", {
         socketId: socket.id,
         track: formatTrack(this.currentTrack)
@@ -725,7 +727,11 @@ export class PlayerController {
   }
 
   assertRequestAllowed(track, { bypassRequestLimits = false } = {}) {
-    if (track?.provider === "youtube" && track.isEmbeddable === false) {
+    if (
+      track?.provider === "youtube" &&
+      track.isEmbeddable === false &&
+      !this.externalPlayback?.canPlayBlockedYouTube?.(track)
+    ) {
       throw createRequestPolicyError(
         "youtube_embed_blocked",
         "That YouTube video cannot be played in the embedded player."
@@ -1310,6 +1316,9 @@ export class PlayerController {
           reason: "category_suppressed",
           category: nextCategory || null
         });
+        await this.externalPlayback?.stopTrack?.(interruptedTrack, {
+          reason: "category_suppressed"
+        });
 
         this.isPlaybackPaused = false;
         this.currentTrack = null;
@@ -1344,6 +1353,16 @@ export class PlayerController {
 
     if (payload.status === "playing") {
       await this.confirmCurrentTrackPlayback(payload, { durationUpdated });
+      return;
+    }
+
+    if (
+      payload.status === "error" &&
+      await this.tryStartExternalPlayback({
+        reason: payload.reason || "player_error",
+        playerErrorPayload: payload
+      })
+    ) {
       return;
     }
 
@@ -1444,6 +1463,9 @@ export class PlayerController {
     this.pushHistoryEntry(finishedTrack, payload.status);
     await this.persistRuntimeState();
     this.broadcastState();
+    await this.externalPlayback?.stopTrack?.(finishedTrack, {
+      reason: payload.reason || payload.status
+    });
 
     if (
       payload.status === "ended" &&
@@ -1568,9 +1590,68 @@ export class PlayerController {
 
     await this.persistRuntimeState();
     this.broadcastState();
+
+    if (
+      await this.tryStartExternalPlayback({
+        reason: this.currentTrack?.isEmbeddable === false
+          ? "metadata_embed_blocked"
+          : "track_start"
+      })
+    ) {
+      return;
+    }
+
     this.io.emit("player:load", {
       track: this.serializeTrack(this.currentTrack)
     });
+  }
+
+  async tryStartExternalPlayback({ reason = "", playerErrorPayload = null } = {}) {
+    if (!this.currentTrack || !this.externalPlayback) {
+      return false;
+    }
+
+    const shouldHandle = playerErrorPayload
+      ? this.externalPlayback.shouldHandlePlayerError?.(this.currentTrack, playerErrorPayload)
+      : this.externalPlayback.shouldHandleTrack?.(this.currentTrack);
+
+    if (!shouldHandle) {
+      return false;
+    }
+
+    try {
+      this.io.emit("player:stop", {
+        reason: "obs_youtube_fallback",
+        trackId: this.currentTrack.id
+      });
+      await this.externalPlayback.startTrack(this.currentTrack, {
+        reason
+      });
+      await this.confirmCurrentTrackPlayback({
+        trackId: this.currentTrack.id,
+        status: "playing",
+        durationSeconds: this.currentTrack.durationSeconds
+      });
+      return true;
+    } catch (error) {
+      logWarn("Failed to start OBS YouTube fallback playback", {
+        track: formatTrack(this.currentTrack),
+        reason,
+        message: error?.message ?? String(error)
+      });
+      return false;
+    }
+  }
+
+  isExternalPlaybackActiveForTrack(track) {
+    if (!track || !this.externalPlayback) {
+      return false;
+    }
+
+    return Boolean(
+      this.externalPlayback.isPlayingTrack?.(track) ||
+      this.externalPlayback.shouldHandleTrack?.(track)
+    );
   }
 
   broadcastState() {
@@ -1676,6 +1757,9 @@ export class PlayerController {
       this.io.emit("player:stop", {
         reason: "manual_stop",
         triggeredBy
+      });
+      await this.externalPlayback?.stopTrack?.(stoppedTrack, {
+        reason: "manual_stop"
       });
       this.currentTrack = null;
       this.isPlaybackPaused = false;

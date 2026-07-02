@@ -261,6 +261,37 @@ function renderDashboard() {
                   <span class="field__hint">If YouTube or SoundCloud never actually starts, the embedded player reports an error after this many seconds. Set to 0 to disable the timeout.</span>
                 </label>
               </div>
+              <section class="overview-player-panel">
+                <div class="overview-player-panel__header">
+                  <div>
+                    <p class="panel__eyebrow">YouTube OBS fallback</p>
+                    <p id="youtube-fallback-status" class="overview-player-panel__copy">Use an OBS Browser Source for YouTube videos that block embedded playback.</p>
+                  </div>
+                  <button id="youtube-fallback-login" class="secondary-button" type="button">Open YouTube Login Page</button>
+                </div>
+                <p id="youtube-fallback-feedback" class="feedback" role="status" aria-live="polite"></p>
+                <label class="toggle-card" for="youtube-fallback-enabled-toggle">
+                  <span class="toggle-card__copy">
+                    <span class="toggle-card__title">Use OBS fallback for blocked YouTube videos</span>
+                    <span class="toggle-card__body">When YouTube blocks the embedded player, the app changes a configured OBS Browser Source to the normal YouTube page.</span>
+                  </span>
+                  <input id="youtube-fallback-enabled-toggle" type="checkbox" />
+                </label>
+                <div class="request-limit-grid">
+                  <label class="field">
+                    <span class="field__label">OBS WebSocket URL</span>
+                    <input id="obs-websocket-url" class="control-input" type="text" placeholder="ws://127.0.0.1:4455" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">OBS Browser Source name</span>
+                    <input id="obs-youtube-source-name" class="control-input" type="text" placeholder="YouTube Fallback" />
+                  </label>
+                  <label class="field">
+                    <span class="field__label">OBS WebSocket password</span>
+                    <input id="obs-websocket-password" class="control-input" type="password" autocomplete="new-password" />
+                  </label>
+                </div>
+              </section>
             </div>
           </section>
 
@@ -800,6 +831,19 @@ function setOverviewFeedback(message, tone = "") {
   }
 }
 
+function setYoutubeFallbackFeedback(message, tone = "") {
+  const feedback = el("youtube-fallback-feedback");
+  if (!feedback) {
+    return;
+  }
+
+  feedback.textContent = message;
+  feedback.className = "feedback";
+  if (tone) {
+    feedback.classList.add(`is-${tone}`);
+  }
+}
+
 function setQueueFeedback(message, tone = "") {
   const feedback = el("queue-feedback");
   if (!feedback) {
@@ -1248,6 +1292,43 @@ function applyRequestPolicyState() {
   applyRequestAutosaveState();
 }
 
+function applyYoutubeFallbackState() {
+  const settings = settingsPayload?.settings ?? {};
+  const enabledToggle = el("youtube-fallback-enabled-toggle");
+  const loginButton = el("youtube-fallback-login");
+  const status = el("youtube-fallback-status");
+  const isEnabled = settings.obsYoutubeFallbackEnabled === true;
+  const sourceName = settings.obsYoutubeFallbackSourceName || "";
+
+  if (enabledToggle instanceof HTMLInputElement) {
+    enabledToggle.checked = isEnabled;
+  }
+
+  setValue("obs-websocket-url", settings.obsWebSocketUrl || "ws://127.0.0.1:4455");
+  setValue("obs-youtube-source-name", sourceName);
+  setValue("obs-websocket-password", "");
+
+  if (el("obs-websocket-password") instanceof HTMLInputElement) {
+    el("obs-websocket-password").placeholder = settings.hasObsWebSocketPassword
+      ? "Saved password hidden"
+      : "";
+  }
+
+  if (loginButton instanceof HTMLButtonElement) {
+    loginButton.disabled = !isEnabled || isSavingSettings;
+  }
+
+  if (status) {
+    if (!isEnabled) {
+      status.textContent = "Use an OBS Browser Source for YouTube videos that block embedded playback.";
+    } else if (!sourceName) {
+      status.textContent = "Enter the OBS Browser Source name, save, then open YouTube to log in.";
+    } else {
+      status.textContent = `Fallback source: ${sourceName}`;
+    }
+  }
+}
+
 function renderChatCommandRows(chatCommands) {
   const tableBody = el("chat-commands-body");
   if (!tableBody) {
@@ -1334,6 +1415,11 @@ function collectSettingsPayload() {
       el("overlay-scale-slider")?.value || lastSavedOverlayScalePercent
     ),
     playerStartupTimeoutSeconds: Number.parseInt(el("playback-startup-timeout-seconds")?.value || "15", 10) || 0,
+    obsYoutubeFallbackEnabled: el("youtube-fallback-enabled-toggle") instanceof HTMLInputElement
+      ? el("youtube-fallback-enabled-toggle").checked
+      : false,
+    obsWebSocketUrl: el("obs-websocket-url")?.value.trim() || "ws://127.0.0.1:4455",
+    obsYoutubeFallbackSourceName: el("obs-youtube-source-name")?.value.trim() || "",
     radioModeEnabled: el("radio-mode-enabled-toggle") instanceof HTMLInputElement
       ? el("radio-mode-enabled-toggle").checked
       : true,
@@ -1347,6 +1433,7 @@ function collectSettingsPayload() {
   };
   const twitchOauthToken = el("twitchOauthToken")?.value.trim() || "";
   const twitchClientSecret = el("twitchClientSecret")?.value.trim() || "";
+  const obsWebSocketPassword = el("obs-websocket-password")?.value.trim() || "";
 
   if (twitchOauthToken) {
     payload.twitchOauthToken = twitchOauthToken;
@@ -1354,6 +1441,10 @@ function collectSettingsPayload() {
 
   if (twitchClientSecret) {
     payload.twitchClientSecret = twitchClientSecret;
+  }
+
+  if (obsWebSocketPassword) {
+    payload.obsWebSocketPassword = obsWebSocketPassword;
   }
 
   return payload;
@@ -1456,6 +1547,7 @@ function applySettingsPayload() {
     radioTrackCountInput.disabled = !radioModeEnabled;
   }
   applyRequestPolicyState();
+  applyYoutubeFallbackState();
   applyRuntimeState();
   applyGuiPlayerState();
   isHydratingForm = false;
@@ -2566,6 +2658,7 @@ async function saveSettings(event) {
     if (el("overlay-scale-slider")) {
       el("overlay-scale-slider").disabled = false;
     }
+    applyYoutubeFallbackState();
     applyRequestAutosaveState();
     if (hasPendingRequestPolicyAutosave && getRequestPolicyAutosaveEnabled()) {
       hasPendingRequestPolicyAutosave = false;
@@ -2797,6 +2890,48 @@ async function saveGuiPlayerEnabled(nextValue) {
     isGuiPlayerSaving = false;
     applyPlaybackState();
     applyGuiPlayerState();
+  }
+}
+
+async function openYoutubeFallbackLogin() {
+  if (!settingsPayload || isSavingSettings) {
+    return;
+  }
+
+  const loginButton = el("youtube-fallback-login");
+  if (loginButton instanceof HTMLButtonElement) {
+    loginButton.disabled = true;
+  }
+
+  setYoutubeFallbackFeedback("Saving OBS fallback settings...");
+
+  try {
+    settingsPayload = await persistSettings(collectSettingsPayload());
+    availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
+    lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
+    lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
+      settingsPayload.settings.overlayScalePercent
+    );
+    chatSuppressedCategories = Array.isArray(settingsPayload.settings.chatSuppressedCategories)
+      ? [...settingsPayload.settings.chatSuppressedCategories]
+      : [];
+    playbackSuppressedCategories = Array.isArray(settingsPayload.settings.playbackSuppressedCategories)
+      ? [...settingsPayload.settings.playbackSuppressedCategories]
+      : [];
+    guiPlayerVolume = Number.isFinite(settingsPayload.settings.guiPlayerVolume)
+      ? settingsPayload.settings.guiPlayerVolume
+      : guiPlayerVolume;
+    applySettingsPayload();
+
+    setYoutubeFallbackFeedback("Opening YouTube in the OBS Browser Source...");
+    await fetchJson("/api/youtube-fallback/login", {
+      method: "POST"
+    });
+    setYoutubeFallbackFeedback("YouTube opened in OBS. Use Interact on that Browser Source to log in.", "success");
+  } catch (error) {
+    setYoutubeFallbackFeedback(error?.message || "Could not open YouTube in OBS.", "error");
+  } finally {
+    applyYoutubeFallbackState();
   }
 }
 
@@ -3654,6 +3789,8 @@ root.addEventListener("click", (event) => {
     void searchOverviewTracks();
   } else if (event.target.id === "playback-restart-stopped") {
     void restartStoppedTrack();
+  } else if (event.target.id === "youtube-fallback-login") {
+    void openYoutubeFallbackLogin();
   } else if (event.target.id === "overview-gui-player-toggle") {
     void saveGuiPlayerEnabled(!(settingsPayload?.settings?.guiPlayerEnabled === true));
   } else if (event.target.id === "requests-autosave-button") {
@@ -3694,6 +3831,19 @@ root.addEventListener("change", async (event) => {
     const radioTrackCountInput = el("radio-track-count");
     if (radioTrackCountInput instanceof HTMLInputElement) {
       radioTrackCountInput.disabled = !target.checked;
+    }
+  }
+
+  if (target.id === "youtube-fallback-enabled-toggle" && target instanceof HTMLInputElement) {
+    const status = el("youtube-fallback-status");
+    const loginButton = el("youtube-fallback-login");
+    if (loginButton instanceof HTMLButtonElement) {
+      loginButton.disabled = !target.checked || isSavingSettings;
+    }
+    if (status) {
+      status.textContent = target.checked
+        ? "Fallback settings changed. Save or open YouTube to apply them."
+        : "OBS fallback is off.";
     }
   }
 

@@ -12,6 +12,7 @@ import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
+import { ObsYoutubeFallback } from "./obs-youtube-fallback.js";
 import { findYouTubeRadioTracks, resolveSongRequest, searchSongRequestCandidates } from "./providers.js";
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
@@ -210,13 +211,15 @@ function toClientSettings(settings) {
     twitchRefreshToken,
     twitchOauthToken,
     twitchClientSecret,
+    obsWebSocketPassword,
     ...clientSettings
   } = settings;
 
   return {
     ...clientSettings,
     hasTwitchOauthToken: Boolean(twitchOauthToken),
-    hasTwitchClientSecret: Boolean(twitchClientSecret)
+    hasTwitchClientSecret: Boolean(twitchClientSecret),
+    hasObsWebSocketPassword: Boolean(obsWebSocketPassword)
   };
 }
 
@@ -411,7 +414,19 @@ export async function startAppServer({
   const runtimeStateStore = new RuntimeStateStore(runtimeConfig.runtimeStatePath);
   const requestAuditStore = new RequestAuditStore(runtimeConfig.requestAuditPath);
 
-  const playerController = new PlayerController({
+  let playerController;
+  const obsYoutubeFallback = new ObsYoutubeFallback({
+    getSettings: () => currentSettings,
+    onTrackEnded: async ({ trackId, reason }) => {
+      await playerController?.handlePlayerEvent({
+        trackId,
+        status: "ended",
+        reason
+      });
+    }
+  });
+
+  playerController = new PlayerController({
     io,
     playlistRepository,
     runtimeStateStore,
@@ -426,7 +441,8 @@ export async function startAppServer({
         excludeTrackKeys,
         excludeTracks,
         isTrackAllowed: async (track) => !playlistRepository.hasTrack(track)
-      })
+      }),
+    externalPlayback: obsYoutubeFallback
   });
   await playerController.restoreRuntimeState();
   const twitchBotService = new TwitchBotService({
@@ -1225,6 +1241,23 @@ export async function startAppServer({
     }
   });
 
+  app.post("/api/youtube-fallback/login", async (_request, response) => {
+    try {
+      const status = await obsYoutubeFallback.openLoginPage();
+      response.json({
+        status
+      });
+    } catch (error) {
+      logError("Failed to open YouTube login page in OBS fallback source", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: error?.message ?? "Could not open the YouTube login page in OBS."
+      });
+    }
+  });
+
   app.post("/api/player-event", async (request, response) => {
     try {
       logInfo("HTTP player event received", request.body);
@@ -1407,6 +1440,7 @@ export async function startAppServer({
       return playerController.skipToNextTrack(triggeredBy);
     },
     async close() {
+      obsYoutubeFallback.shutdown();
       await twitchBotService.disconnect();
       io.disconnectSockets(true);
       io.close();

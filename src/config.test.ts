@@ -72,6 +72,10 @@ test("saved GUI player state is preserved across reloads", async (t) => {
       guiPlayerVolume: 42,
       overlayScalePercent: 135,
       playerStartupTimeoutSeconds: 9,
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "obs-secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback",
       requestPolicyAutosaveEnabled: true
     }, null, 2)}\n`,
     "utf8"
@@ -85,6 +89,10 @@ test("saved GUI player state is preserved across reloads", async (t) => {
   assert.equal(settings.guiPlayerVolume, 42);
   assert.equal(settings.overlayScalePercent, 135);
   assert.equal(settings.playerStartupTimeoutSeconds, 9);
+  assert.equal(settings.obsYoutubeFallbackEnabled, true);
+  assert.equal(settings.obsWebSocketUrl, "127.0.0.1:4455");
+  assert.equal(settings.obsWebSocketPassword, "obs-secret");
+  assert.equal(settings.obsYoutubeFallbackSourceName, "YouTube Fallback");
   assert.equal(settings.requestPolicyAutosaveEnabled, true);
 });
 

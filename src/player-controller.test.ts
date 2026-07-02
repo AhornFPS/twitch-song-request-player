@@ -10,7 +10,8 @@ function createController({
   radioModeEnabled = true,
   radioTrackCount = 3,
   playlistRepositoryOverrides = {},
-  getRadioTracks = null
+  getRadioTracks = null,
+  externalPlayback = null
 } = {}) {
   const emittedEvents = [];
   const io = {
@@ -49,7 +50,8 @@ function createController({
       requestPolicy,
       radioModeEnabled,
       radioTrackCount,
-      getRadioTracks
+      getRadioTracks,
+      externalPlayback
     }),
     emittedEvents
   };
@@ -233,6 +235,128 @@ test("non-embeddable YouTube requests are rejected before queueing", async () =>
 
   assert.equal(controller.getCurrentTrack(), null);
   assert.equal(controller.getPublicState().queue.length, 0);
+});
+
+test("non-embeddable YouTube requests can start through external fallback playback", async () => {
+  const fallbackStarts = [];
+  const fallbackStops = [];
+  const playbackAnnouncements = [];
+  const { controller, emittedEvents } = createController({
+    externalPlayback: {
+      canPlayBlockedYouTube(track) {
+        return track?.provider === "youtube";
+      },
+      shouldHandleTrack(track) {
+        return track?.provider === "youtube" && track.isEmbeddable === false;
+      },
+      async startTrack(track, details) {
+        fallbackStarts.push({ track, details });
+        return true;
+      },
+      async stopTrack(track, details) {
+        fallbackStops.push({ track, details });
+      }
+    }
+  });
+  controller.onTrackPlayback((track) => {
+    playbackAnnouncements.push(track.title);
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/no-embed",
+    title: "No Embed",
+    key: "youtube:no-embed",
+    artworkUrl: "",
+    durationSeconds: 120,
+    isEmbeddable: false,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  assert.equal(controller.getCurrentTrack()?.title, "No Embed");
+  assert.equal(fallbackStarts.length, 1);
+  assert.equal(fallbackStarts[0].details.reason, "metadata_embed_blocked");
+  assert.deepEqual(playbackAnnouncements, ["No Embed"]);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+
+  await controller.handlePlayerEvent({
+    trackId: controller.getCurrentTrack()?.id,
+    status: "ended",
+    reason: "obs_youtube_fallback_timer"
+  });
+
+  assert.equal(fallbackStops.length, 1);
+  assert.equal(controller.getCurrentTrack(), null);
+});
+
+test("blocked embedded YouTube errors switch to external fallback playback instead of finishing", async () => {
+  const fallbackStarts = [];
+  const { controller } = createController({
+    externalPlayback: {
+      canPlayBlockedYouTube() {
+        return false;
+      },
+      shouldHandleTrack() {
+        return false;
+      },
+      shouldHandlePlayerError(track, payload) {
+        return track?.provider === "youtube" && payload?.reason === "youtube_150";
+      },
+      async startTrack(track, details) {
+        fallbackStarts.push({ track, details });
+        return true;
+      },
+      isPlayingTrack(track) {
+        return fallbackStarts.some((entry) => entry.track.id === track?.id);
+      },
+      async stopTrack() {
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/runtime-blocked",
+    title: "Runtime Blocked",
+    key: "youtube:runtime-blocked",
+    artworkUrl: "",
+    durationSeconds: 90,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  const trackId = controller.getCurrentTrack()?.id;
+  await controller.handlePlayerEvent({
+    trackId,
+    status: "error",
+    reason: "youtube_150"
+  });
+
+  assert.equal(controller.getCurrentTrack()?.id, trackId);
+  assert.equal(controller.getPublicState().history.length, 0);
+  assert.equal(fallbackStarts.length, 1);
+  assert.equal(fallbackStarts[0].details.reason, "youtube_150");
+
+  const socketEvents = [];
+  controller.handleSocketConnection({
+    id: "socket-1",
+    emit(event, payload) {
+      socketEvents.push({
+        event,
+        payload
+      });
+    },
+    on() {
+    }
+  });
+
+  assert.equal(socketEvents.some(({ event }) => event === "state"), true);
+  assert.equal(socketEvents.some(({ event }) => event === "player:load"), false);
 });
 
 test("pause toggle updates controller state and emits a player pause event", async () => {

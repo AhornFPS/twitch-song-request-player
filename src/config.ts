@@ -312,6 +312,15 @@ function normalizeSettings(raw) {
       100
     ),
     playerStartupTimeoutSeconds: normalizeLimit(raw.playerStartupTimeoutSeconds, 15),
+    obsYoutubeFallbackEnabled: normalizeBoolean(
+      raw.obsYoutubeFallbackEnabled ?? raw.OBS_YOUTUBE_FALLBACK_ENABLED,
+      false
+    ),
+    obsWebSocketUrl: trimValue(raw.obsWebSocketUrl ?? raw.OBS_WEBSOCKET_URL) || "ws://127.0.0.1:4455",
+    obsWebSocketPassword: trimValue(raw.obsWebSocketPassword ?? raw.OBS_WEBSOCKET_PASSWORD),
+    obsYoutubeFallbackSourceName: trimValue(
+      raw.obsYoutubeFallbackSourceName ?? raw.OBS_YOUTUBE_FALLBACK_SOURCE_NAME
+    ),
     radioModeEnabled: normalizeBoolean(raw.radioModeEnabled, true),
     radioTrackCount: normalizeRadioTrackCount(raw.radioTrackCount, 3),
     requestPolicyAutosaveEnabled: normalizeBoolean(raw.requestPolicyAutosaveEnabled, false),
@@ -409,6 +418,28 @@ function normalizeOverrideSettings(raw) {
     overrides.playerStartupTimeoutSeconds = normalizeLimit(raw.playerStartupTimeoutSeconds, 15);
   }
 
+  if (Object.prototype.hasOwnProperty.call(raw, "obsYoutubeFallbackEnabled") ||
+    Object.prototype.hasOwnProperty.call(raw, "OBS_YOUTUBE_FALLBACK_ENABLED")) {
+    overrides.obsYoutubeFallbackEnabled = normalizeBoolean(
+      raw.obsYoutubeFallbackEnabled ?? raw.OBS_YOUTUBE_FALLBACK_ENABLED,
+      false
+    );
+  }
+
+  if (hasOwnSetting(raw, ["obsWebSocketUrl", "OBS_WEBSOCKET_URL"])) {
+    overrides.obsWebSocketUrl = trimValue(raw.obsWebSocketUrl ?? raw.OBS_WEBSOCKET_URL);
+  }
+
+  if (hasOwnSetting(raw, ["obsWebSocketPassword", "OBS_WEBSOCKET_PASSWORD"])) {
+    overrides.obsWebSocketPassword = trimValue(raw.obsWebSocketPassword ?? raw.OBS_WEBSOCKET_PASSWORD);
+  }
+
+  if (hasOwnSetting(raw, ["obsYoutubeFallbackSourceName", "OBS_YOUTUBE_FALLBACK_SOURCE_NAME"])) {
+    overrides.obsYoutubeFallbackSourceName = trimValue(
+      raw.obsYoutubeFallbackSourceName ?? raw.OBS_YOUTUBE_FALLBACK_SOURCE_NAME
+    );
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, "requestPolicyAutosaveEnabled")) {
     overrides.requestPolicyAutosaveEnabled = normalizeBoolean(raw.requestPolicyAutosaveEnabled, false);
   }
@@ -473,6 +504,20 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.playerStartupTimeoutSeconds === "number"
         ? normalizeLimit(overridingSettings.playerStartupTimeoutSeconds, baseSettings.playerStartupTimeoutSeconds ?? 15)
         : (baseSettings.playerStartupTimeoutSeconds ?? 15),
+    obsYoutubeFallbackEnabled:
+      typeof overridingSettings.obsYoutubeFallbackEnabled === "boolean"
+        ? overridingSettings.obsYoutubeFallbackEnabled
+        : (baseSettings.obsYoutubeFallbackEnabled ?? false),
+    obsWebSocketUrl:
+      overridingSettings.obsWebSocketUrl ||
+      baseSettings.obsWebSocketUrl ||
+      "ws://127.0.0.1:4455",
+    obsWebSocketPassword:
+      overridingSettings.obsWebSocketPassword || baseSettings.obsWebSocketPassword || "",
+    obsYoutubeFallbackSourceName:
+      overridingSettings.obsYoutubeFallbackSourceName ||
+      baseSettings.obsYoutubeFallbackSourceName ||
+      "",
     radioModeEnabled:
       typeof overridingSettings.radioModeEnabled === "boolean"
         ? overridingSettings.radioModeEnabled
@@ -526,6 +571,10 @@ function normalizeBundledSettings(raw) {
     guiPlayerVolume: 100,
     overlayScalePercent: 100,
     playerStartupTimeoutSeconds: 15,
+    obsYoutubeFallbackEnabled: false,
+    obsWebSocketUrl: "ws://127.0.0.1:4455",
+    obsWebSocketPassword: "",
+    obsYoutubeFallbackSourceName: "",
     radioModeEnabled: true,
     radioTrackCount: 3,
     requestPolicyAutosaveEnabled: false,

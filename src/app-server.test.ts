@@ -22,6 +22,10 @@ const isolatedEnvKeys = [
   "CHAT_SUPPRESSED_CATEGORIES",
   "PLAYBACK_SUPPRESSED_CATEGORIES",
   "YOUTUBE_API_KEY",
+  "OBS_YOUTUBE_FALLBACK_ENABLED",
+  "OBS_WEBSOCKET_URL",
+  "OBS_WEBSOCKET_PASSWORD",
+  "OBS_YOUTUBE_FALLBACK_SOURCE_NAME",
   "PORT",
   "THEME",
   "DASHBOARD_LAYOUT"
@@ -277,6 +281,7 @@ test("settings API stays loopback-local and does not expose stored secrets", asy
       twitchOauthToken: "oauth:stored-token",
       twitchRefreshToken: "stored-refresh",
       twitchClientSecret: "stored-client-secret",
+      obsWebSocketPassword: "stored-obs-password",
       theme: "aurora"
     }, null, 2)}\n`,
     "utf8"
@@ -316,8 +321,10 @@ test("settings API stays loopback-local and does not expose stored secrets", asy
   assert.equal(settingsPayload.settings.twitchOauthToken, undefined);
   assert.equal(settingsPayload.settings.twitchRefreshToken, undefined);
   assert.equal(settingsPayload.settings.twitchClientSecret, undefined);
+  assert.equal(settingsPayload.settings.obsWebSocketPassword, undefined);
   assert.equal(settingsPayload.settings.hasTwitchOauthToken, true);
   assert.equal(settingsPayload.settings.hasTwitchClientSecret, true);
+  assert.equal(settingsPayload.settings.hasObsWebSocketPassword, true);
 
   const saveResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
     method: "PUT",
@@ -335,6 +342,7 @@ test("settings API stays loopback-local and does not expose stored secrets", asy
   assert.equal(persistedSettings.twitchOauthToken, "oauth:stored-token");
   assert.equal(persistedSettings.twitchRefreshToken, "stored-refresh");
   assert.equal(persistedSettings.twitchClientSecret, "stored-client-secret");
+  assert.equal(persistedSettings.obsWebSocketPassword, "stored-obs-password");
 });
 
 test("manual updater checks return an error when the desktop updater is unavailable", async (t) => {
@@ -1416,6 +1424,10 @@ test("settings API persists request policy and configurable chat commands", asyn
     body: JSON.stringify({
       startWithWindows: true,
       playerStartupTimeoutSeconds: 8,
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "ws://127.0.0.1:4455",
+      obsWebSocketPassword: "obs-pass",
+      obsYoutubeFallbackSourceName: "YouTube Fallback",
       radioModeEnabled: false,
       radioTrackCount: 5,
       requestPolicyAutosaveEnabled: true,
@@ -1520,6 +1532,11 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(payload.desktopIntegration.supported, true);
   assert.equal(payload.desktopIntegration.enabled, true);
   assert.equal(payload.settings.playerStartupTimeoutSeconds, 8);
+  assert.equal(payload.settings.obsYoutubeFallbackEnabled, true);
+  assert.equal(payload.settings.obsWebSocketUrl, "ws://127.0.0.1:4455");
+  assert.equal(payload.settings.obsWebSocketPassword, undefined);
+  assert.equal(payload.settings.hasObsWebSocketPassword, true);
+  assert.equal(payload.settings.obsYoutubeFallbackSourceName, "YouTube Fallback");
   assert.equal(payload.settings.radioModeEnabled, false);
   assert.equal(payload.settings.radioTrackCount, 5);
   assert.equal(payload.settings.requestPolicyAutosaveEnabled, true);
@@ -1550,6 +1567,10 @@ test("settings API persists request policy and configurable chat commands", asyn
   );
   assert.equal(persistedSettings.startWithWindows, true);
   assert.equal(persistedSettings.playerStartupTimeoutSeconds, 8);
+  assert.equal(persistedSettings.obsYoutubeFallbackEnabled, true);
+  assert.equal(persistedSettings.obsWebSocketUrl, "ws://127.0.0.1:4455");
+  assert.equal(persistedSettings.obsWebSocketPassword, "obs-pass");
+  assert.equal(persistedSettings.obsYoutubeFallbackSourceName, "YouTube Fallback");
   assert.equal(persistedSettings.radioModeEnabled, false);
   assert.equal(persistedSettings.radioTrackCount, 5);
   assert.equal(persistedSettings.requestPolicyAutosaveEnabled, true);
