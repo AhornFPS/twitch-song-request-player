@@ -378,6 +378,47 @@ test("blocked embedded YouTube errors switch to external fallback playback inste
   assert.equal(socketEvents.some(({ event }) => event === "player:load"), false);
 });
 
+test("embedded playback clears stale external fallback source before loading the player", async () => {
+  const clearCalls = [];
+  const { controller, emittedEvents } = createController({
+    externalPlayback: {
+      canPlayBlockedYouTube() {
+        return false;
+      },
+      shouldHandleTrack() {
+        return false;
+      },
+      async clearSource(details) {
+        clearCalls.push(details);
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/normal-track",
+    title: "Normal Track",
+    key: "youtube:normal-track",
+    artworkUrl: "",
+    durationSeconds: 180,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  assert.equal(clearCalls.length, 1);
+  assert.equal(clearCalls[0].reason, "embedded_playback_start");
+  assert.equal(clearCalls[0].track.title, "Normal Track");
+  assert.equal(
+    emittedEvents.some(({ event, payload }) =>
+      event === "player:load" &&
+      payload.track?.title === "Normal Track"
+    ),
+    true
+  );
+});
+
 test("pause toggle updates controller state and emits a player pause event", async () => {
   const { controller, emittedEvents } = createController();
 

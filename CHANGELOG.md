@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Cleared the OBS YouTube fallback source before normal embedded playback starts, preventing stale fallback audio after an app restart.
+
 ## 2.10.1 - 2026-07-02
 
 - Kept the normal player display and progress timer active while YouTube tracks play through the OBS fallback.

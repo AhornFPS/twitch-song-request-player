@@ -100,3 +100,26 @@ test("OBS YouTube fallback opens login page and starts blocked tracks on the con
     }
   ]);
 });
+
+test("OBS YouTube fallback can clear a stale source without an active in-memory track", async () => {
+  const calls = [];
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback"
+    }),
+    createClient: () => createFakeObsClient(calls)
+  });
+
+  assert.equal(fallback.isPlayingTrack({ id: "missing-after-restart" }), false);
+  const cleared = await fallback.clearSource({
+    reason: "embedded_playback_start"
+  });
+
+  assert.equal(cleared, true);
+  const clearCall = calls.find((call) => call.type === "call");
+  assert.equal(clearCall.requestPayload.inputName, "YouTube Fallback");
+  assert.equal(clearCall.requestPayload.inputSettings.url, "about:blank");
+});

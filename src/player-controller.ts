@@ -1607,6 +1607,9 @@ export class PlayerController {
       return;
     }
 
+    await this.clearExternalPlaybackSource({
+      reason: "embedded_playback_start"
+    });
     this.broadcastState();
     this.io.emit("player:load", {
       track: this.serializeTrack(this.currentTrack)
@@ -1647,6 +1650,25 @@ export class PlayerController {
         message: error?.message ?? String(error)
       });
       return false;
+    }
+  }
+
+  async clearExternalPlaybackSource({ reason = "" } = {}) {
+    if (!this.externalPlayback?.clearSource) {
+      return;
+    }
+
+    try {
+      await this.externalPlayback.clearSource({
+        reason,
+        track: this.currentTrack
+      });
+    } catch (error) {
+      logWarn("Failed to clear external playback source", {
+        track: formatTrack(this.currentTrack),
+        reason,
+        message: error?.message ?? String(error)
+      });
     }
   }
 

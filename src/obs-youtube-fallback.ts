@@ -244,17 +244,38 @@ export class ObsYoutubeFallback {
     this.clearFinishTimer();
     this.activeTrackId = "";
 
-    if (!clearSource || !this.isConfigured()) {
+    if (!clearSource) {
       return;
+    }
+
+    await this.clearSource({
+      reason: "track_stop",
+      track
+    });
+  }
+
+  async clearSource({ reason = "", track = null } = {}) {
+    this.clearFinishTimer();
+    this.activeTrackId = "";
+
+    if (!this.isConfigured()) {
+      return false;
     }
 
     try {
       await this.setSourceUrl(blankUrl);
+      logInfo("Cleared OBS YouTube fallback source", {
+        track: formatTrack(track),
+        reason
+      });
+      return true;
     } catch (error) {
       logWarn("Failed to clear OBS YouTube fallback source", {
         track: formatTrack(track),
+        reason,
         message: error?.message ?? String(error)
       });
+      return false;
     }
   }
 
