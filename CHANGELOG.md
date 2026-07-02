@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added Twitch chat explanations when requested songs are skipped by embedded-player playback errors.
+- Blocked YouTube requests that metadata reports as unavailable for embedded playback before they enter the queue.
+
 ## 2.9.8 - 2026-06-28
 
 - Restricted the local dashboard service to loopback access and stopped settings responses from exposing stored Twitch secrets.

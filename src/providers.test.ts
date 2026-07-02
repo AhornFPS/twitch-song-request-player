@@ -56,6 +56,9 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
               },
               contentDetails: {
                 duration: "PT4M2S"
+              },
+              status: {
+                embeddable: true
               }
             }
           ]
@@ -72,7 +75,7 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
 
   assert.equal(requestedUrl?.origin, "https://www.googleapis.com");
   assert.equal(requestedUrl?.pathname, "/youtube/v3/videos");
-  assert.equal(requestedUrl?.searchParams.get("part"), "snippet,contentDetails,liveStreamingDetails");
+  assert.equal(requestedUrl?.searchParams.get("part"), "snippet,contentDetails,liveStreamingDetails,status");
   assert.equal(requestedUrl?.searchParams.get("id"), "dQw4w9WgXcQ");
   assert.equal(requestedUrl?.searchParams.get("key"), "api-key");
   assert.equal(track.provider, "youtube");
@@ -83,6 +86,7 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
   assert.equal(track.durationSeconds, 242);
   assert.equal(track.sourceChannelId, "UCrefresh");
   assert.equal(track.sourceName, "Refresh Channel");
+  assert.equal(track.isEmbeddable, true);
   assert.equal(track.isLive, false);
 });
 

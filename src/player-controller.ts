@@ -146,6 +146,7 @@ export class PlayerController {
     this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
     this.trackPlaybackListeners = new Set();
+    this.trackFinishListeners = new Set();
     this.requestTimestampsByUser = new Map();
     this.getRadioTracks = typeof getRadioTracks === "function"
       ? getRadioTracks
@@ -724,6 +725,13 @@ export class PlayerController {
   }
 
   assertRequestAllowed(track, { bypassRequestLimits = false } = {}) {
+    if (track?.provider === "youtube" && track.isEmbeddable === false) {
+      throw createRequestPolicyError(
+        "youtube_embed_blocked",
+        "That YouTube video cannot be played in the embedded player."
+      );
+    }
+
     if (bypassRequestLimits) {
       return;
     }
@@ -1012,6 +1020,14 @@ export class PlayerController {
 
     return () => {
       this.trackPlaybackListeners.delete(listener);
+    };
+  }
+
+  onTrackFinish(listener) {
+    this.trackFinishListeners.add(listener);
+
+    return () => {
+      this.trackFinishListeners.delete(listener);
     };
   }
 
@@ -1442,6 +1458,22 @@ export class PlayerController {
         message: payload.message || "",
         source: "player"
       });
+    }
+
+    for (const listener of this.trackFinishListeners) {
+      try {
+        await listener({
+          track: finishedTrack,
+          status: payload.status,
+          reason: payload.reason || "",
+          message: payload.message || "",
+          triggeredBy: payload.triggeredBy || ""
+        });
+      } catch (error) {
+        logWarn("Track finish listener failed", {
+          message: error?.message ?? String(error)
+        });
+      }
     }
 
     if (finishedTrack.origin === "queue" && this.queue.length === 0) {

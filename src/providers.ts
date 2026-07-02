@@ -1155,6 +1155,7 @@ function buildYouTubeTrackFromVideoApiItem(item, { url = "" } = {}) {
   const snippet = item.snippet ?? {};
   const thumbnails = snippet.thumbnails ?? {};
   const contentDetails = item.contentDetails ?? {};
+  const status = item.status ?? {};
   const liveBroadcastContent = typeof snippet.liveBroadcastContent === "string"
     ? snippet.liveBroadcastContent.trim().toLowerCase()
     : "none";
@@ -1179,6 +1180,7 @@ function buildYouTubeTrackFromVideoApiItem(item, { url = "" } = {}) {
     sourceUrl: typeof snippet.channelId === "string" && snippet.channelId.trim()
       ? `https://www.youtube.com/channel/${snippet.channelId.trim()}`
       : "",
+    isEmbeddable: status.embeddable !== false,
     isLive: liveBroadcastContent === "live" || liveBroadcastContent === "upcoming"
   };
 }
@@ -1200,7 +1202,7 @@ async function fetchYouTubeVideoMetadataItems(videoIds, youtubeApiKey) {
 
   for (const videoIdChunk of chunkItems(normalizedVideoIds, 50)) {
     const apiUrl = new URL("https://www.googleapis.com/youtube/v3/videos");
-    apiUrl.searchParams.set("part", "snippet,contentDetails,liveStreamingDetails");
+    apiUrl.searchParams.set("part", "snippet,contentDetails,liveStreamingDetails,status");
     apiUrl.searchParams.set("id", videoIdChunk.join(","));
     apiUrl.searchParams.set("key", youtubeApiKey);
 

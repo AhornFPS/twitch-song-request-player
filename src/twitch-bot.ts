@@ -218,6 +218,69 @@ function getSoundCloudSourceCandidates(track) {
   return candidates;
 }
 
+function formatPlaybackFailureReason({ reason = "", message = "" } = {}) {
+  const normalizedReason = typeof reason === "string" ? reason.trim().toLowerCase() : "";
+  const normalizedMessage = typeof message === "string" ? message.trim() : "";
+
+  if (normalizedMessage) {
+    return normalizedMessage;
+  }
+
+  if (normalizedReason === "youtube_startup_timeout") {
+    return "the YouTube player never started it.";
+  }
+
+  if (normalizedReason === "youtube_2") {
+    return "YouTube rejected the video ID.";
+  }
+
+  if (normalizedReason === "youtube_5") {
+    return "YouTube reported an HTML5 playback error.";
+  }
+
+  if (normalizedReason === "youtube_100") {
+    return "YouTube says the video is missing, private, or unavailable.";
+  }
+
+  if (normalizedReason === "youtube_101" || normalizedReason === "youtube_150") {
+    return "the video owner blocks embedded playback.";
+  }
+
+  if (normalizedReason === "soundcloud_load_timeout") {
+    return "the SoundCloud player never finished loading it.";
+  }
+
+  if (normalizedReason === "soundcloud_widget_error") {
+    return "SoundCloud reported a player error.";
+  }
+
+  if (normalizedReason === "invalid_youtube_url") {
+    return "the YouTube link did not contain a playable video ID.";
+  }
+
+  if (normalizedReason === "suno_audio_unavailable") {
+    return "Suno did not provide a playable audio file.";
+  }
+
+  if (normalizedReason === "suno_missing_audio_url") {
+    return "Suno did not return an audio URL.";
+  }
+
+  if (normalizedReason === "suno_audio_error") {
+    return "the Suno audio player reported an error.";
+  }
+
+  if (normalizedReason === "unsupported_provider") {
+    return "that provider is not supported by the embedded player.";
+  }
+
+  if (normalizedReason) {
+    return `${normalizedReason.replaceAll("_", " ")}.`;
+  }
+
+  return "the embedded player reported an error.";
+}
+
 export class TwitchBot {
   constructor({
     config,
@@ -269,6 +332,9 @@ export class TwitchBot {
     this.removeTrackPlaybackListener = this.playerController.onTrackPlayback(async () => {
       await this.announceNowPlaying(this.playerController.getCurrentTrack());
     });
+    this.removeTrackFinishListener = this.playerController.onTrackFinish?.(async (event) => {
+      await this.announcePlaybackFailure(event);
+    }) ?? null;
   }
 
   updateConfig(nextConfig) {
@@ -347,6 +413,8 @@ export class TwitchBot {
     this.client.removeAllListeners?.("message");
     this.removeTrackPlaybackListener?.();
     this.removeTrackPlaybackListener = null;
+    this.removeTrackFinishListener?.();
+    this.removeTrackFinishListener = null;
 
     if (!this.isConnected) {
       return;
@@ -896,6 +964,28 @@ export class TwitchBot {
     });
 
     await this.reply(`#${this.config.twitch.channel}`, this.formatCurrentSongMessage(track));
+  }
+
+  async announcePlaybackFailure({ track, status, reason = "", message = "" } = {}) {
+    if (!track || track.origin !== "queue" || status !== "error") {
+      return;
+    }
+
+    const requester = track.requestedBy?.displayName || track.requestedBy?.username;
+    const requesterText = requester ? ` (requested by ${requester})` : "";
+    const failureReason = formatPlaybackFailureReason({ reason, message });
+
+    logWarn("Announcing skipped song playback failure in chat", {
+      title: track.title,
+      reason,
+      message,
+      requester: requester || null
+    });
+
+    await this.reply(
+      `#${this.config.twitch.channel}`,
+      `Skipped ${track.title}${requesterText}: ${failureReason}`
+    );
   }
 
   formatCurrentSongMessage(track) {

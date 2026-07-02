@@ -37,6 +37,7 @@ function createBotHarness({
   updateSettings = async () => ({ requestPolicy })
 }) {
   let playbackListener = null;
+  let finishListener = null;
   const sentMessages = [];
   const requestAuditEvents = [];
   const playerController = {
@@ -44,6 +45,12 @@ function createBotHarness({
       playbackListener = listener;
       return () => {
         playbackListener = null;
+      };
+    },
+    onTrackFinish(listener) {
+      finishListener = listener;
+      return () => {
+        finishListener = null;
       };
     },
     async addRequest(track, options) {
@@ -141,6 +148,9 @@ function createBotHarness({
     requestAuditEvents,
     async emitPlayback() {
       await playbackListener?.(currentTrack);
+    },
+    async emitTrackFinish(event) {
+      await finishListener?.(event);
     }
   };
 }
@@ -268,6 +278,34 @@ test("automatic playback announcement uses the currentsong format for playlist t
     }),
     "Current song: Queued Track https://soundcloud.com/example/track, requested by ViewerOne"
   );
+});
+
+test("playback errors for requested tracks explain skipped songs in Twitch chat", async () => {
+  const harness = createBotHarness({});
+
+  await harness.emitTrackFinish({
+    status: "error",
+    reason: "youtube_150",
+    track: {
+      id: "track-1",
+      provider: "youtube",
+      url: "https://music.youtube.com/watch?v=blocked",
+      title: "Blocked Embed",
+      key: "youtube:blocked",
+      origin: "queue",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }
+  });
+
+  assert.deepEqual(harness.sentMessages, [
+    {
+      channel: "#testchannel",
+      message: "Skipped Blocked Embed (requested by ViewerOne): the video owner blocks embedded playback."
+    }
+  ]);
 });
 
 test("duplicate song requests send the queue warning to Twitch chat", async () => {

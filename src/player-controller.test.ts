@@ -144,6 +144,7 @@ test("duplicate requests are ignored when the same track is already queued", asy
 
 test("playback events update saved-track health hooks", async () => {
   const healthEvents = [];
+  const finishEvents = [];
   const { controller } = createController({
     playlistRepositoryOverrides: {
       hasTrack() {
@@ -163,6 +164,9 @@ test("playback events update saved-track health hooks", async () => {
         });
       }
     }
+  });
+  controller.onTrackFinish((event) => {
+    finishEvents.push(event);
   });
 
   await controller.addRequest({
@@ -199,6 +203,36 @@ test("playback events update saved-track health hooks", async () => {
       reason: "youtube_startup_timeout"
     }
   ]);
+  assert.equal(finishEvents.length, 1);
+  assert.equal(finishEvents[0].status, "error");
+  assert.equal(finishEvents[0].reason, "youtube_startup_timeout");
+  assert.equal(finishEvents[0].track.title, "Health Check");
+});
+
+test("non-embeddable YouTube requests are rejected before queueing", async () => {
+  const { controller } = createController();
+
+  await assert.rejects(
+    controller.addRequest({
+      provider: "youtube",
+      url: "https://youtu.be/no-embed",
+      title: "No Embed",
+      key: "youtube:no-embed",
+      artworkUrl: "",
+      isEmbeddable: false,
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      }
+    }, {
+      requestSource: "twitch_chat",
+      requestInput: "!sr no embed"
+    }),
+    /cannot be played in the embedded player/
+  );
+
+  assert.equal(controller.getCurrentTrack(), null);
+  assert.equal(controller.getPublicState().queue.length, 0);
 });
 
 test("pause toggle updates controller state and emits a player pause event", async () => {
