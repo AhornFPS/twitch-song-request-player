@@ -51,6 +51,11 @@ let playbackTimer = null;
 let activeTrack = null;
 let currentDurationSeconds = 0;
 let currentPositionSeconds = 0;
+let serverTimelineTrackId = "";
+let serverTimelineElapsedSeconds = null;
+let serverTimelineDurationSeconds = null;
+let serverTimelineSyncedAt = 0;
+let serverTimelineIsRunning = false;
 let soundCloudDurationProbeTimer = null;
 let soundCloudAutoplayRetryTimer = null;
 let soundCloudLoadTimeoutTimer = null;
@@ -318,11 +323,67 @@ function setPlayerVolume(nextVolume) {
   applyPlayerVolume();
 }
 
-function updateTimeline(currentTimeSeconds, durationSeconds) {
-  const current = Number.isFinite(currentTimeSeconds) ? Math.max(0, currentTimeSeconds) : currentPositionSeconds;
+function clearServerTimelineState() {
+  serverTimelineTrackId = "";
+  serverTimelineElapsedSeconds = null;
+  serverTimelineDurationSeconds = null;
+  serverTimelineSyncedAt = 0;
+  serverTimelineIsRunning = false;
+}
+
+function getServerTimelineElapsedSeconds(trackId = currentTrackId) {
+  if (
+    !trackId ||
+    serverTimelineTrackId !== trackId ||
+    !Number.isFinite(serverTimelineElapsedSeconds)
+  ) {
+    return null;
+  }
+
+  let elapsedSeconds = serverTimelineElapsedSeconds;
+  if (serverTimelineIsRunning && serverTimelineSyncedAt > 0) {
+    elapsedSeconds += (Date.now() - serverTimelineSyncedAt) / 1000;
+  }
+
+  if (Number.isFinite(serverTimelineDurationSeconds) && serverTimelineDurationSeconds > 0) {
+    elapsedSeconds = Math.min(elapsedSeconds, serverTimelineDurationSeconds);
+  }
+
+  return Math.max(elapsedSeconds, 0);
+}
+
+function syncServerTimelineFromTrackState(track) {
+  if (!track?.id) {
+    clearServerTimelineState();
+    return;
+  }
+
+  serverTimelineTrackId = track.id;
+  serverTimelineElapsedSeconds = Number.isFinite(track.elapsedSeconds)
+    ? Math.max(track.elapsedSeconds, 0)
+    : null;
+  serverTimelineDurationSeconds = Number.isFinite(track.durationSeconds)
+    ? Math.max(track.durationSeconds, 0)
+    : null;
+  serverTimelineSyncedAt = Date.now();
+  serverTimelineIsRunning = track.isPaused !== true;
+}
+
+function updateTimeline(currentTimeSeconds, durationSeconds, { allowPositionRegression = true } = {}) {
+  let current = Number.isFinite(currentTimeSeconds) ? Math.max(0, currentTimeSeconds) : currentPositionSeconds;
+  const serverElapsedSeconds = getServerTimelineElapsedSeconds();
+  if (Number.isFinite(serverElapsedSeconds)) {
+    current = Math.max(current, serverElapsedSeconds);
+  }
+  if (!allowPositionRegression) {
+    current = Math.max(currentPositionSeconds, current);
+  }
+
   const duration = Number.isFinite(durationSeconds) && durationSeconds > 0
     ? Math.max(0, durationSeconds)
-    : currentDurationSeconds;
+    : Number.isFinite(serverTimelineDurationSeconds) && serverTimelineDurationSeconds > 0
+      ? serverTimelineDurationSeconds
+      : currentDurationSeconds;
   const progress = duration > 0 ? Math.min(100, (current / duration) * 100) : 0;
 
   currentPositionSeconds = current;
@@ -333,6 +394,7 @@ function updateTimeline(currentTimeSeconds, durationSeconds) {
 }
 
 function resetTimeline() {
+  clearServerTimelineState();
   currentPositionSeconds = 0;
   currentDurationSeconds = 0;
   updateTimeline(0, 0);
@@ -346,6 +408,8 @@ function syncTimelineFromTrackState(track, { resetMissingTiming = false } = {}) 
   if (!track?.id) {
     return;
   }
+
+  syncServerTimelineFromTrackState(track);
 
   const trackElapsedSeconds = Number.isFinite(track.elapsedSeconds)
     ? Math.max(track.elapsedSeconds, 0)
@@ -764,7 +828,9 @@ function startYouTubePlaybackTimer() {
     }
 
     const currentTimeSeconds = youtubePlayer.getCurrentTime();
-    updateTimeline(currentTimeSeconds, youtubePlayer.getDuration());
+    updateTimeline(currentTimeSeconds, youtubePlayer.getDuration(), {
+      allowPositionRegression: false
+    });
 
     if (currentTrackId && currentTimeSeconds > 0.5) {
       clearYouTubeStartupRecoveryAttempts(currentTrackId);
@@ -828,7 +894,9 @@ function createYouTubePlayer() {
         if (event.data === window.YT.PlayerState.PLAYING) {
           stopYouTubeAutoplayRetry();
           startYouTubePlaybackTimer();
-          updateTimeline(youtubePlayer.getCurrentTime(), youtubePlayer.getDuration());
+          updateTimeline(youtubePlayer.getCurrentTime(), youtubePlayer.getDuration(), {
+            allowPositionRegression: false
+          });
           emitStatus("playing");
         }
 
@@ -837,7 +905,9 @@ function createYouTubePlayer() {
           event.data === window.YT.PlayerState.BUFFERING
         ) {
           stopPlaybackTimer();
-          updateTimeline(youtubePlayer.getCurrentTime(), youtubePlayer.getDuration());
+          updateTimeline(youtubePlayer.getCurrentTime(), youtubePlayer.getDuration(), {
+            allowPositionRegression: false
+          });
         }
 
         if (

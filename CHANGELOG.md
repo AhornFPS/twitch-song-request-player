@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed OBS overlay progress so stale zero-time YouTube player ticks no longer overwrite fallback playlist timing.
+
 ## 2.10.7 - 2026-07-04
 
 - Fixed OBS overlay timing for fallback playlist tracks when the browser source misses the socket timing update.

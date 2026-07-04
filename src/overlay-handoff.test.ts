@@ -479,6 +479,7 @@ test("socket-connected overlay keeps polling state so fallback playlist timing c
   const source = fs.readFileSync(appPath, "utf8");
   const {
     context,
+    advanceTime,
     dispatchSocketEvent,
     getActiveIntervalCalls,
     queueFetchStateResponse
@@ -531,6 +532,28 @@ test("socket-connected overlay keeps polling state so fallback playlist timing c
   assert.equal(context.document.getElementById("current-time").textContent, "4:10");
   assert.equal(context.document.getElementById("duration-time").textContent, "6:33");
   assert.equal(context.document.getElementById("progress-fill").style.width, `${(250 / 393) * 100}%`);
+
+  vm.runInContext(`
+    youtubePlayer = {
+      getCurrentTime() { return 0; },
+      getDuration() { return 393; }
+    };
+    activeTrack = {
+      id: "yt-short-fallback",
+      provider: "youtube"
+    };
+    currentTrackId = "yt-short-fallback";
+    startYouTubePlaybackTimer();
+  `, context);
+
+  const staleYoutubeTimerCall = getActiveIntervalCalls().filter((call) => call[1] === 500).at(-1);
+  assert.ok(staleYoutubeTimerCall, "expected a YouTube playback timer");
+
+  advanceTime(1000);
+  staleYoutubeTimerCall[0]();
+
+  assert.equal(context.document.getElementById("current-time").textContent, "4:11");
+  assert.notEqual(context.document.getElementById("progress-fill").style.width, "0%");
 });
 
 test("external fallback-to-fallback handoffs reset stale completed timing", () => {
