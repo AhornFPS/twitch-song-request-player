@@ -1634,9 +1634,10 @@ export class PlayerController {
         reason: "obs_youtube_fallback",
         trackId: this.currentTrack.id
       });
-      await this.externalPlayback.startTrack(this.currentTrack, {
+      const externalPlaybackResult = await this.externalPlayback.startTrack(this.currentTrack, {
         reason
       });
+      this.updateCurrentTrackDurationSeconds(externalPlaybackResult?.durationSeconds);
       await this.confirmCurrentTrackPlayback({
         trackId: this.currentTrack.id,
         status: "playing",

@@ -302,6 +302,46 @@ test("non-embeddable YouTube requests can start through external fallback playba
   assert.equal(controller.getCurrentTrack(), null);
 });
 
+test("external fallback playback can hydrate missing track duration", async () => {
+  const { controller } = createController({
+    externalPlayback: {
+      canPlayBlockedYouTube(track) {
+        return track?.provider === "youtube";
+      },
+      shouldHandleTrack(track) {
+        return track?.provider === "youtube" && track.isEmbeddable === false;
+      },
+      async startTrack() {
+        return {
+          durationSeconds: 185
+        };
+      },
+      isPlayingTrack(track) {
+        return track?.provider === "youtube";
+      },
+      async stopTrack() {
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/f0I09y6JDUQ",
+    title: "Influence",
+    key: "youtube:f0I09y6JDUQ",
+    artworkUrl: "",
+    isEmbeddable: false,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  assert.equal(controller.getCurrentTrack()?.durationSeconds, 185);
+  assert.equal(controller.getPublicState().currentTrack?.durationSeconds, 185);
+  assert.equal(controller.getPublicState().currentTrack?.playbackMode, "external");
+});
+
 test("blocked embedded YouTube errors switch to external fallback playback instead of finishing", async () => {
   const fallbackStarts = [];
   const { controller } = createController({

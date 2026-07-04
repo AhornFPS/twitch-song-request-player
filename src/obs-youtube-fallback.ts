@@ -98,11 +98,15 @@ export class ObsYoutubeFallback {
     getSettings,
     onTrackEnded = async () => {},
     createClient = () => new OBSWebSocket(),
+    resolveTrackMetadata = null,
     playbackBufferSeconds = 4
   } = {}) {
     this.getSettings = typeof getSettings === "function" ? getSettings : () => ({});
     this.onTrackEnded = onTrackEnded;
     this.createClient = createClient;
+    this.resolveTrackMetadata = typeof resolveTrackMetadata === "function"
+      ? resolveTrackMetadata
+      : null;
     this.playbackBufferSeconds = playbackBufferSeconds;
     this.activeTrackId = "";
     this.finishTimer = null;
@@ -217,7 +221,35 @@ export class ObsYoutubeFallback {
     }, (durationSeconds + this.playbackBufferSeconds) * 1000);
   }
 
+  async refreshMissingTrackDuration(track) {
+    if (normalizeTrackDurationSeconds(track) !== null || !this.resolveTrackMetadata) {
+      return null;
+    }
+
+    try {
+      const refreshedTrack = await this.resolveTrackMetadata(track);
+      const durationSeconds = normalizeTrackDurationSeconds(refreshedTrack);
+      if (durationSeconds === null) {
+        return null;
+      }
+
+      track.durationSeconds = durationSeconds;
+      logInfo("Refreshed OBS YouTube fallback track duration", {
+        track: formatTrack(track),
+        durationSeconds
+      });
+      return durationSeconds;
+    } catch (error) {
+      logWarn("Failed to refresh OBS YouTube fallback track duration", {
+        track: formatTrack(track),
+        message: error?.message ?? String(error)
+      });
+      return null;
+    }
+  }
+
   async startTrack(track, { reason = "" } = {}) {
+    await this.refreshMissingTrackDuration(track);
     const playbackUrl = buildPlaybackUrl(track);
     await this.setSourceUrl(playbackUrl);
     this.activeTrackId = track.id;
@@ -229,7 +261,9 @@ export class ObsYoutubeFallback {
       url: playbackUrl
     });
 
-    return true;
+    return {
+      durationSeconds: normalizeTrackDurationSeconds(track)
+    };
   }
 
   async stopTrack(track, { clearSource = true } = {}) {

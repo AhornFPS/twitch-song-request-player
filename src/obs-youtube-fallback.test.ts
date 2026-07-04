@@ -101,6 +101,60 @@ test("OBS YouTube fallback opens login page and starts blocked tracks on the con
   ]);
 });
 
+test("OBS YouTube fallback refreshes a missing duration before playback", async () => {
+  const calls = [];
+  const endedEvents = [];
+  const refreshedTracks = [];
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback"
+    }),
+    createClient: () => createFakeObsClient(calls),
+    resolveTrackMetadata: async (track) => {
+      refreshedTracks.push(track);
+      return {
+        durationSeconds: 1
+      };
+    },
+    playbackBufferSeconds: 0,
+    onTrackEnded: async (event) => {
+      endedEvents.push(event);
+    }
+  });
+  const track = {
+    id: "track-without-duration",
+    provider: "youtube",
+    url: "https://youtu.be/f0I09y6JDUQ",
+    title: "Influence",
+    key: "youtube:f0I09y6JDUQ"
+  };
+
+  const startResult = await fallback.startTrack(track, {
+    reason: "youtube_150"
+  });
+
+  assert.equal(refreshedTracks.length, 1);
+  assert.equal(refreshedTracks[0], track);
+  assert.equal(track.durationSeconds, 1);
+  assert.deepEqual(startResult, {
+    durationSeconds: 1
+  });
+
+  const playbackCall = calls.findLast((call) => call.type === "call");
+  assert.equal(playbackCall.requestPayload.inputSettings.url, "https://www.youtube.com/watch?v=f0I09y6JDUQ&autoplay=1");
+
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+  assert.deepEqual(endedEvents, [
+    {
+      trackId: "track-without-duration",
+      reason: "obs_youtube_fallback_timer"
+    }
+  ]);
+});
+
 test("OBS YouTube fallback can clear a stale source without an active in-memory track", async () => {
   const calls = [];
   const fallback = new ObsYoutubeFallback({

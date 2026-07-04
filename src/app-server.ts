@@ -13,7 +13,7 @@ import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { ObsYoutubeFallback } from "./obs-youtube-fallback.js";
-import { findYouTubeRadioTracks, resolveSongRequest, searchSongRequestCandidates } from "./providers.js";
+import { findYouTubeRadioTracks, resolveSongRequest, resolveYouTubeTrackFromApi, searchSongRequestCandidates } from "./providers.js";
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
@@ -417,6 +417,25 @@ export async function startAppServer({
   let playerController;
   const obsYoutubeFallback = new ObsYoutubeFallback({
     getSettings: () => currentSettings,
+    resolveTrackMetadata: async (track) => {
+      const youtubeApiKey = typeof currentSettings.youtubeApiKey === "string"
+        ? currentSettings.youtubeApiKey.trim()
+        : "";
+      if (!youtubeApiKey || track?.provider !== "youtube") {
+        return null;
+      }
+
+      const trackUrl = typeof track?.url === "string" ? track.url.trim() : "";
+      const videoIdFromKey = typeof track?.key === "string" && track.key.startsWith("youtube:")
+        ? track.key.slice("youtube:".length).trim()
+        : "";
+      const metadataUrl = trackUrl || (videoIdFromKey ? `https://www.youtube.com/watch?v=${encodeURIComponent(videoIdFromKey)}` : "");
+      if (!metadataUrl) {
+        return null;
+      }
+
+      return resolveYouTubeTrackFromApi(metadataUrl, youtubeApiKey);
+    },
     onTrackEnded: async ({ trackId, reason }) => {
       await playerController?.handlePlayerEvent({
         trackId,
