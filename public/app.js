@@ -283,6 +283,19 @@ function resetTimeline() {
 function isExternalPlaybackTrack(track) {
   return track?.playbackMode === "external" || track?.playbackProvider === "obs_youtube_fallback";
 }
+function syncTimelineFromTrackState(track, { resetMissingTiming = false } = {}) {
+  if (!track?.id) {
+    return;
+  }
+  const trackElapsedSeconds = Number.isFinite(track.elapsedSeconds) ? Math.max(track.elapsedSeconds, 0) : null;
+  const trackDurationSeconds = Number.isFinite(track.durationSeconds) ? Math.max(track.durationSeconds, 0) : null;
+  if (trackElapsedSeconds === null && trackDurationSeconds === null) {
+    return;
+  }
+  const nextElapsedSeconds = trackElapsedSeconds === null ? currentPositionSeconds : resetMissingTiming ? trackElapsedSeconds : Math.max(currentPositionSeconds, trackElapsedSeconds);
+  const nextDurationSeconds = trackDurationSeconds ?? currentDurationSeconds;
+  updateTimeline(nextElapsedSeconds, nextDurationSeconds);
+}
 function getExternalPlaybackStartSeconds(track, { resetMissingTiming = false } = {}) {
   const trackElapsedSeconds = Number.isFinite(track?.elapsedSeconds) ? Math.max(track.elapsedSeconds, 0) : null;
   if (resetMissingTiming) {
@@ -1044,7 +1057,11 @@ function updateState(state) {
       displayExternalPlaybackTrack(currentTrack);
       return;
     }
+    const wasSameActiveTrack = currentTrack.id === currentTrackId;
     loadTrack(currentTrack);
+    syncTimelineFromTrackState(currentTrack, {
+      resetMissingTiming: !wasSameActiveTrack
+    });
     syncPausedState();
   } else if (currentTrackId) {
     clearYouTubeStartupRecoveryAttempts(currentTrackId);

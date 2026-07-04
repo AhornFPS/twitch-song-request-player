@@ -395,6 +395,46 @@ test("external playback state displays track timing without loading the embedded
   assert.equal(context.document.getElementById("progress-fill").style.width, "37.5%");
 });
 
+test("embedded playback uses server timing when local player timing stalls", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-embedded-stalled",
+      provider: "youtube",
+      title: "Embedded Timing Fallback",
+      url: "https://www.youtube.com/watch?v=embedded-stalled",
+      origin: "playlist",
+      durationSeconds: 246,
+      elapsedSeconds: 42
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:42");
+  assert.equal(context.document.getElementById("duration-time").textContent, "4:06");
+  assert.notEqual(context.document.getElementById("progress-fill").style.width, "0%");
+
+  context.__state.currentTrack.elapsedSeconds = 10;
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:42");
+
+  context.__state.currentTrack.elapsedSeconds = 60;
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-time").textContent, "1:00");
+});
+
 test("external fallback-to-fallback handoffs reset stale completed timing", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
