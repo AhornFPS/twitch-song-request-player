@@ -395,6 +395,62 @@ test("external playback state displays track timing without loading the embedded
   assert.equal(context.document.getElementById("progress-fill").style.width, "37.5%");
 });
 
+test("external fallback-to-fallback handoffs reset stale completed timing", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getTimeoutCalls } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+  vm.runInContext("loadYoutubeTrack = () => { throw new Error('embedded youtube loader should not run'); };", context);
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-external-ended",
+      provider: "youtube",
+      title: "Externally Played To The End",
+      url: "https://www.youtube.com/watch?v=external-ended",
+      origin: "playlist",
+      durationSeconds: 251,
+      elapsedSeconds: 251,
+      playbackMode: "external",
+      playbackProvider: "obs_youtube_fallback"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+  assert.equal(context.document.getElementById("current-time").textContent, "4:11");
+  assert.equal(context.document.getElementById("duration-time").textContent, "4:11");
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-external-next",
+      provider: "youtube",
+      title: "Next External Fallback",
+      url: "https://www.youtube.com/watch?v=external-next",
+      origin: "playlist",
+      durationSeconds: 180,
+      playbackMode: "external",
+      playbackProvider: "obs_youtube_fallback"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  const transitionCall = getTimeoutCalls().filter((call) => call[1] === 340).at(-1);
+  assert.ok(transitionCall, "expected a track transition timer");
+  transitionCall[0]();
+
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Next External Fallback");
+  assert.equal(context.document.getElementById("current-time").textContent, "0:00");
+  assert.equal(context.document.getElementById("duration-time").textContent, "3:00");
+  assert.equal(context.document.getElementById("progress-fill").style.width, "0%");
+});
+
 test("finished soundcloud playback preserves the handoff path for the next youtube track", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");

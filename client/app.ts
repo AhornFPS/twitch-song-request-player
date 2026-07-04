@@ -342,16 +342,16 @@ function isExternalPlaybackTrack(track) {
   return track?.playbackMode === "external" || track?.playbackProvider === "obs_youtube_fallback";
 }
 
-function startExternalPlaybackTimer(track) {
+function startExternalPlaybackTimer(track, { resetMissingTiming = false } = {}) {
   stopPlaybackTimer();
 
   const startedAt = Date.now();
   const startedElapsedSeconds = Number.isFinite(track?.elapsedSeconds)
     ? Math.max(track.elapsedSeconds, 0)
-    : currentPositionSeconds;
+    : (resetMissingTiming ? 0 : currentPositionSeconds);
   const durationSeconds = Number.isFinite(track?.durationSeconds)
     ? Math.max(track.durationSeconds, 0)
-    : currentDurationSeconds;
+    : (resetMissingTiming ? 0 : currentDurationSeconds);
 
   updateTimeline(startedElapsedSeconds, durationSeconds);
 
@@ -1881,13 +1881,16 @@ function displayExternalPlaybackTrack(track) {
     return;
   }
 
-  if (track.id !== currentTrackId || !isExternalPlaybackTrack(activeTrack)) {
+  const isNewExternalTrack = track.id !== currentTrackId || !isExternalPlaybackTrack(activeTrack);
+
+  if (isNewExternalTrack) {
     sendClientLog("info", "Displaying external playback track", {
       id: track.id,
       title: track.title,
       playbackProvider: track.playbackProvider ?? ""
     });
     resetPlayers();
+    resetTimeline();
     activeTrack = track;
     currentTrackId = track.id;
     lastReportedStatus = `external:${track.id}`;
@@ -1898,7 +1901,7 @@ function displayExternalPlaybackTrack(track) {
     };
   }
 
-  startExternalPlaybackTimer(activeTrack);
+  startExternalPlaybackTimer(activeTrack, { resetMissingTiming: isNewExternalTrack });
 }
 
 function syncPausedState() {
