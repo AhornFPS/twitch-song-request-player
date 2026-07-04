@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.3 - 2026-07-04
+
 - Fixed OBS YouTube fallback tracks without saved duration so they refresh duration from YouTube metadata before playback.
 
 ## 2.10.2 - 2026-07-02
