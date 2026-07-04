@@ -1408,15 +1408,6 @@ function startStatePolling() {
   }, 3000);
 }
 
-function stopStatePolling() {
-  if (!statePollTimer) {
-    return;
-  }
-
-  window.clearInterval(statePollTimer);
-  statePollTimer = null;
-}
-
 async function fetchState() {
   const response = await fetch("/api/state", {
     cache: "no-store"
@@ -1460,7 +1451,6 @@ function handleSocketDisconnect() {
 function handleSocketConnect() {
   socketConnected = true;
   sendClientLog("info", "Socket connected");
-  stopStatePolling();
   void fetchState().then(() => {
     // Report initial size after the first state render
     requestAnimationFrame(() => reportOverlaySize());

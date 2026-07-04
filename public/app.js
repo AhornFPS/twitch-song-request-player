@@ -1113,13 +1113,6 @@ function startStatePolling() {
     void fetchState();
   }, 3e3);
 }
-function stopStatePolling() {
-  if (!statePollTimer) {
-    return;
-  }
-  window.clearInterval(statePollTimer);
-  statePollTimer = null;
-}
 async function fetchState() {
   const response = await fetch("/api/state", {
     cache: "no-store"
@@ -1156,7 +1149,6 @@ function handleSocketDisconnect() {
 function handleSocketConnect() {
   socketConnected = true;
   sendClientLog("info", "Socket connected");
-  stopStatePolling();
   void fetchState().then(() => {
     requestAnimationFrame(() => reportOverlaySize());
   }).catch(() => {

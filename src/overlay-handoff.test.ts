@@ -78,11 +78,14 @@ function createElement(id = "") {
   return element;
 }
 
-function createOverlayTestContext() {
+function createOverlayTestContext({ withSocket = false } = {}) {
   const elements = new Map();
   const sessionStorageData = new Map();
   const locationReplaceCalls = [];
   const windowEventListeners = new Map();
+  const socketEventListeners = new Map();
+  const fetchStateResponses = [];
+  const clearedIntervalIds = new Set();
   let requestAnimationFrameCalls = 0;
   const timeoutCalls = [];
   const intervalCalls = [];
@@ -168,12 +171,29 @@ function createOverlayTestContext() {
     clearTimeout() {
     },
     setInterval() {
-      intervalCalls.push(Array.from(arguments));
-      return nextTimerId++;
+      const timerId = nextTimerId++;
+      const call = Array.from(arguments);
+      call.timerId = timerId;
+      intervalCalls.push(call);
+      return timerId;
     },
-    clearInterval() {
+    clearInterval(timerId) {
+      clearedIntervalIds.add(timerId);
     }
   };
+
+  if (withSocket) {
+    window.io = () => ({
+      on(type, listener) {
+        if (!socketEventListeners.has(type)) {
+          socketEventListeners.set(type, []);
+        }
+        socketEventListeners.get(type).push(listener);
+      },
+      emit() {
+      }
+    });
+  }
 
   const context = {
     URL,
@@ -181,9 +201,12 @@ function createOverlayTestContext() {
     console,
     document,
     fetch() {
+      const payload = fetchStateResponses.length > 0
+        ? fetchStateResponses.shift()
+        : {};
       return Promise.resolve({
         ok: true,
-        json: async () => ({})
+        json: async () => payload
       });
     },
     navigator: window.navigator,
@@ -207,6 +230,13 @@ function createOverlayTestContext() {
       const listeners = windowEventListeners.get(type) ?? [];
       listeners.forEach((listener) => listener(payload));
     },
+    dispatchSocketEvent(type, payload) {
+      const listeners = socketEventListeners.get(type) ?? [];
+      listeners.forEach((listener) => listener(payload));
+    },
+    queueFetchStateResponse(payload) {
+      fetchStateResponses.push(payload);
+    },
     getRequestAnimationFrameCalls() {
       return requestAnimationFrameCalls;
     },
@@ -216,10 +246,19 @@ function createOverlayTestContext() {
     getIntervalCalls() {
       return intervalCalls;
     },
+    getActiveIntervalCalls() {
+      return intervalCalls.filter((call) => !clearedIntervalIds.has(call.timerId));
+    },
     advanceTime(ms) {
       nowMs += ms;
     }
   };
+}
+
+async function flushMicrotasks() {
+  for (let index = 0; index < 10; index += 1) {
+    await Promise.resolve();
+  }
 }
 
 test("title marquee retries measurement when the overlay width is not ready yet", () => {
@@ -433,6 +472,65 @@ test("embedded playback uses server timing when local player timing stalls", () 
   vm.runInContext("updateState(__state);", context);
 
   assert.equal(context.document.getElementById("current-time").textContent, "1:00");
+});
+
+test("socket-connected overlay keeps polling state so fallback playlist timing can recover", async () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const {
+    context,
+    dispatchSocketEvent,
+    getActiveIntervalCalls,
+    queueFetchStateResponse
+  } = createOverlayTestContext({ withSocket: true });
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+  await flushMicrotasks();
+
+  dispatchSocketEvent("connect");
+  await flushMicrotasks();
+
+  dispatchSocketEvent("state", {
+    currentTrack: {
+      id: "yt-short-fallback",
+      provider: "youtube",
+      title: "Kid Francescoli - Moon",
+      url: "https://youtu.be/fdix0DP42h0",
+      origin: "playlist"
+    },
+    queue: []
+  });
+
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Kid Francescoli - Moon");
+  assert.equal(context.document.getElementById("current-time").textContent, "0:00");
+  assert.equal(context.document.getElementById("duration-time").textContent, "0:00");
+
+  const statePollCall = getActiveIntervalCalls().find((call) => call[1] === 3000);
+  assert.ok(statePollCall, "expected state polling to stay active after the socket connects");
+
+  queueFetchStateResponse({
+    currentTrack: {
+      id: "yt-short-fallback",
+      provider: "youtube",
+      title: "Kid Francescoli - Moon",
+      url: "https://youtu.be/fdix0DP42h0",
+      origin: "playlist",
+      durationSeconds: 393,
+      elapsedSeconds: 250
+    },
+    playbackStatus: "playing",
+    queue: []
+  });
+
+  statePollCall[0]();
+  await flushMicrotasks();
+
+  assert.equal(context.document.getElementById("current-time").textContent, "4:10");
+  assert.equal(context.document.getElementById("duration-time").textContent, "6:33");
+  assert.equal(context.document.getElementById("progress-fill").style.width, `${(250 / 393) * 100}%`);
 });
 
 test("external fallback-to-fallback handoffs reset stale completed timing", () => {
