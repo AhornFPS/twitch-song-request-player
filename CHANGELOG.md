@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.5 - 2026-07-04
+
 - Fixed OBS YouTube fallback overlay timers so stale same-track state updates no longer reset visible progress back to zero.
 
 ## 2.10.4 - 2026-07-04
