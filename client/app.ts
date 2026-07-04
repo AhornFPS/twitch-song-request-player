@@ -342,13 +342,28 @@ function isExternalPlaybackTrack(track) {
   return track?.playbackMode === "external" || track?.playbackProvider === "obs_youtube_fallback";
 }
 
+function getExternalPlaybackStartSeconds(track, { resetMissingTiming = false } = {}) {
+  const trackElapsedSeconds = Number.isFinite(track?.elapsedSeconds)
+    ? Math.max(track.elapsedSeconds, 0)
+    : null;
+
+  if (resetMissingTiming) {
+    return trackElapsedSeconds ?? 0;
+  }
+
+  return Math.max(
+    currentPositionSeconds,
+    trackElapsedSeconds ?? currentPositionSeconds
+  );
+}
+
 function startExternalPlaybackTimer(track, { resetMissingTiming = false } = {}) {
   stopPlaybackTimer();
 
   const startedAt = Date.now();
-  const startedElapsedSeconds = Number.isFinite(track?.elapsedSeconds)
-    ? Math.max(track.elapsedSeconds, 0)
-    : (resetMissingTiming ? 0 : currentPositionSeconds);
+  const startedElapsedSeconds = getExternalPlaybackStartSeconds(track, {
+    resetMissingTiming
+  });
   const durationSeconds = Number.isFinite(track?.durationSeconds)
     ? Math.max(track.durationSeconds, 0)
     : (resetMissingTiming ? 0 : currentDurationSeconds);

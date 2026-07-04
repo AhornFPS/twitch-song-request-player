@@ -451,6 +451,53 @@ test("external fallback-to-fallback handoffs reset stale completed timing", () =
   assert.equal(context.document.getElementById("progress-fill").style.width, "0%");
 });
 
+test("external playback keeps local progress when same-track state has stale elapsed time", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getIntervalCalls, advanceTime } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+  vm.runInContext("loadYoutubeTrack = () => { throw new Error('embedded youtube loader should not run'); };", context);
+
+  context.__state = {
+    currentTrack: {
+      id: "yt-external-stale",
+      provider: "youtube",
+      title: "External With Stale State",
+      url: "https://www.youtube.com/watch?v=external-stale",
+      origin: "playlist",
+      durationSeconds: 120,
+      elapsedSeconds: 0,
+      playbackMode: "external",
+      playbackProvider: "obs_youtube_fallback"
+    },
+    queue: []
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  let timerCall = getIntervalCalls().filter((call) => call[1] === 500).at(-1);
+  assert.ok(timerCall, "expected an external playback progress timer");
+  advanceTime(10000);
+  timerCall[0]();
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:10");
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:10");
+  assert.equal(context.document.getElementById("progress-fill").style.width, `${(10 / 120) * 100}%`);
+
+  timerCall = getIntervalCalls().filter((call) => call[1] === 500).at(-1);
+  advanceTime(5000);
+  timerCall[0]();
+
+  assert.equal(context.document.getElementById("current-time").textContent, "0:15");
+});
+
 test("finished soundcloud playback preserves the handoff path for the next youtube track", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
