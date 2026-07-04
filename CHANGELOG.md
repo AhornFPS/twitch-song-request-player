@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.7 - 2026-07-04
+
 - Fixed OBS overlay timing for fallback playlist tracks when the browser source misses the socket timing update.
 - Shortened the OBS YouTube fallback end buffer so the next track starts sooner after fallback playback.
 
