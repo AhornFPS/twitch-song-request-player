@@ -19,6 +19,7 @@ const validProviders = new Set([
 ]);
 
 const MAX_RADIO_TRACK_DURATION_SECONDS = 10 * 60;
+const FALLBACK_PLAYLIST_FINISH_BUFFER_SECONDS = 2;
 
 function normalizeRadioTrackCount(value, fallback = 3) {
   const parsedValue = Number.parseInt(String(value ?? fallback), 10);
@@ -143,6 +144,8 @@ export class PlayerController {
     this.isPlaybackPaused = false;
     this.currentTrackStartedAt = 0;
     this.currentTrackElapsedSeconds = 0;
+    this.fallbackPlaylistFinishTimer = null;
+    this.fallbackPlaylistFinishBufferSeconds = FALLBACK_PLAYLIST_FINISH_BUFFER_SECONDS;
     this.playbackSuppressed = false;
     this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
@@ -201,8 +204,85 @@ export class PlayerController {
   }
 
   resetCurrentTrackProgress() {
+    this.clearFallbackPlaylistFinishTimer();
     this.currentTrackStartedAt = 0;
     this.currentTrackElapsedSeconds = 0;
+  }
+
+  clearFallbackPlaylistFinishTimer() {
+    if (!this.fallbackPlaylistFinishTimer) {
+      return;
+    }
+
+    clearTimeout(this.fallbackPlaylistFinishTimer);
+    this.fallbackPlaylistFinishTimer = null;
+  }
+
+  scheduleFallbackPlaylistFinishTimer() {
+    this.clearFallbackPlaylistFinishTimer();
+
+    const track = this.currentTrack;
+    if (
+      !track ||
+      track.origin !== "playlist" ||
+      !track.playbackConfirmed ||
+      this.isPlaybackPaused
+    ) {
+      return;
+    }
+
+    const durationSeconds = normalizeDurationSeconds(track.durationSeconds);
+    if (durationSeconds === null) {
+      return;
+    }
+
+    const elapsedSeconds = this.getTrackElapsedSeconds(track) ?? 0;
+    const bufferSeconds = Number.isFinite(this.fallbackPlaylistFinishBufferSeconds)
+      ? Math.max(this.fallbackPlaylistFinishBufferSeconds, 0)
+      : FALLBACK_PLAYLIST_FINISH_BUFFER_SECONDS;
+    const delayMs = Math.max(0, (durationSeconds - elapsedSeconds + bufferSeconds) * 1000);
+    const trackId = track.id;
+
+    this.fallbackPlaylistFinishTimer = setTimeout(() => {
+      this.fallbackPlaylistFinishTimer = null;
+
+      if (
+        !this.currentTrack ||
+        this.currentTrack.id !== trackId ||
+        this.currentTrack.origin !== "playlist" ||
+        this.isPlaybackPaused
+      ) {
+        return;
+      }
+
+      const currentDurationSeconds = normalizeDurationSeconds(this.currentTrack.durationSeconds);
+      const currentElapsedSeconds = this.getTrackElapsedSeconds(this.currentTrack) ?? 0;
+      if (
+        currentDurationSeconds !== null &&
+        currentElapsedSeconds + 0.25 < currentDurationSeconds
+      ) {
+        this.scheduleFallbackPlaylistFinishTimer();
+        return;
+      }
+
+      logInfo("Fallback playlist finish timer advanced current track", {
+        track: formatTrack(this.currentTrack),
+        elapsedSeconds: currentElapsedSeconds,
+        durationSeconds: currentDurationSeconds
+      });
+
+      void this.finishCurrentTrack({
+        trackId,
+        status: "ended",
+        reason: "fallback_playlist_timer"
+      }).catch((error) => {
+        logWarn("Failed to advance fallback playlist track from finish timer", {
+          track: formatTrack(this.currentTrack),
+          message: error?.message ?? String(error)
+        });
+      });
+    }, delayMs);
+    this.fallbackPlaylistFinishTimer.unref?.();
   }
 
   serializeTrack(track) {
@@ -1403,6 +1483,10 @@ export class PlayerController {
       durationSeconds: nextDurationSeconds
     });
 
+    if (this.currentTrack.playbackConfirmed) {
+      this.scheduleFallbackPlaylistFinishTimer();
+    }
+
     return true;
   }
 
@@ -1413,6 +1497,7 @@ export class PlayerController {
 
     if (this.currentTrack.playbackConfirmed) {
       if (durationUpdated) {
+        this.scheduleFallbackPlaylistFinishTimer();
         this.broadcastState();
       }
       return;
@@ -1429,6 +1514,8 @@ export class PlayerController {
     logInfo("Playback confirmed for current track", {
       track: formatTrack(this.currentTrack)
     });
+
+    this.scheduleFallbackPlaylistFinishTimer();
 
     await this.playlistRepository.recordTrackPlaybackSuccess?.(this.currentTrack);
 
@@ -1451,6 +1538,8 @@ export class PlayerController {
     if (!activeTrack || activeTrack.id !== payload.trackId) {
       return;
     }
+
+    this.clearFallbackPlaylistFinishTimer();
 
     const finishedTrack = {
       ...activeTrack,
@@ -1703,9 +1792,11 @@ export class PlayerController {
     if (this.isPlaybackPaused) {
       this.isPlaybackPaused = false;
       this.currentTrackStartedAt = Date.now();
+      this.scheduleFallbackPlaylistFinishTimer();
     } else {
       this.captureCurrentTrackElapsedSeconds();
       this.isPlaybackPaused = true;
+      this.clearFallbackPlaylistFinishTimer();
     }
 
     logInfo("Toggling playback pause state", {

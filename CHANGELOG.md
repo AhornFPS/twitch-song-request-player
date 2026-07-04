@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed fallback playlist tracks so they advance to another song if the player misses the natural end event.
+
 ## 2.10.8 - 2026-07-04
 
 - Fixed OBS overlay progress so stale zero-time YouTube player ticks no longer overwrite fallback playlist timing.

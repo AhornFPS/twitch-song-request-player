@@ -830,6 +830,52 @@ test("queue can be cleared without interrupting the current track", async () => 
   assert.equal(controller.getPublicState().queue.length, 0);
 });
 
+test("fallback playlist tracks advance when the player misses the ended event", async () => {
+  const fallbackTracks = [
+    {
+      provider: "youtube",
+      url: "https://youtu.be/fallback-one",
+      title: "Fallback One",
+      key: "youtube:fallback-one",
+      origin: "playlist",
+      artworkUrl: ""
+    },
+    {
+      provider: "youtube",
+      url: "https://youtu.be/fallback-two",
+      title: "Fallback Two",
+      key: "youtube:fallback-two",
+      origin: "playlist",
+      artworkUrl: ""
+    }
+  ];
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      async getRandomTrack() {
+        return fallbackTracks.shift() ?? null;
+      }
+    }
+  });
+  controller.fallbackPlaylistFinishBufferSeconds = 0;
+
+  await controller.ensurePlayback();
+  const firstTrackId = controller.getCurrentTrack()?.id;
+  await controller.handlePlayerEvent({
+    trackId: firstTrackId,
+    status: "playing",
+    durationSeconds: 1
+  });
+
+  controller.currentTrackStartedAt = Date.now() - 1500;
+  controller.scheduleFallbackPlaylistFinishTimer();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(controller.getCurrentTrack()?.title, "Fallback Two");
+  assert.notEqual(controller.getCurrentTrack()?.id, firstTrackId);
+  assert.equal(controller.getPublicState().history[0]?.track.title, "Fallback One");
+  assert.equal(controller.getPublicState().history[0]?.status, "ended");
+});
+
 test("radio queues three related tracks after the final queued request finishes", async () => {
   const radioCalls = [];
   const { controller } = createController({
