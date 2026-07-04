@@ -302,6 +302,73 @@ test("non-embeddable YouTube requests can start through external fallback playba
   assert.equal(controller.getCurrentTrack(), null);
 });
 
+test("queued external fallback tracks advance when the OBS fallback finish event is missed", async () => {
+  let activeFallbackTrackId = "";
+  const fallbackStops = [];
+  const { controller } = createController({
+    externalPlayback: {
+      canPlayBlockedYouTube(track) {
+        return track?.provider === "youtube";
+      },
+      shouldHandleTrack(track) {
+        return track?.provider === "youtube" && track.isEmbeddable === false;
+      },
+      async startTrack(track) {
+        activeFallbackTrackId = track.id;
+        return true;
+      },
+      isPlayingTrack(track) {
+        return Boolean(activeFallbackTrackId && track?.id === activeFallbackTrackId);
+      },
+      async stopTrack(track, details) {
+        fallbackStops.push({ track, details });
+        if (track?.id === activeFallbackTrackId) {
+          activeFallbackTrackId = "";
+        }
+      }
+    }
+  });
+  controller.fallbackPlaylistFinishBufferSeconds = 0;
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/external-fallback",
+    title: "External Fallback",
+    key: "youtube:external-fallback",
+    artworkUrl: "",
+    durationSeconds: 1,
+    isEmbeddable: false,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+  await controller.addRequest({
+    provider: "soundcloud",
+    url: "https://soundcloud.com/artist/next-after-fallback",
+    title: "Next After Fallback",
+    key: "soundcloud:https://soundcloud.com/artist/next-after-fallback",
+    artworkUrl: "",
+    requestedBy: {
+      username: "viewertwo",
+      displayName: "ViewerTwo"
+    }
+  });
+
+  const firstTrackId = controller.getCurrentTrack()?.id;
+  controller.currentTrackStartedAt = Date.now() - 1500;
+  controller.scheduleFallbackPlaylistFinishTimer();
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(controller.getCurrentTrack()?.title, "Next After Fallback");
+  assert.notEqual(controller.getCurrentTrack()?.id, firstTrackId);
+  assert.equal(fallbackStops.length, 1);
+  assert.equal(fallbackStops[0].track.title, "External Fallback");
+  assert.equal(fallbackStops[0].details.reason, "external_fallback_timer");
+  assert.equal(controller.getPublicState().history[0]?.track.title, "External Fallback");
+  assert.equal(controller.getPublicState().history[0]?.status, "ended");
+});
+
 test("external fallback playback can hydrate missing track duration", async () => {
   const { controller } = createController({
     externalPlayback: {

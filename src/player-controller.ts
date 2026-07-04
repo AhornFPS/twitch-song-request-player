@@ -218,13 +218,21 @@ export class PlayerController {
     this.fallbackPlaylistFinishTimer = null;
   }
 
+  shouldUseFallbackFinishTimer(track) {
+    if (!track) {
+      return false;
+    }
+
+    return track.origin === "playlist" || this.isExternalPlaybackActiveForTrack(track);
+  }
+
   scheduleFallbackPlaylistFinishTimer() {
     this.clearFallbackPlaylistFinishTimer();
 
     const track = this.currentTrack;
     if (
       !track ||
-      track.origin !== "playlist" ||
+      !this.shouldUseFallbackFinishTimer(track) ||
       !track.playbackConfirmed ||
       this.isPlaybackPaused
     ) {
@@ -249,7 +257,7 @@ export class PlayerController {
       if (
         !this.currentTrack ||
         this.currentTrack.id !== trackId ||
-        this.currentTrack.origin !== "playlist" ||
+        !this.shouldUseFallbackFinishTimer(this.currentTrack) ||
         this.isPlaybackPaused
       ) {
         return;
@@ -265,7 +273,7 @@ export class PlayerController {
         return;
       }
 
-      logInfo("Fallback playlist finish timer advanced current track", {
+      logInfo("Fallback finish timer advanced current track", {
         track: formatTrack(this.currentTrack),
         elapsedSeconds: currentElapsedSeconds,
         durationSeconds: currentDurationSeconds
@@ -274,9 +282,11 @@ export class PlayerController {
       void this.finishCurrentTrack({
         trackId,
         status: "ended",
-        reason: "fallback_playlist_timer"
+        reason: this.isExternalPlaybackActiveForTrack(this.currentTrack)
+          ? "external_fallback_timer"
+          : "fallback_playlist_timer"
       }).catch((error) => {
-        logWarn("Failed to advance fallback playlist track from finish timer", {
+        logWarn("Failed to advance fallback track from finish timer", {
           track: formatTrack(this.currentTrack),
           message: error?.message ?? String(error)
         });

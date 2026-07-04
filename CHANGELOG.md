@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed queued OBS YouTube fallback tracks so they advance and clear the fallback source if the OBS fallback finish event is missed.
+
 ## 2.10.9 - 2026-07-04
 
 - Fixed fallback playlist tracks so they advance to another song if the player misses the natural end event.
