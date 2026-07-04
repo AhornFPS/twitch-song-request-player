@@ -101,6 +101,14 @@ test("OBS YouTube fallback opens login page and starts blocked tracks on the con
   ]);
 });
 
+test("OBS YouTube fallback keeps the default finish buffer short", () => {
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({})
+  });
+
+  assert.equal(fallback.playbackBufferSeconds, 1);
+});
+
 test("OBS YouTube fallback refreshes a missing duration before playback", async () => {
   const calls = [];
   const endedEvents = [];

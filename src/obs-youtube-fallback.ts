@@ -99,7 +99,7 @@ export class ObsYoutubeFallback {
     onTrackEnded = async () => {},
     createClient = () => new OBSWebSocket(),
     resolveTrackMetadata = null,
-    playbackBufferSeconds = 4
+    playbackBufferSeconds = 1
   } = {}) {
     this.getSettings = typeof getSettings === "function" ? getSettings : () => ({});
     this.onTrackEnded = onTrackEnded;
