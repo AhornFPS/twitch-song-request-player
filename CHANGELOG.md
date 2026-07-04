@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.4 - 2026-07-04
+
 - Fixed OBS YouTube fallback-to-fallback handoffs so the next fallback track starts its timer from the beginning instead of inheriting the previous track's completed time.
 
 ## 2.10.3 - 2026-07-04
