@@ -1253,7 +1253,7 @@ test("generated Suno queue API accepts finished tracks directly", async (t) => {
       title: "Noobs Owned",
       audioUrl: "https://cdn1.suno.ai/suno-generated-123.mp3",
       artworkUrl: "https://cdn2.suno.ai/suno-generated-123.jpeg",
-      durationSeconds: 142,
+      duration: 142,
       requestedBy: {
         username: "Ahorn",
         displayName: "Ahorn"
@@ -1267,14 +1267,36 @@ test("generated Suno queue API accepts finished tracks directly", async (t) => {
   assert.equal(queuePayload.track.provider, "suno");
   assert.equal(queuePayload.track.title, "Noobs Owned");
   assert.equal(queuePayload.track.audioUrl, "https://cdn1.suno.ai/suno-generated-123.mp3");
+  assert.equal(queuePayload.track.durationSeconds, 142);
   assert.equal(queuePayload.track.requestedBy.displayName, "Ahorn");
   assert.equal(queuePayload.state.playbackStatus, "playing");
   assert.equal(queuePayload.state.currentTrack.key, "suno:suno-generated-123");
+  assert.equal(queuePayload.state.currentTrack.durationSeconds, 142);
+
+  const queuedResponse = await fetch(new URL("/api/queue/generated", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      provider: "suno",
+      sunoId: "suno-generated-456",
+      title: "Next Noobs Owned",
+      audioUrl: "https://cdn1.suno.ai/suno-generated-456.mp3",
+      duration_ms: 183400
+    })
+  });
+
+  assert.equal(queuedResponse.ok, true);
+  const queuedPayload = await queuedResponse.json();
+  assert.equal(queuedPayload.track.durationSeconds, 183);
+  assert.equal(queuedPayload.state.queue[0].key, "suno:suno-generated-456");
+  assert.equal(queuedPayload.state.queue[0].durationSeconds, 183);
 
   const requestLogResponse = await fetch(new URL("/api/request-log", appServer.urls.dashboardUrl));
   assert.equal(requestLogResponse.ok, true);
   const requestLogPayload = await requestLogResponse.json();
-  assert.equal(requestLogPayload.events.length, 1);
+  assert.equal(requestLogPayload.events.length, 2);
   assert.equal(requestLogPayload.events[0].source, "suno_generated");
   assert.equal(requestLogPayload.events[0].outcome, "accepted");
 });

@@ -1890,12 +1890,15 @@ function renderFullQueue(queue) {
     const requester = track.origin === "radio"
       ? "radio"
       : track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    const durationLabel = Number.isFinite(track.durationSeconds) && track.durationSeconds > 0
+      ? ` • ${formatDuration(track.durationSeconds)}`
+      : "";
     const row = document.createElement("tr");
     const isBusy = queueActionTrackId === track.id;
     row.innerHTML = `
       <td>
         <strong>${htmlEscape(track.title)}</strong>
-        <div class="command-table__description">#${index + 1} in queue</div>
+        <div class="command-table__description">${htmlEscape(`#${index + 1} in queue${durationLabel}`)}</div>
       </td>
       <td>${htmlEscape(requester)}</td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>

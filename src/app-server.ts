@@ -59,9 +59,124 @@ function cleanGeneratedTrackText(value, fallback = "", maxLength = 240) {
   return (text || fallback).slice(0, maxLength);
 }
 
-function normalizeGeneratedDurationSeconds(value) {
+function parseGeneratedDurationText(value) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const text = value.trim();
+  if (!text) {
+    return null;
+  }
+
+  const clockParts = text.split(":");
+  if (clockParts.length === 2 || clockParts.length === 3) {
+    const parsedParts = clockParts.map((part) => Number(part));
+    if (parsedParts.every((part) => Number.isFinite(part) && part >= 0)) {
+      if (clockParts.length === 2 && parsedParts[1] < 60) {
+        return Math.max(1, Math.round((parsedParts[0] * 60) + parsedParts[1]));
+      }
+
+      if (clockParts.length === 3 && parsedParts[1] < 60 && parsedParts[2] < 60) {
+        return Math.max(1, Math.round((parsedParts[0] * 3600) + (parsedParts[1] * 60) + parsedParts[2]));
+      }
+    }
+  }
+
+  const unitMatch = text.match(/^([0-9]+(?:\.[0-9]+)?)\s*(ms|msec|milliseconds?|s|sec|secs|seconds?)$/i);
+  if (!unitMatch) {
+    return null;
+  }
+
+  const parsed = Number(unitMatch[1]);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  const seconds = unitMatch[2].toLowerCase().startsWith("m")
+    ? parsed / 1000
+    : parsed;
+  return Math.max(1, Math.round(seconds));
+}
+
+function normalizeGeneratedDurationSeconds(value, { milliseconds = false } = {}) {
+  const parsedText = parseGeneratedDurationText(value);
+  if (parsedText !== null) {
+    return parsedText;
+  }
+
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+
+  const seconds = milliseconds ? parsed / 1000 : parsed;
+  return Number.isFinite(seconds) && seconds > 0 ? Math.max(1, Math.round(seconds)) : null;
+}
+
+function findGeneratedDurationSeconds(body) {
+  const durationSources = [
+    body,
+    body?.track,
+    body?.song,
+    body?.metadata,
+    body?.meta
+  ].filter((source) => source && typeof source === "object");
+  const secondsKeys = [
+    "durationSeconds",
+    "duration_seconds",
+    "durationSec",
+    "duration_sec",
+    "lengthSeconds",
+    "length_seconds"
+  ];
+  const millisecondKeys = [
+    "durationMs",
+    "duration_ms",
+    "durationMilliseconds",
+    "duration_milliseconds",
+    "lengthMs",
+    "length_ms"
+  ];
+  const durationKeys = [
+    "duration",
+    "durationText",
+    "duration_text",
+    "length",
+    "lengthText",
+    "length_text"
+  ];
+
+  for (const source of durationSources) {
+    for (const key of secondsKeys) {
+      const durationSeconds = normalizeGeneratedDurationSeconds(source[key]);
+      if (durationSeconds !== null) {
+        return durationSeconds;
+      }
+    }
+  }
+
+  for (const source of durationSources) {
+    for (const key of millisecondKeys) {
+      const durationSeconds = normalizeGeneratedDurationSeconds(source[key], {
+        milliseconds: true
+      });
+      if (durationSeconds !== null) {
+        return durationSeconds;
+      }
+    }
+  }
+
+  for (const source of durationSources) {
+    for (const key of durationKeys) {
+      const durationSeconds = normalizeGeneratedDurationSeconds(source[key]);
+      if (durationSeconds !== null) {
+        return durationSeconds;
+      }
+    }
+  }
+
+  return null;
 }
 
 function normalizeGeneratedRequester(value) {
@@ -109,7 +224,7 @@ function buildGeneratedSunoTrack(body) {
     key,
     artworkUrl: cleanGeneratedTrackText(body?.artworkUrl, "", 2000),
     audioUrl,
-    durationSeconds: normalizeGeneratedDurationSeconds(body?.durationSeconds),
+    durationSeconds: findGeneratedDurationSeconds(body),
     sourceChannelId: "",
     sourceName: "Suno",
     sourceUrl: "",
