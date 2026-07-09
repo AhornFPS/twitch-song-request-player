@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Added a generated Suno queue endpoint so external generators can hand finished Suno songs directly to the OBS music player.
+
 ## 2.10.10 - 2026-07-04
 
 - Fixed queued OBS YouTube fallback tracks so they advance and clear the fallback source if the OBS fallback finish event is missed.

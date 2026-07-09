@@ -13,7 +13,7 @@ import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { ObsYoutubeFallback } from "./obs-youtube-fallback.js";
-import { findYouTubeRadioTracks, resolveSongRequest, resolveYouTubeTrackFromApi, searchSongRequestCandidates } from "./providers.js";
+import { findYouTubeRadioTracks, getTrackKey, resolveSongRequest, resolveYouTubeTrackFromApi, searchSongRequestCandidates } from "./providers.js";
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
@@ -50,6 +50,78 @@ const allowedOriginHostnames = new Set([
   "127.0.0.1",
   "::1"
 ]);
+
+function cleanGeneratedTrackText(value, fallback = "", maxLength = 240) {
+  const text = typeof value === "string"
+    ? value.replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim()
+    : "";
+
+  return (text || fallback).slice(0, maxLength);
+}
+
+function normalizeGeneratedDurationSeconds(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function normalizeGeneratedRequester(value) {
+  const username = cleanGeneratedTrackText(value?.username, "suno", 80);
+  const displayName = cleanGeneratedTrackText(value?.displayName, username, 80);
+
+  return {
+    username,
+    displayName
+  };
+}
+
+function buildGeneratedSunoTrack(body) {
+  const provider = cleanGeneratedTrackText(body?.provider, "suno", 40).toLowerCase();
+  if (provider !== "suno") {
+    const error = new Error("Only generated Suno tracks can be queued through this endpoint.");
+    error.code = "unsupported_generated_provider";
+    throw error;
+  }
+
+  const audioUrl = cleanGeneratedTrackText(body?.audioUrl, "", 2000);
+  if (!audioUrl) {
+    const error = new Error("Generated Suno tracks need a playable audio URL.");
+    error.code = "missing_audio_url";
+    throw error;
+  }
+
+  const sunoId = cleanGeneratedTrackText(body?.sunoId || body?.id, "", 140);
+  const url = cleanGeneratedTrackText(
+    body?.url,
+    sunoId ? `https://suno.com/song/${encodeURIComponent(sunoId)}` : audioUrl,
+    2000
+  );
+  const title = cleanGeneratedTrackText(body?.title, "Generated Suno song");
+  const key = cleanGeneratedTrackText(
+    body?.key,
+    sunoId ? `suno:${sunoId}` : getTrackKey("suno", url),
+    260
+  );
+
+  return {
+    provider: "suno",
+    url,
+    title,
+    key,
+    artworkUrl: cleanGeneratedTrackText(body?.artworkUrl, "", 2000),
+    audioUrl,
+    durationSeconds: normalizeGeneratedDurationSeconds(body?.durationSeconds),
+    sourceChannelId: "",
+    sourceName: "Suno",
+    sourceUrl: "",
+    isLive: false,
+    requestedFromProvider: "suno",
+    requestedFromUrl: url,
+    requestedFromTitle: title,
+    requestedFromName: "Suno",
+    requestedFromKey: key,
+    requestedBy: normalizeGeneratedRequester(body?.requestedBy)
+  };
+}
 
 function buildRuntimeUrls(activePort) {
   return {
@@ -708,6 +780,51 @@ export async function startAppServer({
       });
       response.status(400).json({
         error: error?.message ?? "Failed to add track to queue."
+      });
+    }
+  });
+
+  app.post("/api/queue/generated", async (request, response) => {
+    const requestInput = cleanGeneratedTrackText(request.body?.requestInput, request.body?.prompt || request.body?.url || "", 1000);
+    let track = null;
+
+    try {
+      track = buildGeneratedSunoTrack(request.body ?? {});
+      const queuedTrack = await playerController.addRequest(track, {
+        bypassRequestLimits: true,
+        requestSource: "suno_generated",
+        requestInput,
+        requestContext: {
+          endpoint: "/api/queue/generated",
+          triggeredBy: "suno-request-bot"
+        }
+      });
+
+      response.json({
+        track: queuedTrack,
+        state: playerController.getPublicState()
+      });
+    } catch (error) {
+      await playerController.recordRequestOutcome({
+        source: "suno_generated",
+        outcome: "rejected",
+        reason: error?.code ?? "generated_queue_error",
+        message: error?.message ?? "Failed to add generated Suno track to queue.",
+        input: requestInput,
+        requestedBy: track?.requestedBy ?? normalizeGeneratedRequester(request.body?.requestedBy),
+        track,
+        bypassRequestLimits: true,
+        details: {
+          endpoint: "/api/queue/generated",
+          triggeredBy: "suno-request-bot"
+        }
+      });
+      logError("Failed to add generated Suno track", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(400).json({
+        error: error?.message ?? "Failed to add generated Suno track to queue."
       });
     }
   });

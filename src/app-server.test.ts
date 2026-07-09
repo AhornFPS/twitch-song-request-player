@@ -1201,6 +1201,84 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   assert.equal(nextPayload.state.currentTrack.title, "Dashboard Two");
 });
 
+test("generated Suno queue API accepts finished tracks directly", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+
+  t.after(async () => {
+    await appServer?.close().catch(() => {});
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+
+    await fs.rm(runtimeDir, {
+      recursive: true,
+      force: true
+    });
+  });
+
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+
+  const port = await getAvailablePort();
+  await fs.writeFile(
+    path.join(runtimeDir, "settings.json"),
+    `${JSON.stringify({ port }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(runtimeDir, "playlist.csv"),
+    "Link,Title\n",
+    "utf8"
+  );
+
+  appServer = await startAppServer({
+    noBrowser: true,
+    configStore: createConfigStore({
+      rootDir: appRootDir,
+      runtimeDir,
+      publicDir: path.join(appRootDir, "public")
+    })
+  });
+
+  const queueResponse = await fetch(new URL("/api/queue/generated", appServer.urls.dashboardUrl), {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      provider: "suno",
+      sunoId: "suno-generated-123",
+      title: "Noobs Owned",
+      audioUrl: "https://cdn1.suno.ai/suno-generated-123.mp3",
+      artworkUrl: "https://cdn2.suno.ai/suno-generated-123.jpeg",
+      durationSeconds: 142,
+      requestedBy: {
+        username: "Ahorn",
+        displayName: "Ahorn"
+      },
+      requestInput: "Owning noobs"
+    })
+  });
+
+  assert.equal(queueResponse.ok, true);
+  const queuePayload = await queueResponse.json();
+  assert.equal(queuePayload.track.provider, "suno");
+  assert.equal(queuePayload.track.title, "Noobs Owned");
+  assert.equal(queuePayload.track.audioUrl, "https://cdn1.suno.ai/suno-generated-123.mp3");
+  assert.equal(queuePayload.track.requestedBy.displayName, "Ahorn");
+  assert.equal(queuePayload.state.playbackStatus, "playing");
+  assert.equal(queuePayload.state.currentTrack.key, "suno:suno-generated-123");
+
+  const requestLogResponse = await fetch(new URL("/api/request-log", appServer.urls.dashboardUrl));
+  assert.equal(requestLogResponse.ok, true);
+  const requestLogPayload = await requestLogResponse.json();
+  assert.equal(requestLogPayload.events.length, 1);
+  assert.equal(requestLogPayload.events[0].source, "suno_generated");
+  assert.equal(requestLogPayload.events[0].outcome, "accepted");
+});
+
 test("overview search API returns selectable track matches", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
