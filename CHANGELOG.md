@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.13 - 2026-07-11
+
 - Automatically prune older local setup builds after a successful release.
 - Fixed playable SoundCloud tracks being skipped after a transient embedded-player error.
 
