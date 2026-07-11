@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import {
   buildReleaseNotes,
   bumpVersion,
+  pruneOldSetupArtifacts,
   readReleaseArtifacts,
   readPackageVersion,
   readUnreleasedNotes,
@@ -244,6 +245,25 @@ async function main() {
       "--notes-file",
       releaseNotesPath
     ]);
+  }
+
+  try {
+    const pruneResult = await pruneOldSetupArtifacts(
+      path.join(rootDir, "dist"),
+      artifactPaths[0]
+    );
+    if (pruneResult.removedPaths.length > 0) {
+      const reclaimedMiB = (pruneResult.reclaimedBytes / (1024 * 1024)).toFixed(1);
+      console.log(
+        `Pruned ${pruneResult.removedPaths.length} old local release artifacts (${reclaimedMiB} MiB) from dist.`
+      );
+    } else {
+      console.log("No old local release artifacts to prune from dist.");
+    }
+  } catch (error) {
+    console.warn(
+      `WARNING: Release published, but old local artifacts could not be pruned: ${error.message}`
+    );
   }
 
   console.log(`Released ${tag} to https://github.com/${repo}/releases/tag/${tag}`);

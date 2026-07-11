@@ -237,3 +237,51 @@ export async function readReleaseArtifacts(distDir, portableArtifactName) {
     path.join(distDir, portableArtifactName)
   ];
 }
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export async function pruneOldSetupArtifacts(distDir, currentSetupArtifactPath) {
+  const currentSetupArtifactName = path.basename(currentSetupArtifactPath);
+  const artifactParts = currentSetupArtifactName.match(/^(.*-)\d+\.\d+\.\d+(\.[^.]+)$/u);
+
+  if (!artifactParts) {
+    return {
+      removedPaths: [],
+      reclaimedBytes: 0
+    };
+  }
+
+  const artifactFamilyPattern = new RegExp(
+    `^${escapeRegExp(artifactParts[1])}\\d+\\.\\d+\\.\\d+${escapeRegExp(artifactParts[2])}(?:\\.blockmap)?$`,
+    "u"
+  );
+  const keepArtifactNames = new Set([
+    currentSetupArtifactName,
+    `${currentSetupArtifactName}.blockmap`
+  ]);
+  const entries = await fs.readdir(distDir, { withFileTypes: true });
+  const candidates = entries.filter(
+    (entry) =>
+      entry.isFile() &&
+      artifactFamilyPattern.test(entry.name) &&
+      !keepArtifactNames.has(entry.name)
+  );
+
+  const removedPaths = [];
+  let reclaimedBytes = 0;
+
+  for (const candidate of candidates) {
+    const candidatePath = path.join(distDir, candidate.name);
+    const candidateStats = await fs.stat(candidatePath);
+    await fs.unlink(candidatePath);
+    removedPaths.push(candidatePath);
+    reclaimedBytes += candidateStats.size;
+  }
+
+  return {
+    removedPaths,
+    reclaimedBytes
+  };
+}

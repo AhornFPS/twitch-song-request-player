@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Automatically prune older local setup builds after a successful release.
+
 ## 2.10.12 - 2026-07-09
 
 - Fixed generated Suno requests so posted track durations appear in playback and queue displays.

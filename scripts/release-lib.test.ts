@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { buildReleaseNotes, bumpVersion, parsePrimaryReleaseArtifactName, readReleaseArtifacts, rollChangelogRelease } from "./release-lib.js";
+import { buildReleaseNotes, bumpVersion, parsePrimaryReleaseArtifactName, pruneOldSetupArtifacts, readReleaseArtifacts, rollChangelogRelease } from "./release-lib.js";
 
 test("bumpVersion increments patch, minor, and major releases", () => {
   assert.equal(bumpVersion("1.2.3", "patch"), "1.2.4");
@@ -105,6 +105,61 @@ test("readReleaseArtifacts follows the filenames advertised in latest.yml", asyn
     path.join(distDir, "TwitchSongRequestPlayer-Setup-1.4.5.exe.blockmap"),
     path.join(distDir, "latest.yml"),
     path.join(distDir, "TwitchSongRequestPlayer-Portable.exe")
+  ]);
+});
+
+test("pruneOldSetupArtifacts removes only older installers from the current artifact family", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-sc-release-prune-"));
+  const distDir = path.join(tempDir, "dist");
+  await fs.mkdir(path.join(distDir, "win-unpacked"), { recursive: true });
+
+  const currentSetupName = "TwitchSongRequestPlayer-Setup-1.4.5.exe";
+  const oldArtifactNames = [
+    "TwitchSongRequestPlayer-Setup-1.4.3.exe",
+    "TwitchSongRequestPlayer-Setup-1.4.3.exe.blockmap",
+    "TwitchSongRequestPlayer-Setup-1.4.4.exe",
+    "TwitchSongRequestPlayer-Setup-1.4.4.exe.blockmap"
+  ];
+  const keptFileNames = [
+    currentSetupName,
+    `${currentSetupName}.blockmap`,
+    "TwitchSongRequestPlayer-Portable.exe",
+    "latest.yml",
+    "playlist.csv",
+    "OtherPlayer-Setup-1.4.4.exe"
+  ];
+
+  for (const [index, fileName] of [...oldArtifactNames, ...keptFileNames].entries()) {
+    await fs.writeFile(path.join(distDir, fileName), Buffer.alloc(index + 1));
+  }
+
+  const result = await pruneOldSetupArtifacts(distDir, path.join(distDir, currentSetupName));
+  const remainingNames = (await fs.readdir(distDir)).sort();
+
+  assert.deepEqual(
+    result.removedPaths.map((artifactPath) => path.basename(artifactPath)).sort(),
+    oldArtifactNames.sort()
+  );
+  assert.equal(result.reclaimedBytes, 1 + 2 + 3 + 4);
+  assert.deepEqual(remainingNames, [...keptFileNames, "win-unpacked"].sort());
+});
+
+test("pruneOldSetupArtifacts skips pruning when the current artifact name is not versioned", async () => {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "yt-sc-release-prune-"));
+  const distDir = path.join(tempDir, "dist");
+  await fs.mkdir(distDir, { recursive: true });
+  await fs.writeFile(path.join(distDir, "custom-setup.exe"), "current");
+  await fs.writeFile(path.join(distDir, "custom-setup-1.0.0.exe"), "old");
+
+  const result = await pruneOldSetupArtifacts(
+    distDir,
+    path.join(distDir, "custom-setup.exe")
+  );
+
+  assert.deepEqual(result, { removedPaths: [], reclaimedBytes: 0 });
+  assert.deepEqual((await fs.readdir(distDir)).sort(), [
+    "custom-setup-1.0.0.exe",
+    "custom-setup.exe"
   ]);
 });
 
