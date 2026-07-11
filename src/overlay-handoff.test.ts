@@ -738,6 +738,94 @@ test("overlay queue treats track titles and requesters as text", () => {
   assert.equal(context.window.__xssRequester, undefined);
 });
 
+test("soundcloud widget errors retry the canonical resource once before skipping", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, getTimeoutCalls } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  vm.runInContext(`
+    globalThis.__soundCloudWidgets = [];
+    globalThis.__playerEvents = [];
+    const MockSoundCloudWidget = (frame) => {
+      const listeners = {};
+      const widget = {
+        bind(eventName, listener) { listeners[eventName] = listener; },
+        unbind(eventName) { delete listeners[eventName]; },
+        pause() {},
+        play() {},
+        getDuration() {},
+        getCurrentSound() {},
+        setVolume() {}
+      };
+      globalThis.__soundCloudWidgets.push({
+        src: frame.src,
+        listeners,
+        widget
+      });
+      return widget;
+    };
+    MockSoundCloudWidget.Events = {
+      READY: "ready",
+      ERROR: "error",
+      FINISH: "finish",
+      PLAY_PROGRESS: "play-progress"
+    };
+    window.SC = { Widget: MockSoundCloudWidget };
+    fetch = async (url, options = {}) => {
+      if (url === "/api/player-event") {
+        globalThis.__playerEvents.push(JSON.parse(options.body));
+      }
+      return {
+        ok: true,
+        async json() { return {}; }
+      };
+    };
+    globalThis.__soundCloudTrack = {
+      id: "sc-spitfire",
+      provider: "soundcloud",
+      title: "Spitfire Live at Rebellion Indoor 2025 by Spitfire",
+      url: "https://soundcloud.com/spitfirehardstyle/spitfire-live-at-rebellion-indoor-151125",
+      soundCloudResourceUrl: "https://api.soundcloud.com/tracks/2252107079"
+    };
+    activeTrack = globalThis.__soundCloudTrack;
+    currentTrackId = globalThis.__soundCloudTrack.id;
+    loadSoundCloudTrack(globalThis.__soundCloudTrack);
+  `, context);
+
+  assert.equal(context.__soundCloudWidgets.length, 1);
+  assert.match(
+    context.__soundCloudWidgets[0].src,
+    /url=https%3A%2F%2Fapi\.soundcloud\.com%2Ftracks%2F2252107079/
+  );
+
+  vm.runInContext('__soundCloudWidgets[0].listeners.error({ code: "transient" });', context);
+  assert.equal(context.__playerEvents.length, 0);
+
+  const recoveryCalls = getTimeoutCalls().filter((call) => call[1] === 650);
+  assert.equal(recoveryCalls.length, 1);
+  recoveryCalls[0][0]();
+
+  assert.equal(context.__soundCloudWidgets.length, 2);
+  assert.match(
+    context.__soundCloudWidgets[1].src,
+    /url=https%3A%2F%2Fapi\.soundcloud\.com%2Ftracks%2F2252107079/
+  );
+
+  vm.runInContext('__soundCloudWidgets[1].listeners.error({ code: "permanent" });', context);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.__playerEvents)), [
+    {
+      trackId: "sc-spitfire",
+      status: "error",
+      reason: "soundcloud_widget_error"
+    }
+  ]);
+});
+
 test("embedded player volume messages update both providers", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");

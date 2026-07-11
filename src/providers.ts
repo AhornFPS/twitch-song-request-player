@@ -376,6 +376,37 @@ function extractLinkHref(html, rel) {
   return match ? decodeHtmlEntities(match[1]) : "";
 }
 
+function extractSoundCloudResourceUrl(oEmbedHtml) {
+  if (typeof oEmbedHtml !== "string" || !oEmbedHtml) {
+    return "";
+  }
+
+  const iframeSourceMatch = oEmbedHtml.match(/<iframe\b[^>]*\bsrc=["']([^"']+)["']/i);
+  if (!iframeSourceMatch) {
+    return "";
+  }
+
+  try {
+    const embedUrl = new URL(decodeHtmlEntities(iframeSourceMatch[1]));
+    if (embedUrl.protocol !== "https:" || embedUrl.hostname.toLowerCase() !== "w.soundcloud.com") {
+      return "";
+    }
+
+    const resourceUrl = new URL(embedUrl.searchParams.get("url") ?? "");
+    if (
+      resourceUrl.protocol !== "https:" ||
+      resourceUrl.hostname.toLowerCase() !== "api.soundcloud.com" ||
+      !/^\/(?:tracks|playlists)\/\d+\/?$/.test(resourceUrl.pathname)
+    ) {
+      return "";
+    }
+
+    return resourceUrl.toString();
+  } catch {
+    return "";
+  }
+}
+
 function extractDocumentTitle(html) {
   if (typeof html !== "string" || !html) {
     return "";
@@ -1417,6 +1448,7 @@ export async function resolveTrackFromUrl(rawUrl, { youtubeApiKey = "" } = {}) {
     title: normalizeTrackTitle(metadata.title, "SoundCloud track"),
     key: getTrackKey(provider, url),
     artworkUrl: metadata.thumbnail_url ?? "",
+    soundCloudResourceUrl: extractSoundCloudResourceUrl(metadata.html),
     durationSeconds: null,
     sourceChannelId: "",
     sourceName: typeof metadata.author_name === "string" ? metadata.author_name.trim() : "",

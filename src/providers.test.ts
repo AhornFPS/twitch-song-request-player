@@ -29,6 +29,41 @@ test("soundcloud profile URLs are rejected before metadata lookup", async (t) =>
   assert.equal(fetchCalled, false);
 });
 
+test("soundcloud tracks keep the canonical widget resource returned by oEmbed", async (t) => {
+  const originalFetch = global.fetch;
+  let requestedUrl = null;
+
+  global.fetch = async (url) => {
+    requestedUrl = new URL(url);
+    return {
+      ok: true,
+      async json() {
+        return {
+          title: "Spitfire Live at Rebellion Indoor 2025 by Spitfire",
+          thumbnail_url: "https://i1.sndcdn.com/artworks-test-t500x500.jpg",
+          author_name: "Spitfire",
+          author_url: "https://soundcloud.com/spitfirehardstyle",
+          html: '<iframe src="https://w.soundcloud.com/player/?visual=true&amp;url=https%3A%2F%2Fapi.soundcloud.com%2Ftracks%2F2252107079&amp;show_artwork=true"></iframe>'
+        };
+      }
+    };
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const trackUrl = "https://soundcloud.com/spitfirehardstyle/spitfire-live-at-rebellion-indoor-151125";
+  const track = await resolveTrackFromUrl(trackUrl);
+
+  assert.equal(requestedUrl?.origin, "https://soundcloud.com");
+  assert.equal(requestedUrl?.pathname, "/oembed");
+  assert.equal(requestedUrl?.searchParams.get("url"), trackUrl);
+  assert.equal(track.provider, "soundcloud");
+  assert.equal(track.url, trackUrl);
+  assert.equal(track.soundCloudResourceUrl, "https://api.soundcloud.com/tracks/2252107079");
+});
+
 test("youtube api metadata resolver refreshes an existing video URL with channel and duration metadata", async (t) => {
   const originalFetch = global.fetch;
   let requestedUrl = null;

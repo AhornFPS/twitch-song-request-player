@@ -19,6 +19,7 @@ function normalizeTrack(track) {
     origin: String(track.origin),
     artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
     audioUrl: typeof track.audioUrl === "string" ? track.audioUrl : "",
+    soundCloudResourceUrl: typeof track.soundCloudResourceUrl === "string" ? track.soundCloudResourceUrl : "",
     durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
     elapsedSeconds: Number.isFinite(track.elapsedSeconds) ? Math.max(track.elapsedSeconds, 0) : 0,
     sourceChannelId: typeof track.sourceChannelId === "string" ? track.sourceChannelId : "",
