@@ -409,6 +409,78 @@ test("external fallback playback can hydrate missing track duration", async () =
   assert.equal(controller.getPublicState().currentTrack?.playbackMode, "external");
 });
 
+test("unavailable external fallback tracks advance automatically", async () => {
+  const fallbackTracks = [
+    {
+      provider: "youtube",
+      url: "https://youtu.be/unavailable123",
+      title: "https://youtu.be/unavailable123",
+      key: "youtube:unavailable123",
+      origin: "playlist",
+      artworkUrl: ""
+    },
+    {
+      provider: "youtube",
+      url: "https://youtu.be/next-playable",
+      title: "Next Playable Track",
+      key: "youtube:next-playable",
+      origin: "playlist",
+      artworkUrl: ""
+    }
+  ];
+  const playbackFailures = [];
+  const playbackAnnouncements = [];
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      async getRandomTrack() {
+        return fallbackTracks.shift() ?? null;
+      },
+      async recordTrackPlaybackFailure(track, details) {
+        playbackFailures.push({ track, details });
+      }
+    },
+    externalPlayback: {
+      shouldHandleTrack() {
+        return false;
+      },
+      shouldHandlePlayerError(track, payload) {
+        return track?.provider === "youtube" && payload?.reason === "youtube_150";
+      },
+      async startTrack() {
+        return {
+          unavailable: true,
+          reason: "youtube_video_unavailable",
+          message: "No YouTube video metadata found for unavailable123.",
+          durationSeconds: null
+        };
+      },
+      async stopTrack() {
+      },
+      async clearSource() {
+      }
+    }
+  });
+  controller.onTrackPlayback((track) => {
+    playbackAnnouncements.push(track.title);
+  });
+
+  await controller.ensurePlayback();
+  const unavailableTrackId = controller.getCurrentTrack()?.id;
+  await controller.handlePlayerEvent({
+    trackId: unavailableTrackId,
+    status: "error",
+    reason: "youtube_150"
+  });
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(controller.getCurrentTrack()?.title, "Next Playable Track");
+  assert.equal(controller.getPublicState().history[0]?.track.title, "https://youtu.be/unavailable123");
+  assert.equal(controller.getPublicState().history[0]?.status, "error");
+  assert.equal(playbackFailures.length, 1);
+  assert.equal(playbackFailures[0].details.reason, "youtube_video_unavailable");
+  assert.deepEqual(playbackAnnouncements, []);
+});
+
 test("blocked embedded YouTube errors switch to external fallback playback instead of finishing", async () => {
   const fallbackStarts = [];
   const { controller } = createController({

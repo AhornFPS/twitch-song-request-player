@@ -240,6 +240,14 @@ export class ObsYoutubeFallback {
       });
       return durationSeconds;
     } catch (error) {
+      if (error?.code === "youtube_video_unavailable") {
+        logWarn("OBS YouTube fallback track is unavailable", {
+          track: formatTrack(track),
+          message: error?.message ?? String(error)
+        });
+        throw error;
+      }
+
       logWarn("Failed to refresh OBS YouTube fallback track duration", {
         track: formatTrack(track),
         message: error?.message ?? String(error)
@@ -249,7 +257,21 @@ export class ObsYoutubeFallback {
   }
 
   async startTrack(track, { reason = "" } = {}) {
-    await this.refreshMissingTrackDuration(track);
+    try {
+      await this.refreshMissingTrackDuration(track);
+    } catch (error) {
+      await this.clearSource({
+        reason: "youtube_video_unavailable",
+        track
+      });
+      return {
+        unavailable: true,
+        reason: error?.code ?? "youtube_video_unavailable",
+        message: error?.message ?? String(error),
+        durationSeconds: null
+      };
+    }
+
     const playbackUrl = buildPlaybackUrl(track);
     await this.setSourceUrl(playbackUrl);
     this.activeTrackId = track.id;

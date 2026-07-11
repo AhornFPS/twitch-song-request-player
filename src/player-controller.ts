@@ -1739,6 +1739,33 @@ export class PlayerController {
       const externalPlaybackResult = await this.externalPlayback.startTrack(this.currentTrack, {
         reason
       });
+      if (externalPlaybackResult?.unavailable) {
+        const failedTrackId = this.currentTrack.id;
+        const failureReason = externalPlaybackResult.reason || "external_playback_unavailable";
+        const failureMessage = externalPlaybackResult.message || "The external playback track is unavailable.";
+        logWarn("Skipping unavailable external playback track", {
+          track: formatTrack(this.currentTrack),
+          reason: failureReason,
+          message: failureMessage
+        });
+        const failureTimer = setTimeout(() => {
+          void this.handlePlayerEvent({
+            trackId: failedTrackId,
+            status: "error",
+            reason: failureReason,
+            message: failureMessage
+          }).catch((error) => {
+            logWarn("Failed to advance unavailable external playback track", {
+              trackId: failedTrackId,
+              reason: failureReason,
+              message: error?.message ?? String(error)
+            });
+          });
+        }, 0);
+        failureTimer.unref?.();
+        return true;
+      }
+
       this.updateCurrentTrackDurationSeconds(externalPlaybackResult?.durationSeconds);
       await this.confirmCurrentTrackPlayback({
         trackId: this.currentTrack.id,

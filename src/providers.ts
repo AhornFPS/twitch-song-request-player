@@ -1174,7 +1174,9 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
   const item = await fetchYouTubeVideoMetadataItem(videoId, youtubeApiKey);
 
   if (!item?.id) {
-    throw new Error(`No YouTube video metadata found for ${videoId}.`);
+    const error = new Error(`No YouTube video metadata found for ${videoId}.`);
+    error.code = "youtube_video_unavailable";
+    throw error;
   }
 
   return buildYouTubeTrackFromVideoApiItem(item, {

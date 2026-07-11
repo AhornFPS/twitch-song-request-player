@@ -125,6 +125,32 @@ test("youtube api metadata resolver refreshes an existing video URL with channel
   assert.equal(track.isLive, false);
 });
 
+test("youtube api metadata resolver identifies deleted or unavailable videos", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        items: []
+      };
+    }
+  });
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  await assert.rejects(
+    () => resolveYouTubeTrackFromApi("https://youtu.be/unavailable123", "api-key"),
+    (error) => {
+      assert.equal(error?.code, "youtube_video_unavailable");
+      assert.match(error?.message ?? "", /No YouTube video metadata found/);
+      return true;
+    }
+  );
+});
+
 test("youtube playlist api resolver imports every playlist item across pages", async (t) => {
   const originalFetch = global.fetch;
   const requestedUrls = [];

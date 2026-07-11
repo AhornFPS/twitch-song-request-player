@@ -163,6 +163,46 @@ test("OBS YouTube fallback refreshes a missing duration before playback", async 
   ]);
 });
 
+test("OBS YouTube fallback does not open an unavailable video", async () => {
+  const calls = [];
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback"
+    }),
+    createClient: () => createFakeObsClient(calls),
+    resolveTrackMetadata: async () => {
+      const error = new Error("No YouTube video metadata found for unavailable123.");
+      error.code = "youtube_video_unavailable";
+      throw error;
+    }
+  });
+
+  const startResult = await fallback.startTrack({
+    id: "unavailable-track",
+    provider: "youtube",
+    url: "https://youtu.be/unavailable123",
+    title: "https://youtu.be/unavailable123",
+    key: "youtube:unavailable123"
+  }, {
+    reason: "youtube_150"
+  });
+
+  assert.deepEqual(startResult, {
+    unavailable: true,
+    reason: "youtube_video_unavailable",
+    message: "No YouTube video metadata found for unavailable123.",
+    durationSeconds: null
+  });
+  assert.equal(fallback.isPlayingTrack({ id: "unavailable-track" }), false);
+  const sourceUrls = calls
+    .filter((call) => call.type === "call")
+    .map((call) => call.requestPayload.inputSettings.url);
+  assert.deepEqual(sourceUrls, ["about:blank"]);
+});
+
 test("OBS YouTube fallback can clear a stale source without an active in-memory track", async () => {
   const calls = [];
   const fallback = new ObsYoutubeFallback({
