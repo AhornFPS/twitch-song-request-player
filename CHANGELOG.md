@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.15 - 2026-07-12
+
 - Fixed consecutive SoundCloud tracks so the embedded player starts each handoff from a fresh browser page.
 
 ## 2.10.14 - 2026-07-11
