@@ -80,6 +80,7 @@ let overlayBuildToken = typeof window.__overlayBuildToken === "string"
 let desiredPlayerVolume = 100;
 let startupTimeoutMs = 15000;
 const soundCloudToYoutubeReloadKey = "soundcloud-to-youtube-reload-track";
+const consecutiveSoundCloudReloadKey = "consecutive-soundcloud-reload-track";
 const youtubeStartupRecoveryStorageKey = "youtube-startup-recovery";
 const soundCloudRecoveryDelayMs = 650;
 const maxSoundCloudRecoveryAttempts = 1;
@@ -634,6 +635,47 @@ function clearPendingSoundCloudToYoutubeReloadTrackId(trackId = "") {
 function reloadPageForSoundCloudToYoutubeHandoff(track) {
   setPendingSoundCloudToYoutubeReloadTrackId(track.id);
   sendClientLog("warn", "Reloading page for SoundCloud to YouTube handoff", {
+    trackId: track.id,
+    title: track.title
+  });
+
+  const reloadUrl = new URL(window.location.href);
+  reloadUrl.searchParams.set("handoffReload", String(Date.now()));
+  window.location.replace(reloadUrl.toString());
+}
+
+function getPendingConsecutiveSoundCloudReloadTrackId() {
+  try {
+    return window.sessionStorage.getItem(consecutiveSoundCloudReloadKey);
+  } catch {
+    return "";
+  }
+}
+
+function setPendingConsecutiveSoundCloudReloadTrackId(trackId) {
+  try {
+    window.sessionStorage.setItem(consecutiveSoundCloudReloadKey, trackId);
+  } catch {
+  }
+}
+
+function clearPendingConsecutiveSoundCloudReloadTrackId(trackId = "") {
+  try {
+    const pendingTrackId = window.sessionStorage.getItem(consecutiveSoundCloudReloadKey);
+    if (!pendingTrackId) {
+      return;
+    }
+
+    if (!trackId || pendingTrackId === trackId) {
+      window.sessionStorage.removeItem(consecutiveSoundCloudReloadKey);
+    }
+  } catch {
+  }
+}
+
+function reloadPageForConsecutiveSoundCloudHandoff(track) {
+  setPendingConsecutiveSoundCloudReloadTrackId(track.id);
+  sendClientLog("warn", "Reloading page for consecutive SoundCloud handoff", {
     trackId: track.id,
     title: track.title
   });
@@ -2157,6 +2199,7 @@ function loadTrack(track) {
 
   const previousTrack = activeTrack ?? handoffSourceTrack;
   const pendingReloadTrackId = getPendingSoundCloudToYoutubeReloadTrackId();
+  const pendingConsecutiveSoundCloudReloadTrackId = getPendingConsecutiveSoundCloudReloadTrackId();
 
   if (
     previousTrack?.provider === "soundcloud" &&
@@ -2167,7 +2210,17 @@ function loadTrack(track) {
     return;
   }
 
+  if (
+    previousTrack?.provider === "soundcloud" &&
+    track.provider === "soundcloud" &&
+    pendingConsecutiveSoundCloudReloadTrackId !== track.id
+  ) {
+    reloadPageForConsecutiveSoundCloudHandoff(track);
+    return;
+  }
+
   clearPendingSoundCloudToYoutubeReloadTrackId(track.id);
+  clearPendingConsecutiveSoundCloudReloadTrackId(track.id);
   resetYouTubeStartupRecoveryState(track.id);
   activeTrack = null;
   currentTrackId = null;

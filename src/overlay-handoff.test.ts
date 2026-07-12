@@ -693,6 +693,41 @@ test("finished soundcloud playback preserves the handoff path for the next youtu
   assert.match(locationReplaceCalls[0], /handoffReload=/);
 });
 
+test("consecutive soundcloud playback reloads the outer player page once", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context, locationReplaceCalls, sessionStorageData } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  context.__nextTrack = {
+    id: "sc-next",
+    provider: "soundcloud",
+    title: "Next SoundCloud Track",
+    url: "https://soundcloud.com/example/next-track",
+    origin: "queue"
+  };
+
+  vm.runInContext(
+    'handoffSourceTrack = { id: "sc-finished", provider: "soundcloud" };',
+    context
+  );
+  vm.runInContext("loadTrack(__nextTrack);", context);
+
+  assert.equal(locationReplaceCalls.length, 1);
+  assert.equal(sessionStorageData.get("consecutive-soundcloud-reload-track"), "sc-next");
+  assert.match(locationReplaceCalls[0], /handoffReload=/);
+
+  vm.runInContext("loadSoundCloudTrack = () => {};", context);
+  vm.runInContext("loadTrack(__nextTrack);", context);
+
+  assert.equal(locationReplaceCalls.length, 1);
+  assert.equal(sessionStorageData.has("consecutive-soundcloud-reload-track"), false);
+});
+
 test("overlay queue treats track titles and requesters as text", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");

@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Fixed consecutive SoundCloud tracks so the embedded player starts each handoff from a fresh browser page.
+
 ## 2.10.14 - 2026-07-11
 
 - Fixed deleted or unavailable YouTube songs so OBS fallback skips them automatically instead of waiting for a manual skip.
