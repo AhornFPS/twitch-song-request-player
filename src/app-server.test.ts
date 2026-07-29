@@ -1530,6 +1530,8 @@ test("settings API persists request policy and configurable chat commands", asyn
       obsYoutubeFallbackSourceName: "YouTube Fallback",
       radioModeEnabled: false,
       radioTrackCount: 5,
+      chatSuppressedCategories: ["Music", "DJs", "Creative"],
+      playbackSuppressedCategories: ["Just Chatting"],
       requestPolicyAutosaveEnabled: true,
       requestPolicy: {
         requestsEnabled: false,
@@ -1639,6 +1641,8 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(payload.settings.obsYoutubeFallbackSourceName, "YouTube Fallback");
   assert.equal(payload.settings.radioModeEnabled, false);
   assert.equal(payload.settings.radioTrackCount, 5);
+  assert.deepEqual(payload.settings.chatSuppressedCategories, ["Music", "DJs", "Creative"]);
+  assert.deepEqual(payload.settings.playbackSuppressedCategories, ["Just Chatting"]);
   assert.equal(payload.settings.requestPolicyAutosaveEnabled, true);
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
   assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
@@ -1673,6 +1677,8 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.equal(persistedSettings.obsYoutubeFallbackSourceName, "YouTube Fallback");
   assert.equal(persistedSettings.radioModeEnabled, false);
   assert.equal(persistedSettings.radioTrackCount, 5);
+  assert.deepEqual(persistedSettings.chatSuppressedCategories, ["Music", "DJs", "Creative"]);
+  assert.deepEqual(persistedSettings.playbackSuppressedCategories, ["Just Chatting"]);
   assert.equal(persistedSettings.requestPolicyAutosaveEnabled, true);
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
   assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");

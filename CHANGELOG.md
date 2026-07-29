@@ -4,6 +4,9 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Prevented the desktop app from opening more than once and focused the existing window on later launches.
+- Made Twitch game/category suppression refresh every 30 seconds and apply edited message or playback rules immediately.
+
 ## 2.10.15 - 2026-07-12
 
 - Fixed consecutive SoundCloud tracks so the embedded player starts each handoff from a fresh browser page.

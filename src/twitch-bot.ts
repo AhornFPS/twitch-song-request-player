@@ -344,12 +344,19 @@ export class TwitchBot {
       this.channelInfo.channelName = nextConfig.twitch.channel;
       this.channelInfo.clientId = nextConfig.twitch.clientId;
       this.channelInfo.oauthToken = nextConfig.twitch.oauthToken;
-      this.channelInfo.chatSuppressedCategories = new Set(
-        Array.from(nextConfig.twitch.chatSuppressedCategories ?? [], (value) => value.trim().toLowerCase())
-      );
-      this.channelInfo.playbackSuppressedCategories = new Set(
-        Array.from(nextConfig.twitch.playbackSuppressedCategories ?? [], (value) => value.trim().toLowerCase())
-      );
+      if (typeof this.channelInfo.updateSuppressionCategories === "function") {
+        this.channelInfo.updateSuppressionCategories({
+          chatSuppressedCategories: nextConfig.twitch.chatSuppressedCategories,
+          playbackSuppressedCategories: nextConfig.twitch.playbackSuppressedCategories
+        });
+      } else {
+        this.channelInfo.chatSuppressedCategories = new Set(
+          Array.from(nextConfig.twitch.chatSuppressedCategories ?? [], (value) => value.trim().toLowerCase())
+        );
+        this.channelInfo.playbackSuppressedCategories = new Set(
+          Array.from(nextConfig.twitch.playbackSuppressedCategories ?? [], (value) => value.trim().toLowerCase())
+        );
+      }
     }
   }
 

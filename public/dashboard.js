@@ -602,27 +602,27 @@ function renderDashboard() {
               <div class="rule-grid">
                 <article class="rule-card">
                   <p class="rule-card__title">Suppress chat messages</p>
-                  <p class="rule-card__body">The bot stops sending replies and now-playing messages for these categories.</p>
+                  <p class="rule-card__body">The bot stops sending replies and now-playing messages while your stream is in any of these Twitch games or categories.</p>
                   <div class="copy-row copy-row--triple">
                     <input id="chat-category-input" class="control-input" type="text" placeholder="Add category" />
                     <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
                     <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
                   </div>
                   <label class="field">
-                    <span class="field__label">Configured categories</span>
+                    <span class="field__label">Suppressed games / categories</span>
                     <select id="chat-category-select" class="control-input"></select>
                   </label>
                 </article>
                 <article class="rule-card">
                   <p class="rule-card__title">Suppress music playback</p>
-                  <p class="rule-card__body">Playback stops completely while the stream sits in one of these categories.</p>
+                  <p class="rule-card__body">Playback stops completely while your stream is in any of these Twitch games or categories.</p>
                   <div class="copy-row copy-row--triple">
                     <input id="playback-category-input" class="control-input" type="text" placeholder="Add category" />
                     <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
                     <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
                   </div>
                   <label class="field">
-                    <span class="field__label">Configured categories</span>
+                    <span class="field__label">Suppressed games / categories</span>
                     <select id="playback-category-select" class="control-input"></select>
                   </label>
                 </article>

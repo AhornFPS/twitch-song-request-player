@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { EventEmitter } from "node:events";
 import { createConfigStore } from "../src/config.js";
 import { startAppServer } from "../src/app-server.js";
+import { acquireSingleInstanceLock } from "../src/electron-single-instance.js";
 import { resolveAppRootFromModuleDir } from "../src/runtime-paths.js";
 
 const require = createRequire(import.meta.url);
@@ -126,6 +127,10 @@ export async function bootstrapDesktopApp(electron) {
   let mainWindow = null;
   let appServer = null;
   let isShuttingDown = false;
+
+  if (!acquireSingleInstanceLock(app, () => mainWindow)) {
+    return;
+  }
 
   function getRuntimeDir() {
     const isPackagedApp =

@@ -6,6 +6,13 @@ const TWITCH_HELIX_URL = "https://api.twitch.tv/helix";
 const DEFAULT_CHAT_SUPPRESSED_CATEGORIES = new Set(["music", "djs"]);
 const DEFAULT_PLAYBACK_SUPPRESSED_CATEGORIES = new Set();
 
+function normalizeCategorySet(categories = []) {
+  return new Set(
+    Array.from(categories ?? [], (value) => String(value ?? "").trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
 async function parseJsonResponse(response) {
   const text = await response.text();
 
@@ -25,7 +32,7 @@ export class TwitchChannelInfo {
     channelName,
     clientId,
     oauthToken,
-    cacheTtlMs = 120000,
+    cacheTtlMs = 30_000,
     chatSuppressedCategories = DEFAULT_CHAT_SUPPRESSED_CATEGORIES,
     playbackSuppressedCategories = DEFAULT_PLAYBACK_SUPPRESSED_CATEGORIES
   }) {
@@ -33,12 +40,8 @@ export class TwitchChannelInfo {
     this.clientId = clientId;
     this.oauthToken = oauthToken;
     this.cacheTtlMs = cacheTtlMs;
-    this.chatSuppressedCategories = new Set(
-      Array.from(chatSuppressedCategories, (value) => value.trim().toLowerCase())
-    );
-    this.playbackSuppressedCategories = new Set(
-      Array.from(playbackSuppressedCategories, (value) => value.trim().toLowerCase())
-    );
+    this.chatSuppressedCategories = normalizeCategorySet(chatSuppressedCategories);
+    this.playbackSuppressedCategories = normalizeCategorySet(playbackSuppressedCategories);
     this.broadcasterId = "";
     this.lastCategoryName = "";
     this.lastChatSuppressedValue = false;
@@ -98,6 +101,15 @@ export class TwitchChannelInfo {
       ...this.lookupStatus,
       categoryName: this.lastCategoryName || this.lookupStatus.categoryName || ""
     };
+  }
+
+  updateSuppressionCategories({ chatSuppressedCategories = [], playbackSuppressedCategories = [] }) {
+    this.chatSuppressedCategories = normalizeCategorySet(chatSuppressedCategories);
+    this.playbackSuppressedCategories = normalizeCategorySet(playbackSuppressedCategories);
+
+    const normalizedCategory = this.lastCategoryName.trim().toLowerCase();
+    this.lastChatSuppressedValue = this.chatSuppressedCategories.has(normalizedCategory);
+    this.lastPlaybackSuppressedValue = this.playbackSuppressedCategories.has(normalizedCategory);
   }
 
   async shouldSuppressChatMessages() {

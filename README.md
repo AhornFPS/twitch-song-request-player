@@ -25,6 +25,7 @@ You do not need Node.js if you use the packaged releases.
 - Persistent queue, stopped-track, history, admin activity, and request audit state across restarts
 - Playlist library tools for search, sort, import/export, metadata refresh, and bulk queue/delete actions
 - In-app Twitch bot device login flow
+- Twitch game/category-aware message and playback suppression, with user-defined rules in Settings
 - Desktop media key support and optional Start with Windows
 - Built-in desktop updates for installed Windows builds
 

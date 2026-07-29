@@ -100,3 +100,95 @@ test("category lookup status reports oauth errors separately", async (t) => {
   assert.equal(state.suppressChatMessages, false);
   assert.equal(channelInfo.getStatus().state, "oauth_error");
 });
+
+test("edited suppression categories apply immediately to the cached Twitch category", async (t) => {
+  const originalFetch = global.fetch;
+  let requestCount = 0;
+
+  global.fetch = async (url) => {
+    requestCount += 1;
+
+    return new Response(JSON.stringify({
+      data: String(url).includes("/users?login=")
+        ? [{ id: "1234" }]
+        : [{ game_name: "Music" }]
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const channelInfo = new TwitchChannelInfo({
+    channelName: "ahorn",
+    clientId: "client-123",
+    oauthToken: "oauth:user-token-123",
+    chatSuppressedCategories: ["Music"]
+  });
+
+  assert.deepEqual(await channelInfo.getCategorySuppressionState(), {
+    categoryName: "Music",
+    suppressChatMessages: true,
+    suppressMusicPlayback: false
+  });
+
+  channelInfo.updateSuppressionCategories({
+    chatSuppressedCategories: ["DJs"],
+    playbackSuppressedCategories: ["Music"]
+  });
+
+  assert.deepEqual(await channelInfo.getCategorySuppressionState(), {
+    categoryName: "Music",
+    suppressChatMessages: false,
+    suppressMusicPlayback: true
+  });
+  assert.equal(requestCount, 2);
+});
+
+test("category suppression refreshes Twitch state after the configured cache interval", async (t) => {
+  const originalFetch = global.fetch;
+  let categoryName = "Music";
+  let requestCount = 0;
+
+  global.fetch = async (url) => {
+    requestCount += 1;
+
+    return new Response(JSON.stringify({
+      data: String(url).includes("/users?login=")
+        ? [{ id: "1234" }]
+        : [{ game_name: categoryName }]
+    }), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/json"
+      }
+    });
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const channelInfo = new TwitchChannelInfo({
+    channelName: "ahorn",
+    clientId: "client-123",
+    oauthToken: "oauth:user-token-123",
+    cacheTtlMs: 30_000,
+    chatSuppressedCategories: ["Music", "DJs"]
+  });
+
+  assert.equal((await channelInfo.getCategorySuppressionState()).categoryName, "Music");
+  categoryName = "DJs";
+  channelInfo.lastRefreshAt -= 30_001;
+
+  const refreshedState = await channelInfo.getCategorySuppressionState();
+
+  assert.equal(refreshedState.categoryName, "DJs");
+  assert.equal(refreshedState.suppressChatMessages, true);
+  assert.equal(requestCount, 3);
+});
