@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.16 - 2026-07-29
+
 - Prevented the desktop app from opening more than once and focused the existing window on later launches.
 - Made Twitch game/category suppression refresh every 30 seconds and apply edited message or playback rules immediately.
 
