@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.10.17 - 2026-08-01
+
 - Prevented a stale OBS YouTube fallback source from starting alongside normal YouTube playback when OBS opens late.
 
 ## 2.10.16 - 2026-07-29
