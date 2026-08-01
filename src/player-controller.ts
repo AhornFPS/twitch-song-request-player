@@ -156,6 +156,7 @@ export class PlayerController {
       ? getRadioTracks
       : null;
     this.externalPlayback = externalPlayback;
+    this.browserPlaybackPreparation = null;
   }
 
   clampElapsedSeconds(track, value) {
@@ -637,12 +638,27 @@ export class PlayerController {
     return "idle";
   }
 
-  handleSocketConnection(socket) {
+  async handleSocketConnection(socket) {
     logInfo("Browser source connected", {
       socketId: socket.id,
       currentTrack: formatTrack(this.currentTrack),
       queueLength: this.queue.length
     });
+    socket.on("player:event", async (payload) => {
+      await this.handlePlayerEvent(payload);
+    });
+
+    if (socket.handshake?.auth?.playbackClientRole === "obs") {
+      const playbackReady = await this.prepareBrowserPlayback();
+      if (!playbackReady) {
+        logWarn("Deferring OBS browser-source playback until fallback cleanup succeeds", {
+          socketId: socket.id,
+          currentTrack: formatTrack(this.currentTrack)
+        });
+        return;
+      }
+    }
+
     socket.emit("state", this.getPublicState());
 
     if (this.currentTrack && !this.isExternalPlaybackActiveForTrack(this.currentTrack)) {
@@ -655,9 +671,27 @@ export class PlayerController {
       });
     }
 
-    socket.on("player:event", async (payload) => {
-      await this.handlePlayerEvent(payload);
-    });
+  }
+
+  async prepareBrowserPlayback() {
+    if (
+      !this.currentTrack ||
+      !this.externalPlayback?.needsSourceClear?.() ||
+      this.isExternalPlaybackActiveForTrack(this.currentTrack)
+    ) {
+      return true;
+    }
+
+    if (!this.browserPlaybackPreparation) {
+      this.browserPlaybackPreparation = this.clearExternalPlaybackSource({
+        reason: "obs_browser_source_connected"
+      }).finally(() => {
+        this.browserPlaybackPreparation = null;
+      });
+    }
+
+    const sourceCleared = await this.browserPlaybackPreparation;
+    return sourceCleared !== false && !this.externalPlayback.needsSourceClear?.();
   }
 
   setRequestPolicy(requestPolicy = {}) {
@@ -1785,11 +1819,11 @@ export class PlayerController {
 
   async clearExternalPlaybackSource({ reason = "" } = {}) {
     if (!this.externalPlayback?.clearSource) {
-      return;
+      return true;
     }
 
     try {
-      await this.externalPlayback.clearSource({
+      return await this.externalPlayback.clearSource({
         reason,
         track: this.currentTrack
       });
@@ -1799,6 +1833,7 @@ export class PlayerController {
         reason,
         message: error?.message ?? String(error)
       });
+      return false;
     }
   }
 

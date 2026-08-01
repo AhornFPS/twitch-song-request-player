@@ -557,6 +557,107 @@ test("blocked embedded YouTube errors switch to external fallback playback inste
   assert.equal(socketEvents.some(({ event }) => event === "player:load"), false);
 });
 
+test("OBS browser-source startup clears stale fallback audio before loading embedded playback", async () => {
+  const lifecycle = [];
+  let sourceClearNeeded = false;
+  const { controller } = createController({
+    externalPlayback: {
+      shouldHandleTrack() {
+        return false;
+      },
+      needsSourceClear() {
+        return sourceClearNeeded;
+      },
+      async clearSource() {
+        lifecycle.push("fallback:clear:start");
+        await Promise.resolve();
+        sourceClearNeeded = false;
+        lifecycle.push("fallback:clear:end");
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/normal-after-obs-start",
+    title: "Normal After OBS Start",
+    key: "youtube:normal-after-obs-start",
+    artworkUrl: "",
+    durationSeconds: 180,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  sourceClearNeeded = true;
+  lifecycle.length = 0;
+
+  await controller.handleSocketConnection({
+    id: "obs-socket",
+    handshake: {
+      auth: {
+        playbackClientRole: "obs"
+      }
+    },
+    emit(event) {
+      lifecycle.push(`socket:${event}`);
+    },
+    on() {
+    }
+  });
+
+  assert.deepEqual(lifecycle.slice(0, 3), [
+    "fallback:clear:start",
+    "fallback:clear:end",
+    "socket:state"
+  ]);
+  assert.equal(lifecycle.includes("socket:player:load"), true);
+});
+
+test("OBS browser-source startup defers embedded playback while stale fallback cleanup fails", async () => {
+  const socketEvents = [];
+  const { controller } = createController({
+    externalPlayback: {
+      shouldHandleTrack() {
+        return false;
+      },
+      needsSourceClear() {
+        return true;
+      },
+      async clearSource() {
+        return false;
+      }
+    }
+  });
+
+  controller.currentTrack = {
+    id: "current-youtube",
+    provider: "youtube",
+    url: "https://youtu.be/current-youtube",
+    title: "Current YouTube",
+    key: "youtube:current-youtube",
+    origin: "playlist",
+    playbackConfirmed: true
+  };
+
+  await controller.handleSocketConnection({
+    id: "obs-socket",
+    handshake: {
+      auth: {
+        playbackClientRole: "obs"
+      }
+    },
+    emit(event) {
+      socketEvents.push(event);
+    },
+    on() {
+    }
+  });
+
+  assert.deepEqual(socketEvents, []);
+});
+
 test("embedded playback clears stale external fallback source before loading the player", async () => {
   const clearCalls = [];
   const { controller, emittedEvents } = createController({

@@ -225,3 +225,37 @@ test("OBS YouTube fallback can clear a stale source without an active in-memory 
   assert.equal(clearCall.requestPayload.inputName, "YouTube Fallback");
   assert.equal(clearCall.requestPayload.inputSettings.url, "about:blank");
 });
+
+test("OBS YouTube fallback keeps stale-source cleanup pending until OBS accepts it", async () => {
+  let shouldFail = true;
+  const calls = [];
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback"
+    }),
+    createClient: () => ({
+      async connect() {
+        if (shouldFail) {
+          throw new Error("OBS is offline");
+        }
+      },
+      async call(requestType, requestPayload) {
+        calls.push({ requestType, requestPayload });
+      },
+      async disconnect() {
+      }
+    })
+  });
+
+  assert.equal(fallback.needsSourceClear(), true);
+  assert.equal(await fallback.clearSource({ reason: "embedded_playback_start" }), false);
+  assert.equal(fallback.needsSourceClear(), true);
+
+  shouldFail = false;
+  assert.equal(await fallback.clearSource({ reason: "obs_browser_source_connected" }), true);
+  assert.equal(fallback.needsSourceClear(), false);
+  assert.equal(calls.at(-1)?.requestPayload.inputSettings.url, "about:blank");
+});

@@ -727,13 +727,36 @@ export async function startAppServer({
     response.status(204).end();
   });
 
-  app.get("/api/state", (_request, response) => {
-    response.json({
-      ...playerController.getPublicState(),
-      theme: currentSettings.theme,
-      overlayBuildToken,
-      overlayScalePercent: currentSettings.overlayScalePercent,
-      playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
+  app.get("/api/state", (request, response) => {
+    const sendState = async () => {
+      if (request.get("x-playback-client") === "obs") {
+        const playbackReady = await playerController.prepareBrowserPlayback();
+        if (!playbackReady) {
+          response.status(503).json({
+            error: "Waiting for OBS fallback cleanup before starting browser playback.",
+            retryable: true
+          });
+          return;
+        }
+      }
+
+      response.json({
+        ...playerController.getPublicState(),
+        theme: currentSettings.theme,
+        overlayBuildToken,
+        overlayScalePercent: currentSettings.overlayScalePercent,
+        playerStartupTimeoutSeconds: currentSettings.playerStartupTimeoutSeconds
+      });
+    };
+
+    void sendState().catch((error) => {
+      logError("Failed to prepare browser playback state", {
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+      response.status(500).json({
+        error: "Could not prepare browser playback."
+      });
     });
   });
 
@@ -1625,7 +1648,13 @@ export async function startAppServer({
   });
 
   io.on("connection", (socket) => {
-    playerController.handleSocketConnection(socket);
+    void playerController.handleSocketConnection(socket).catch((error) => {
+      logError("Failed to initialize browser source connection", {
+        socketId: socket.id,
+        message: error?.message ?? String(error),
+        stack: error?.stack ?? null
+      });
+    });
   });
 
   try {

@@ -18,7 +18,22 @@ function sendClientLog(level, message, details = null) {
   }).catch(() => {});
 }
 
-const socket = typeof window.io === "function" ? window.io() : null;
+const playbackClientRole = (() => {
+  try {
+    return new URL(window.location.href).searchParams.get("embedded") === "desktop"
+      ? "desktop"
+      : "obs";
+  } catch {
+    return "obs";
+  }
+})();
+const socket = typeof window.io === "function"
+  ? window.io({
+      auth: {
+        playbackClientRole
+      }
+    })
+  : null;
 const youtubeContainer = document.getElementById("youtube-player");
 let soundCloudFrame = document.getElementById("soundcloud-player");
 const sunoAudio = document.getElementById("suno-player");
@@ -1529,13 +1544,16 @@ function startStatePolling() {
   }
 
   statePollTimer = window.setInterval(() => {
-    void fetchState();
+    void fetchState().catch(() => {});
   }, 3000);
 }
 
 async function fetchState() {
   const response = await fetch("/api/state", {
-    cache: "no-store"
+    cache: "no-store",
+    headers: {
+      "X-Playback-Client": playbackClientRole
+    }
   });
 
   if (!response.ok) {

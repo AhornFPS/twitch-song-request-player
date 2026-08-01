@@ -110,6 +110,10 @@ export class ObsYoutubeFallback {
     this.playbackBufferSeconds = playbackBufferSeconds;
     this.activeTrackId = "";
     this.finishTimer = null;
+    // OBS persists Browser Source settings between launches. Assume the source
+    // may still contain an autoplay URL until we have successfully blanked it.
+    this.sourceClearNeeded = true;
+    this.sourceClearPromise = null;
   }
 
   getConfig() {
@@ -142,6 +146,10 @@ export class ObsYoutubeFallback {
 
   isPlayingTrack(track) {
     return Boolean(this.activeTrackId && track?.id === this.activeTrackId);
+  }
+
+  needsSourceClear() {
+    return this.isConfigured() && this.sourceClearNeeded;
   }
 
   getStatus() {
@@ -275,6 +283,7 @@ export class ObsYoutubeFallback {
     const playbackUrl = buildPlaybackUrl(track);
     await this.setSourceUrl(playbackUrl);
     this.activeTrackId = track.id;
+    this.sourceClearNeeded = true;
     this.scheduleFinish(track);
 
     logInfo("Started OBS YouTube fallback playback", {
@@ -318,27 +327,40 @@ export class ObsYoutubeFallback {
       return false;
     }
 
-    try {
-      await this.setSourceUrl(blankUrl);
-      logInfo("Cleared OBS YouTube fallback source", {
-        track: formatTrack(track),
-        reason
-      });
-      return true;
-    } catch (error) {
-      logWarn("Failed to clear OBS YouTube fallback source", {
-        track: formatTrack(track),
-        reason,
-        message: error?.message ?? String(error)
-      });
-      return false;
+    if (this.sourceClearPromise) {
+      return this.sourceClearPromise;
     }
+
+    this.sourceClearPromise = (async () => {
+      try {
+        await this.setSourceUrl(blankUrl);
+        this.sourceClearNeeded = false;
+        logInfo("Cleared OBS YouTube fallback source", {
+          track: formatTrack(track),
+          reason
+        });
+        return true;
+      } catch (error) {
+        this.sourceClearNeeded = true;
+        logWarn("Failed to clear OBS YouTube fallback source", {
+          track: formatTrack(track),
+          reason,
+          message: error?.message ?? String(error)
+        });
+        return false;
+      } finally {
+        this.sourceClearPromise = null;
+      }
+    })();
+
+    return this.sourceClearPromise;
   }
 
   async openLoginPage() {
     this.clearFinishTimer();
     this.activeTrackId = "";
     await this.setSourceUrl(youtubeLoginUrl);
+    this.sourceClearNeeded = false;
 
     logInfo("Opened YouTube login page in OBS fallback source", {
       sourceName: this.getConfig().sourceName
