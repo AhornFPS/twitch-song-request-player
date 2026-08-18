@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Twitch Song Request Player Control Center</title>
+    <title>HornGaming Music Control Center</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -40,7 +40,26 @@
       </div>
     </div>
 
+    <div id="lan-pairing-modal" class="modal-overlay">
+      <div class="modal lan-pairing-modal" role="dialog" aria-modal="true" aria-labelledby="lan-pairing-title" aria-describedby="lan-pairing-copy">
+        <div class="modal__header">
+          <p class="lan-pairing-kicker">Local network connection</p>
+          <h2 id="lan-pairing-title">Allow this program to connect?</h2>
+        </div>
+        <div class="modal__body">
+          <p id="lan-pairing-copy" class="modal-copy"></p>
+          <div id="lan-pairing-identity" class="lan-pairing-identity"></div>
+          <p class="lan-pairing-note">Only accept when you recognize the computer. Pairing credentials are sent only in the accepted private reply, never in a broadcast, pending, or declined packet.</p>
+          <p id="lan-pairing-error" class="feedback is-error" hidden></p>
+        </div>
+        <div class="modal__footer">
+          <button id="lan-pairing-decline" class="ghost-button" type="button">Decline</button>
+          <button id="lan-pairing-accept" class="primary-button" type="button">Accept connection</button>
+        </div>
+      </div>
+    </div>
+
     <script src="/socket.io/socket.io.js"></script>
-    <script src="/dashboard.js?v=20260319a"></script>
+    <script src="/dashboard.js?v=20260804a"></script>
   </body>
 </html>

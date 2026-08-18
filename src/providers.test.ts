@@ -5,6 +5,7 @@ import {
   findYouTubeRadioTracks,
   resolveSongRequest,
   resolveTrackFromUrl,
+  resolveYouTubeMusicIdentity,
   resolveYouTubePlaylistFromApi,
   resolveYouTubeTrackFromApi
 } from "./providers.js";
@@ -308,6 +309,7 @@ test("youtube titles that already include an artist separator are left unchanged
                 title: "Known Artist - Final Track",
                 channelId: "UCseparated",
                 channelTitle: "Uploader Channel",
+                description: "Provided to YouTube by Example Distributor\n\nWrong Track · Known Artist",
                 liveBroadcastContent: "none",
                 thumbnails: {}
               },
@@ -328,7 +330,53 @@ test("youtube titles that already include an artist separator are left unchanged
   const track = await resolveYouTubeTrackFromApi("https://youtu.be/separated123", "api-key");
 
   assert.equal(track.title, "Known Artist - Final Track");
+  assert.equal(track.artist, "Known Artist");
+  assert.equal(track.trackTitle, "Final Track");
+  assert.equal(track.metadataIdentitySource, "video_title");
   assert.equal(track.sourceName, "Uploader Channel");
+});
+
+test("direct YouTube links keep an explicit upload title over unrelated provided metadata", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async () => ({
+    ok: true,
+    async json() {
+      return {
+        items: [
+          {
+            id: "Q6fPp2o7Tdg",
+            snippet: {
+              title: "Hioll - The Masses Seeking For Truth [MIT004]",
+              channelId: "UC6qQOTx9LuKMC5p2dbjmSRg",
+              channelTitle: "HATE",
+              description: "Provided to YouTube by Example Distributor\n\nSubdued Nation · Hioll",
+              liveBroadcastContent: "none",
+              thumbnails: {}
+            },
+            contentDetails: {
+              duration: "PT5M46S"
+            }
+          }
+        ]
+      };
+    }
+  });
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveYouTubeTrackFromApi(
+    "https://www.youtube.com/watch?v=Q6fPp2o7Tdg",
+    "api-key"
+  );
+
+  assert.equal(track.key, "youtube:Q6fPp2o7Tdg");
+  assert.equal(track.title, "Hioll - The Masses Seeking For Truth [MIT004]");
+  assert.equal(track.artist, "Hioll");
+  assert.equal(track.trackTitle, "The Masses Seeking For Truth [MIT004]");
+  assert.equal(track.metadataIdentitySource, "video_title");
 });
 
 test("search-based song requests can be disabled independently from direct links", async () => {
@@ -650,7 +698,7 @@ test("youtube radio search skips repeated song titles from different artists and
 
   assert.deepEqual(
     tracks.map((track) => track.title),
-    ["Glen Campbell - Topic - Rhinestone Cowboy", "Glen Campbell - Topic - Wichita Lineman"]
+    ["Glen Campbell - Rhinestone Cowboy", "Glen Campbell - Wichita Lineman"]
   );
 });
 
@@ -1707,7 +1755,7 @@ test("youtube search requests honor the configured safe search mode", async (t) 
   assert.equal(track.sourceChannelId, "UCsafe");
 });
 
-test("direct YouTube chat requests can opt into API metadata enrichment", async (t) => {
+test("direct YouTube requests always use API metadata when a key is available", async (t) => {
   const originalFetch = global.fetch;
   const requestedUrls = [];
 
@@ -1747,15 +1795,101 @@ test("direct YouTube chat requests can opt into API metadata enrichment", async 
     global.fetch = originalFetch;
   });
 
-  const track = await resolveSongRequest("https://youtu.be/enriched123", "api-key", {
-    preferYouTubeApiMetadata: true
-  });
+  const track = await resolveSongRequest("https://youtu.be/enriched123", "api-key");
 
   assert.equal(requestedUrls[0]?.pathname, "/youtube/v3/videos");
   assert.equal(track.title, "Direct Channel - Enriched Direct Track");
+  assert.equal(track.artist, "Direct Channel");
+  assert.equal(track.trackTitle, "Enriched Direct Track");
   assert.equal(track.sourceChannelId, "UCenriched");
   assert.equal(track.durationSeconds, 3723);
   assert.equal(track.isLive, true);
+});
+
+test("direct YouTube requests fall back to oEmbed metadata when the API is temporarily unavailable", async (t) => {
+  const originalFetch = global.fetch;
+  let requestCount = 0;
+  global.fetch = async (url) => {
+    requestCount += 1;
+    const requestedUrl = new URL(url);
+    if (requestedUrl.hostname === "www.googleapis.com") {
+      return {
+        ok: false,
+        status: 503,
+        async text() {
+          return "temporarily unavailable";
+        }
+      };
+    }
+    return {
+      ok: true,
+      async json() {
+        return {
+          title: "Fallback Artist - Fallback Track",
+          author_name: "Fallback Label",
+          author_url: "https://www.youtube.com/@fallback",
+          thumbnail_url: "https://img.youtube.test/fallback.jpg"
+        };
+      }
+    };
+  };
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveSongRequest("https://youtu.be/fallback123", "api-key");
+  assert.equal(requestCount, 2);
+  assert.equal(track.artist, "Fallback Artist");
+  assert.equal(track.trackTitle, "Fallback Track");
+  assert.equal(track.metadataResolutionFallback, "youtube_oembed");
+});
+
+test("YouTube music identity resolves artists from titles, topic channels, VEVO, and provided metadata", () => {
+  assert.deepEqual(
+    resolveYouTubeMusicIdentity("Example Artist - Northern Lights (Extended Mix)", "Example Label"),
+    {
+      artist: "Example Artist",
+      trackTitle: "Northern Lights (Extended Mix)",
+      source: "video_title"
+    }
+  );
+  assert.deepEqual(
+    resolveYouTubeMusicIdentity("Northern Lights", "Example Artist - Topic"),
+    {
+      artist: "Example Artist",
+      trackTitle: "Northern Lights",
+      source: "channel_and_title"
+    }
+  );
+  assert.equal(resolveYouTubeMusicIdentity("Bad Romance", "LadyGagaVEVO").artist, "Lady Gaga");
+  assert.deepEqual(
+    resolveYouTubeMusicIdentity("Dopamine - S3RL ft Sara", "S3RL"),
+    {
+      artist: "S3RL ft Sara",
+      trackTitle: "Dopamine",
+      source: "video_title_reversed_by_channel"
+    }
+  );
+  assert.deepEqual(
+    resolveYouTubeMusicIdentity("Dopamine - Next To Me", "Theracords"),
+    {
+      artist: "Dopamine",
+      trackTitle: "Next To Me",
+      source: "video_title"
+    }
+  );
+  assert.deepEqual(
+    resolveYouTubeMusicIdentity(
+      "Uploader title",
+      "Example Label",
+      "Provided to YouTube by Example Distributor\n\nNorthern Lights · Example Artist\n\nExample Album"
+    ),
+    {
+      artist: "Example Artist",
+      trackTitle: "Northern Lights",
+      source: "youtube_provided_metadata"
+    }
+  );
 });
 
 test("direct YouTube links without API metadata still capture channel details from oEmbed", async (t) => {

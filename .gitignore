@@ -1,6 +1,19 @@
+# Dependencies and machine-local settings
 node_modules/
 .env
-npm-debug.log*
-build/
-dist/
 settings.json
+queue-state.json
+npm-debug.log*
+
+# Generated application packages
+/build/
+/dist*/
+
+# Runtime, test, and agent scratch output
+/runtime/
+/.tmp-*
+/.codex/
+/.codex-*
+/.pytest_cache/
+__pycache__/
+*.py[cod]

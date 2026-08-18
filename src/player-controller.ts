@@ -68,6 +68,11 @@ function normalizeDurationSeconds(value) {
   return Math.floor(parsedValue);
 }
 
+function normalizePlaybackRate(value) {
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) && parsedValue > 0 ? parsedValue : 1;
+}
+
 function normalizeRequestPolicy(requestPolicy = {}) {
   const accessLevel = typeof requestPolicy.accessLevel === "string"
     ? requestPolicy.accessLevel.trim().toLowerCase()
@@ -110,18 +115,24 @@ function createRequestPolicyError(code, message) {
 }
 
 export class PlayerController {
-  constructor({
+        constructor({
     io,
     playlistRepository,
     runtimeStateStore = null,
     requestAuditStore = null,
-    historyLimit = 25,
+    historyLimit = 100,
     requestAuditLimit = 1000,
     requestPolicy = {},
     radioModeEnabled = true,
     radioTrackCount = 3,
     getRadioTracks = null,
-    externalPlayback = null
+    routeOwnedRequest = null,
+    beforeTrackStart = null,
+    externalPlayback = null,
+    decorateBroadcastState = null,
+    playbackConfirmationTimeoutMs = 20_000,
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout
   }) {
     this.io = io;
     this.playlistRepository = playlistRepository;
@@ -145,18 +156,37 @@ export class PlayerController {
     this.currentTrackStartedAt = 0;
     this.currentTrackElapsedSeconds = 0;
     this.fallbackPlaylistFinishTimer = null;
+    this.playbackConfirmationTimer = null;
+    this.playbackConfirmationRearmKey = "";
+    this.externalPlaybackOutputGeneration = 0;
+    const requestedPlaybackConfirmationTimeoutMs = Number(playbackConfirmationTimeoutMs);
+    this.playbackConfirmationTimeoutMs = Number.isFinite(requestedPlaybackConfirmationTimeoutMs)
+      ? Math.max(0, Math.min(120_000, requestedPlaybackConfirmationTimeoutMs))
+      : 20_000;
     this.fallbackPlaylistFinishBufferSeconds = FALLBACK_PLAYLIST_FINISH_BUFFER_SECONDS;
     this.playbackSuppressed = false;
     this.playbackSuppressedCategory = "";
     this.trackStartListeners = new Set();
     this.trackPlaybackListeners = new Set();
     this.trackFinishListeners = new Set();
+    this.playbackIdleListeners = new Set();
     this.requestTimestampsByUser = new Map();
-    this.getRadioTracks = typeof getRadioTracks === "function"
-      ? getRadioTracks
-      : null;
+    this.getRadioTracks = typeof getRadioTracks === "function" ? getRadioTracks : null;
+    this.routeOwnedRequest = typeof routeOwnedRequest === "function" ? routeOwnedRequest : null;
+    this.beforeTrackStart = typeof beforeTrackStart === "function" ? beforeTrackStart : null;
+    this.ownedRequestRetryTimers = new Map();
     this.externalPlayback = externalPlayback;
+    this.decorateBroadcastState = typeof decorateBroadcastState === "function"
+      ? decorateBroadcastState
+      : null;
+    this.unconfirmedRequestSelection = null;
+    this.externalOutputRecovery = null;
+    this.externalOutputRecoveryTimer = null;
+    this.externalOutputRecoveryPersistenceTimer = null;
+    this.externalOutputRecoveryGeneration = 0;
     this.browserPlaybackPreparation = null;
+    this.setTimeoutFn = setTimeoutFn;
+    this.clearTimeoutFn = clearTimeoutFn;
   }
 
   clampElapsedSeconds(track, value) {
@@ -181,7 +211,9 @@ export class PlayerController {
       let elapsedSeconds = this.currentTrackElapsedSeconds;
 
       if (!this.isPlaybackPaused && this.currentTrackStartedAt > 0) {
-        elapsedSeconds += (Date.now() - this.currentTrackStartedAt) / 1000;
+        elapsedSeconds += (
+          (Date.now() - this.currentTrackStartedAt) / 1000
+        ) * normalizePlaybackRate(track.playbackRate);
       }
 
       return this.clampElapsedSeconds(track, elapsedSeconds);
@@ -206,6 +238,8 @@ export class PlayerController {
 
   resetCurrentTrackProgress() {
     this.clearFallbackPlaylistFinishTimer();
+    this.clearPlaybackConfirmationTimer();
+    this.clearPlaybackConfirmationRearm();
     this.currentTrackStartedAt = 0;
     this.currentTrackElapsedSeconds = 0;
   }
@@ -217,6 +251,55 @@ export class PlayerController {
 
     clearTimeout(this.fallbackPlaylistFinishTimer);
     this.fallbackPlaylistFinishTimer = null;
+  }
+
+  clearPlaybackConfirmationTimer() {
+    if (!this.playbackConfirmationTimer) {
+      return;
+    }
+    this.clearTimeoutFn(this.playbackConfirmationTimer);
+    this.playbackConfirmationTimer = null;
+  }
+
+  clearPlaybackConfirmationRearm() {
+    this.playbackConfirmationRearmKey = "";
+  }
+
+  schedulePlaybackConfirmationTimer(track = this.currentTrack) {
+    this.clearPlaybackConfirmationTimer();
+    if (!track?.id || track.playbackConfirmed || this.playbackConfirmationTimeoutMs <= 0) {
+      return false;
+    }
+    const trackId = track.id;
+    this.playbackConfirmationTimer = this.setTimeoutFn(() => {
+      this.playbackConfirmationTimer = null;
+      if (
+        this.currentTrack?.id !== trackId ||
+        this.currentTrack.playbackConfirmed ||
+        this.isPlaybackPaused
+      ) {
+        return;
+      }
+      logWarn("Playback client did not confirm the selected track in time", {
+        track: formatTrack(this.currentTrack),
+        timeoutMs: this.playbackConfirmationTimeoutMs
+      });
+      void this.handlePlayerEvent({
+        trackId,
+        status: "error",
+        reason: "playback_confirmation_timeout",
+        message: "The playback client did not confirm that audio started."
+      }, {
+        trustedInternalReason: "playback_confirmation_timeout"
+      }).catch((error) => {
+        logWarn("Could not recover from an unconfirmed playback start", {
+          track: formatTrack(this.currentTrack),
+          message: error?.message ?? String(error)
+        });
+      });
+    }, this.playbackConfirmationTimeoutMs);
+    this.playbackConfirmationTimer?.unref?.();
+    return true;
   }
 
   shouldUseFallbackFinishTimer(track) {
@@ -249,7 +332,8 @@ export class PlayerController {
     const bufferSeconds = Number.isFinite(this.fallbackPlaylistFinishBufferSeconds)
       ? Math.max(this.fallbackPlaylistFinishBufferSeconds, 0)
       : FALLBACK_PLAYLIST_FINISH_BUFFER_SECONDS;
-    const delayMs = Math.max(0, (durationSeconds - elapsedSeconds + bufferSeconds) * 1000);
+    const playbackRate = normalizePlaybackRate(track.playbackRate);
+    const delayMs = Math.max(0, ((durationSeconds - elapsedSeconds) / playbackRate + bufferSeconds) * 1000);
     const trackId = track.id;
 
     this.fallbackPlaylistFinishTimer = setTimeout(() => {
@@ -306,6 +390,8 @@ export class PlayerController {
       provider: track.provider,
       url: track.url,
       title: track.title,
+      artist: track.artist ?? "",
+      trackTitle: track.trackTitle ?? "",
       key: track.key,
       origin: track.origin,
       artworkUrl: track.artworkUrl ?? "",
@@ -319,6 +405,12 @@ export class PlayerController {
       requestedFromName: track.requestedFromName ?? "",
       requestedFromKey: track.requestedFromKey ?? "",
       requestedBy: track.requestedBy,
+      ...(typeof track.preservePitch === "boolean"
+        ? { preservePitch: track.preservePitch }
+        : {}),
+      ...(normalizePlaybackRate(track.playbackRate) !== 1
+        ? { playbackRate: normalizePlaybackRate(track.playbackRate) }
+        : {}),
       isSaved: this.playlistRepository.hasTrack(track),
       isPaused: track.id === this.currentTrack?.id ? this.isPlaybackPaused : false
     };
@@ -329,6 +421,19 @@ export class PlayerController {
     }
 
     return serializedTrack;
+  }
+
+  serializePlaybackTrack(track) {
+    return this.serializeTrack(track);
+  }
+
+  getOnlineRequestQueueKey(track) {
+    const key = typeof track?.key === "string" ? track.key.trim() : "";
+    if (key) {
+      return `key:${key}`;
+    }
+    const id = typeof track?.id === "string" ? track.id.trim() : "";
+    return id ? `id:${id}` : "";
   }
 
   getPublicState() {
@@ -351,6 +456,21 @@ export class PlayerController {
         createdAt: entry.createdAt
       }))
     };
+  }
+
+  getBroadcastState() {
+    const state = this.getPublicState();
+    if (!this.decorateBroadcastState) {
+      return state;
+    }
+    try {
+      return this.decorateBroadcastState(state) ?? state;
+    } catch (error) {
+      logWarn("Could not compose the public playback presentation", {
+        message: error?.message ?? String(error)
+      });
+      return state;
+    }
   }
 
   serializeRequester(requester) {
@@ -390,6 +510,8 @@ export class PlayerController {
       provider,
       url,
       title,
+      artist: typeof track.artist === "string" ? track.artist : "",
+      trackTitle: typeof track.trackTitle === "string" ? track.trackTitle : "",
       key,
       origin: typeof track.origin === "string" ? track.origin : "",
       artworkUrl: typeof track.artworkUrl === "string" ? track.artworkUrl : "",
@@ -762,6 +884,79 @@ export class PlayerController {
     }
   }
 
+  clearOwnedRequestRecheck(trackId) {
+    const timer = this.ownedRequestRetryTimers.get(trackId);
+    if (timer) {
+      this.clearTimeoutFn(timer);
+      this.ownedRequestRetryTimers.delete(trackId);
+    }
+  }
+
+  async checkOwnedRequest(track) {
+    if (!this.routeOwnedRequest || !["youtube", "suno", "soundcloud"].includes(track?.provider)) {
+      return null;
+    }
+    return this.routeOwnedRequest(track);
+  }
+
+  scheduleOwnedRequestRecheck(track, attempt = 0) {
+    if (!track?.id || !this.routeOwnedRequest) {
+      return;
+    }
+    this.clearOwnedRequestRecheck(track.id);
+    const delays = [5_000, 15_000, 30_000, 60_000];
+    const delayMs = delays[Math.min(attempt, delays.length - 1)];
+    const timer = this.setTimeoutFn(() => {
+      this.ownedRequestRetryTimers.delete(track.id);
+      void this.recheckOwnedQueuedRequest(track.id, attempt).catch((error) => {
+        logWarn("Could not recheck queued request ownership", {
+          track: formatTrack(track),
+          message: error?.message ?? String(error)
+        });
+      });
+    }, delayMs);
+    timer?.unref?.();
+    this.ownedRequestRetryTimers.set(track.id, timer);
+  }
+
+  async recheckOwnedQueuedRequest(trackId, attempt = 0) {
+    const index = this.queue.findIndex((candidate) => candidate.id === trackId);
+    if (index < 0) {
+      this.clearOwnedRequestRecheck(trackId);
+      return false;
+    }
+    const track = this.queue[index];
+    let result = null;
+    try {
+      result = await this.checkOwnedRequest(track);
+    } catch (error) {
+      logWarn("AutoDJ ownership recheck is temporarily unavailable", {
+        track: formatTrack(track),
+        message: error?.message ?? String(error)
+      });
+    }
+    const currentIndex = this.queue.findIndex((candidate) => candidate.id === trackId);
+    if (result?.matched === true && currentIndex >= 0 && this.currentTrack?.id !== trackId) {
+      const [matchedTrack] = this.queue.splice(currentIndex, 1);
+      this.clearOwnedRequestRecheck(trackId);
+      await this.recordRequestOutcome({
+        source: "autodj_owned_recheck",
+        outcome: "accepted",
+        reason: "autodj_owned_late_match",
+        requestedBy: matchedTrack.requestedBy,
+        track: matchedTrack,
+        details: { match: result.match ?? null }
+      });
+      await this.persistRuntimeState();
+      this.broadcastState();
+      return true;
+    }
+    if (currentIndex >= 0) {
+      this.scheduleOwnedRequestRecheck(track, attempt + 1);
+    }
+    return false;
+  }
+
   async addRequest(track, {
     bypassRequestLimits = false,
     requestSource = "unknown",
@@ -819,6 +1014,76 @@ export class PlayerController {
       throw error;
     }
 
+    if (this.routeOwnedRequest) {
+      let routed = null;
+      try {
+        routed = await this.routeOwnedRequest(track);
+      } catch (error) {
+        logWarn("Could not check the AutoDJ owned-track queue; using normal request playback", {
+          track: formatTrack(track),
+          message: error?.message ?? String(error)
+        });
+      }
+
+      if (routed?.matched === true && routed.track) {
+        const routedTrack = {
+          ...routed.track,
+          requestedBy: routed.track.requestedBy ?? track.requestedBy ?? null
+        };
+        const duplicateType = routedTrack.duplicateType ?? routed.duplicateType ?? null;
+        if (duplicateType) {
+          await this.recordRequestOutcome({
+            source: requestSource,
+            outcome: "duplicate",
+            reason: `autodj_owned_duplicate_${duplicateType}`,
+            input: requestInput,
+            requestedBy: track.requestedBy,
+            track,
+            bypassRequestLimits,
+            details: {
+              duplicateType,
+              matchedLocalTrack: this.serializeRequestAuditTrack(routedTrack),
+              match: routed.match ?? null,
+              requestContext
+            }
+          });
+          return {
+            ...routedTrack,
+            queuedForAutoDj: true,
+            alreadyQueued: duplicateType === "queue",
+            duplicateType
+          };
+        }
+
+        const requesterUsername = track.requestedBy?.username?.trim().toLowerCase();
+        if (!bypassRequestLimits && requesterUsername) {
+          this.requestTimestampsByUser.set(requesterUsername, Date.now());
+        }
+        await this.recordRequestOutcome({
+          source: requestSource,
+          outcome: "accepted",
+          reason: "autodj_owned_queued",
+          input: requestInput,
+          requestedBy: track.requestedBy,
+          track,
+          bypassRequestLimits,
+          details: {
+            queuePosition: routedTrack.queuePosition ?? routed.queuePosition ?? 1,
+            matchedLocalTrack: this.serializeRequestAuditTrack(routedTrack),
+            match: routed.match ?? null,
+            requestContext
+          }
+        });
+        this.broadcastState();
+        return {
+          ...routedTrack,
+          queuedForAutoDj: true,
+          alreadyQueued: false,
+          duplicateType: null
+        };
+      }
+    }
+
     const queueTrack = {
       ...track,
       id: crypto.randomUUID(),
@@ -851,6 +1116,7 @@ export class PlayerController {
     });
     await this.persistRuntimeState();
     this.broadcastState();
+    this.scheduleOwnedRequestRecheck(queueTrack);
     await this.ensurePlayback();
 
     return {
@@ -932,6 +1198,7 @@ export class PlayerController {
     }
 
     const [removedTrack] = this.queue.splice(trackIndex, 1);
+    this.clearOwnedRequestRecheck(removedTrack.id);
     this.recordAdminEvent("queue_remove", {
       triggeredBy,
       track: removedTrack
@@ -1017,6 +1284,9 @@ export class PlayerController {
       ...this.queue,
       ...this.radioQueue
     ].map((track) => this.serializeTrack(track));
+    for (const track of this.queue) {
+      this.clearOwnedRequestRecheck(track.id);
+    }
     this.queue = [];
     this.radioQueue = [];
     this.recordAdminEvent("queue_clear", {
@@ -1082,6 +1352,7 @@ export class PlayerController {
     }
 
     const [removedTrack] = this.queue.splice(trackIndex, 1);
+    this.clearOwnedRequestRecheck(removedTrack.id);
     this.recordAdminEvent("queue_remove_own", {
       triggeredBy,
       track: removedTrack
@@ -1169,6 +1440,34 @@ export class PlayerController {
     return () => {
       this.trackFinishListeners.delete(listener);
     };
+  }
+
+  onPlaybackIdle(listener) {
+    this.playbackIdleListeners.add(listener);
+
+    return () => {
+      this.playbackIdleListeners.delete(listener);
+    };
+  }
+
+  notifyPlaybackIdle(payload) {
+    let rearmClaimed = false;
+    for (const listener of this.playbackIdleListeners) {
+      try {
+        const listenerResult = listener(payload);
+        rearmClaimed ||= listenerResult === true;
+        Promise.resolve(listenerResult).catch((error) => {
+          logWarn("Playback-idle listener failed", {
+            message: error?.message ?? String(error)
+          });
+        });
+      } catch (error) {
+        logWarn("Playback-idle listener failed", {
+          message: error?.message ?? String(error)
+        });
+      }
+    }
+    return rearmClaimed;
   }
 
   async skipCurrentTrack(triggeredBy) {
@@ -1337,6 +1636,10 @@ export class PlayerController {
     return this.serializeTrack(this.currentTrack);
   }
 
+  isPlaybackAdvancePending() {
+    return this.isAdvancing;
+  }
+
   async restoreRuntimeState() {
     if (!this.runtimeStateStore) {
       if (!this.requestAuditStore) {
@@ -1349,6 +1652,11 @@ export class PlayerController {
       this.queue = Array.isArray(persistedState.queue)
         ? persistedState.queue.map((track) => ({ ...track }))
         : [];
+      for (const track of this.queue) {
+        if (["youtube", "suno", "soundcloud"].includes(track.provider)) {
+          this.scheduleOwnedRequestRecheck(track);
+        }
+      }
       this.radioQueue = Array.isArray(persistedState.radioQueue)
         ? persistedState.radioQueue.map((track) => ({ ...track }))
         : [];
@@ -1425,7 +1733,6 @@ export class PlayerController {
 
     this.playbackSuppressed = nextSuppressed;
     this.playbackSuppressedCategory = nextCategory;
-
     if (nextSuppressed) {
       logInfo("Playback suppressed by Twitch category", {
         category: nextCategory || null,
@@ -1681,10 +1988,38 @@ export class PlayerController {
     this.isAdvancing = true;
 
     try {
-      const nextTrack =
-        this.queue.shift() ??
-        this.radioQueue.shift() ??
-        await this.playlistRepository.getRandomTrack();
+      let nextTrack = null;
+      let source = "playlist";
+
+      while (this.queue.length > 0 && !nextTrack) {
+        const queuedTrack = this.queue[0];
+        let routed = null;
+        try {
+          routed = await this.checkOwnedRequest(queuedTrack);
+        } catch (error) {
+          logWarn("Final AutoDJ ownership check is temporarily unavailable", {
+            track: formatTrack(queuedTrack),
+            message: error?.message ?? String(error)
+          });
+        }
+        if (routed?.matched === true && this.queue[0]?.id === queuedTrack.id) {
+          this.queue.shift();
+          this.clearOwnedRequestRecheck(queuedTrack.id);
+          await this.persistRuntimeState();
+          this.broadcastState();
+          continue;
+        }
+        nextTrack = queuedTrack;
+        source = "queue";
+      }
+
+      if (!nextTrack && this.radioQueue.length > 0) {
+        nextTrack = this.radioQueue[0];
+        source = "radio";
+      }
+      if (!nextTrack) {
+        nextTrack = await this.playlistRepository.getRandomTrack();
+      }
 
       if (!nextTrack) {
         logWarn("No track available for playback", {
@@ -1693,6 +2028,29 @@ export class PlayerController {
         await this.persistRuntimeState();
         this.broadcastState();
         return;
+      }
+
+      if (this.beforeTrackStart) {
+        try {
+          const readiness = await this.beforeTrackStart(nextTrack);
+          if (readiness === false || readiness?.ready === false) {
+            throw new Error(readiness?.error || "AutoDJ takeover was not acknowledged.");
+          }
+        } catch (error) {
+          logWarn("Holding online playback until AutoDJ takeover is acknowledged", {
+            track: formatTrack(nextTrack),
+            message: error?.message ?? String(error)
+          });
+          this.broadcastState();
+          return;
+        }
+      }
+
+      if (source === "queue" && this.queue[0]?.id === nextTrack.id) {
+        this.queue.shift();
+        this.clearOwnedRequestRecheck(nextTrack.id);
+      } else if (source === "radio" && this.radioQueue[0]?.id === nextTrack.id) {
+        this.radioQueue.shift();
       }
 
       await this.startTrackPlayback(nextTrack, {
@@ -1853,7 +2211,7 @@ export class PlayerController {
       currentTrack: formatTrack(this.currentTrack),
       queueLength: this.queue.length
     });
-    this.io.emit("state", this.getPublicState());
+    this.io.emit("state", this.getBroadcastState());
   }
 
   async togglePauseCurrentTrack(triggeredBy) {
@@ -1992,9 +2350,12 @@ export class PlayerController {
         provider: track.provider,
         url: track.url,
         title: track.title,
+        artist: track.artist ?? "",
+        trackTitle: track.trackTitle ?? "",
         key: track.key,
         origin: track.origin,
         artworkUrl: track.artworkUrl ?? "",
+        audioUrl: track.audioUrl ?? "",
         soundCloudResourceUrl: track.soundCloudResourceUrl ?? "",
         durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
         elapsedSeconds: this.clampElapsedSeconds(track, track.elapsedSeconds),

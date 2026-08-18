@@ -856,7 +856,11 @@ test("soundcloud widget errors retry the canonical resource once before skipping
     {
       trackId: "sc-spitfire",
       status: "error",
-      reason: "soundcloud_widget_error"
+      reason: "soundcloud_widget_error",
+      providerErrorCode: "permanent",
+      resourceKind: "canonical-api-resource",
+      privateResource: false,
+      recoveryAttempts: 1
     }
   ]);
 });

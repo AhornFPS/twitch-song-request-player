@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import { normalizeChatCommands } from "./chat-commands.js";
+import { normalizeAutoDjServiceUrl, normalizeAutoDjLeaseSeconds } from "./autodj-service-contract.js";
 import { resolveAppRootFromModuleDir } from "./runtime-paths.js";
 
 const moduleDir =
@@ -141,6 +142,21 @@ function normalizeTheme(value) {
 function normalizeDashboardLayout(value) {
   const layoutId = trimValue(value).toLowerCase();
   return validDashboardLayoutIds.has(layoutId) ? layoutId : dashboardLayoutOptions[0].id;
+}
+
+function normalizeAutoDjBrowserOutputUrl(value) {
+  const candidate = trimValue(value);
+  if (!candidate) return "";
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    parsed.username = "";
+    parsed.password = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    return "";
+  }
 }
 
 function normalizePort(value) {
@@ -284,6 +300,13 @@ function normalizeRequestPolicy(value) {
 }
 
 function normalizeSettings(raw) {
+  const autoDjServiceUrl = normalizeAutoDjServiceUrl(
+    raw.autoDjServiceUrl ?? raw.AUTODJ_SERVICE_URL
+  );
+  const requestedAutoDjEnabled = normalizeBoolean(
+    raw.autoDjEnabled ?? raw.AUTODJ_ENABLED ?? raw.localMusicAutoDjEnabled ?? raw.LOCAL_MUSIC_AUTODJ_ENABLED,
+    false
+  );
   return {
     twitchChannel: trimValue(raw.twitchChannel ?? raw.TWITCH_CHANNEL).replace(/^#/, ""),
     twitchUsername: trimValue(raw.twitchUsername ?? raw.TWITCH_USERNAME),
@@ -320,6 +343,15 @@ function normalizeSettings(raw) {
     obsWebSocketPassword: trimValue(raw.obsWebSocketPassword ?? raw.OBS_WEBSOCKET_PASSWORD),
     obsYoutubeFallbackSourceName: trimValue(
       raw.obsYoutubeFallbackSourceName ?? raw.OBS_YOUTUBE_FALLBACK_SOURCE_NAME
+    ),
+    autoDjEnabled: Boolean(autoDjServiceUrl) && requestedAutoDjEnabled,
+    autoDjServiceUrl,
+    autoDjBrowserOutputUrl: normalizeAutoDjBrowserOutputUrl(
+      raw.autoDjBrowserOutputUrl ?? raw.AUTODJ_BROWSER_OUTPUT_URL
+    ),
+    autoDjServiceToken: trimValue(raw.autoDjServiceToken ?? raw.AUTODJ_SERVICE_TOKEN),
+    autoDjServiceLeaseSeconds: normalizeAutoDjLeaseSeconds(
+      raw.autoDjServiceLeaseSeconds ?? raw.AUTODJ_SERVICE_LEASE_SECONDS
     ),
     radioModeEnabled: normalizeBoolean(raw.radioModeEnabled, true),
     radioTrackCount: normalizeRadioTrackCount(raw.radioTrackCount, 3),
@@ -440,6 +472,35 @@ function normalizeOverrideSettings(raw) {
     );
   }
 
+  if (
+    Object.prototype.hasOwnProperty.call(raw, "autoDjEnabled") ||
+    Object.prototype.hasOwnProperty.call(raw, "AUTODJ_ENABLED")
+  ) {
+    overrides.autoDjEnabled = normalizeBoolean(raw.autoDjEnabled ?? raw.AUTODJ_ENABLED, false);
+  }
+
+  if (hasOwnSetting(raw, ["autoDjServiceUrl", "AUTODJ_SERVICE_URL"])) {
+    overrides.autoDjServiceUrl = normalizeAutoDjServiceUrl(
+      raw.autoDjServiceUrl ?? raw.AUTODJ_SERVICE_URL
+    );
+  }
+
+  if (hasOwnSetting(raw, ["autoDjBrowserOutputUrl", "AUTODJ_BROWSER_OUTPUT_URL"])) {
+    overrides.autoDjBrowserOutputUrl = normalizeAutoDjBrowserOutputUrl(
+      raw.autoDjBrowserOutputUrl ?? raw.AUTODJ_BROWSER_OUTPUT_URL
+    );
+  }
+
+  if (hasOwnSetting(raw, ["autoDjServiceToken", "AUTODJ_SERVICE_TOKEN"])) {
+    overrides.autoDjServiceToken = trimValue(raw.autoDjServiceToken ?? raw.AUTODJ_SERVICE_TOKEN);
+  }
+
+  if (hasOwnSetting(raw, ["autoDjServiceLeaseSeconds", "AUTODJ_SERVICE_LEASE_SECONDS"])) {
+    overrides.autoDjServiceLeaseSeconds = normalizeAutoDjLeaseSeconds(
+      raw.autoDjServiceLeaseSeconds ?? raw.AUTODJ_SERVICE_LEASE_SECONDS
+    );
+  }
+
   if (Object.prototype.hasOwnProperty.call(raw, "requestPolicyAutosaveEnabled")) {
     overrides.requestPolicyAutosaveEnabled = normalizeBoolean(raw.requestPolicyAutosaveEnabled, false);
   }
@@ -464,6 +525,9 @@ function normalizeOverrideSettings(raw) {
 }
 
 function mergeSettings(baseSettings, overridingSettings) {
+  const autoDjServiceUrl = normalizeAutoDjServiceUrl(
+    overridingSettings.autoDjServiceUrl || baseSettings.autoDjServiceUrl || ""
+  );
   return {
     twitchChannel: overridingSettings.twitchChannel || baseSettings.twitchChannel,
     twitchUsername: overridingSettings.twitchUsername || baseSettings.twitchUsername,
@@ -518,6 +582,20 @@ function mergeSettings(baseSettings, overridingSettings) {
       overridingSettings.obsYoutubeFallbackSourceName ||
       baseSettings.obsYoutubeFallbackSourceName ||
       "",
+    autoDjEnabled: Boolean(autoDjServiceUrl) && (
+      typeof overridingSettings.autoDjEnabled === "boolean"
+        ? overridingSettings.autoDjEnabled
+        : (baseSettings.autoDjEnabled ?? false)
+    ),
+    autoDjServiceUrl,
+    autoDjBrowserOutputUrl: normalizeAutoDjBrowserOutputUrl(
+      overridingSettings.autoDjBrowserOutputUrl || baseSettings.autoDjBrowserOutputUrl || ""
+    ),
+    autoDjServiceToken:
+      overridingSettings.autoDjServiceToken || baseSettings.autoDjServiceToken || "",
+    autoDjServiceLeaseSeconds: normalizeAutoDjLeaseSeconds(
+      overridingSettings.autoDjServiceLeaseSeconds ?? baseSettings.autoDjServiceLeaseSeconds
+    ),
     radioModeEnabled:
       typeof overridingSettings.radioModeEnabled === "boolean"
         ? overridingSettings.radioModeEnabled
@@ -543,13 +621,38 @@ function mergeSettings(baseSettings, overridingSettings) {
 async function readJsonFile(filePath) {
   try {
     const raw = await fs.readFile(filePath, "utf8");
-    return JSON.parse(raw);
+    return JSON.parse(raw.replace(/^\uFEFF/, ""));
   } catch (error) {
     if (error.code === "ENOENT") {
       return {};
     }
 
     throw error;
+  }
+}
+
+async function readOptionalJsonFile(filePath) {
+  try {
+    const raw = await fs.readFile(filePath, "utf8");
+    return JSON.parse(raw.replace(/^\uFEFF/, ""));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function writeFileAtomically(filePath, contents) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+
+  try {
+    await fs.writeFile(temporaryPath, contents, "utf8");
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {});
   }
 }
 
@@ -575,6 +678,11 @@ function normalizeBundledSettings(raw) {
     obsWebSocketUrl: "ws://127.0.0.1:4455",
     obsWebSocketPassword: "",
     obsYoutubeFallbackSourceName: "",
+    autoDjEnabled: false,
+    autoDjServiceUrl: "",
+    autoDjBrowserOutputUrl: "",
+    autoDjServiceToken: "",
+    autoDjServiceLeaseSeconds: 90,
     radioModeEnabled: true,
     radioTrackCount: 3,
     requestPolicyAutosaveEnabled: false,
@@ -601,6 +709,7 @@ export class ConfigStore {
     this.publicDir = publicDir;
     this.runtimeDebug = runtimeDebug;
     this.settingsPath = path.join(this.runtimeDir, "settings.json");
+    this.settingsBackupPath = path.join(this.runtimeDir, "settings.backup.json");
     this.runtimeEnvPath = path.join(this.runtimeDir, ".env");
     this.playlistPath = path.join(this.runtimeDir, "playlist.csv");
     this.playlistHealthPath = path.join(this.runtimeDir, "playlist-health.json");
@@ -610,7 +719,17 @@ export class ConfigStore {
   }
 
   async loadStoredSettings() {
-    return normalizeSettings(await readJsonFile(this.settingsPath));
+    try {
+      const storedSettings = await readOptionalJsonFile(this.settingsPath);
+      if (storedSettings !== null) {
+        return normalizeSettings(storedSettings);
+      }
+    } catch (error) {
+      console.warn(`Could not read ${this.settingsPath}; trying the last-known-good settings backup.`, error);
+    }
+
+    const backupSettings = await readOptionalJsonFile(this.settingsBackupPath);
+    return normalizeSettings(backupSettings ?? {});
   }
 
   async loadBundledSettings() {
@@ -619,7 +738,9 @@ export class ConfigStore {
 
   loadEnvSettings() {
     dotenv.config({ path: this.runtimeEnvPath, override: false });
-    dotenv.config({ override: false });
+    // Never fall back to the process working directory here. Isolated tests and
+    // diagnostics deliberately use a temporary runtimeDir; loading the repo's
+    // .env would let those disposable runtimes connect to the real Twitch bot.
     return normalizeOverrideSettings(process.env);
   }
 
@@ -632,7 +753,9 @@ export class ConfigStore {
 
   async saveSettings(nextSettings) {
     const normalizedSettings = normalizeSettings(nextSettings);
-    await fs.writeFile(this.settingsPath, `${JSON.stringify(normalizedSettings, null, 2)}\n`, "utf8");
+    const serializedSettings = `${JSON.stringify(normalizedSettings, null, 2)}\n`;
+    await writeFileAtomically(this.settingsPath, serializedSettings);
+    await writeFileAtomically(this.settingsBackupPath, serializedSettings);
     return normalizedSettings;
   }
 
@@ -707,6 +830,11 @@ export function toRuntimeAppConfig(runtimeConfig) {
     guiPlayerVolume: runtimeConfig.settings.guiPlayerVolume,
     overlayScalePercent: runtimeConfig.settings.overlayScalePercent,
     playerStartupTimeoutSeconds: runtimeConfig.settings.playerStartupTimeoutSeconds,
+    autoDjEnabled: runtimeConfig.settings.autoDjEnabled,
+    autoDjServiceUrl: runtimeConfig.settings.autoDjServiceUrl,
+    autoDjBrowserOutputUrl: runtimeConfig.settings.autoDjBrowserOutputUrl,
+    autoDjServiceToken: runtimeConfig.settings.autoDjServiceToken,
+    autoDjServiceLeaseSeconds: runtimeConfig.settings.autoDjServiceLeaseSeconds,
     radioModeEnabled: runtimeConfig.settings.radioModeEnabled,
     radioTrackCount: runtimeConfig.settings.radioTrackCount,
     requestPolicyAutosaveEnabled: runtimeConfig.settings.requestPolicyAutosaveEnabled,

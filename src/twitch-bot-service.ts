@@ -38,16 +38,19 @@ function toBotConfig(settings) {
 export class TwitchBotService {
   constructor({
     playerController,
+    autoDjController = null,
     persistSettings = async (partialSettings) => partialSettings,
     authManager = new TwitchAuthManager(),
-    botFactory = ({ config, playerController: nextPlayerController, updateSettings }) =>
+    botFactory = ({ config, playerController: nextPlayerController, autoDjController: nextAutoDjController, updateSettings }) =>
       new TwitchBot({
         config,
         playerController: nextPlayerController,
+        autoDjController: nextAutoDjController,
         updateSettings
       })
   }) {
     this.playerController = playerController;
+    this.autoDjController = autoDjController;
     this.persistSettings = persistSettings;
     this.authManager = authManager;
     this.botFactory = botFactory;
@@ -57,7 +60,15 @@ export class TwitchBotService {
     this.tokenValidationTimer = null;
     this.revalidatePromise = null;
     this.deviceAuthRunId = 0;
+    this.applySettingsGeneration = 0;
+    this.playbackSuppressionCommitSequence = 0;
+    this.latestPlaybackSuppressionCommit = null;
+    this.lastSettledPlaybackSuppressionState = {
+      suppressMusicPlayback: false,
+      categoryName: ""
+    };
     this.categoryPolicyTimer = null;
+    this.tokenHydrationError = "";
     this.status = {
       state: "needs_configuration",
       message: "Set Twitch channel, bot username, and OAuth token to connect chat."
@@ -85,19 +96,50 @@ export class TwitchBotService {
     return { ...this.authStatus };
   }
 
+  async announceNowPlaying(track) {
+    if (!this.bot || !track) {
+      return false;
+    }
+    await this.bot.announceNowPlaying(track);
+    return true;
+  }
+
   async applySettings(settings) {
+    const applySettingsGeneration = ++this.applySettingsGeneration;
+    this.latestPlaybackSuppressionCommit = this.createPlaybackSuppressionCommit(
+      this.lastSettledPlaybackSuppressionState,
+      applySettingsGeneration
+    );
+    const isCurrentApply = () => (
+      applySettingsGeneration === this.applySettingsGeneration
+    );
+    this.tokenHydrationError = "";
     this.currentSettings = {
       ...settings
     };
 
-    const hydratedSettings = await this.hydrateSettingsFromToken(settings);
+    const hydratedSettings = await this.hydrateSettingsFromToken(settings, {
+      applySettingsGeneration
+    });
+    if (!isCurrentApply()) {
+      return this.getStatus();
+    }
     this.currentSettings = {
       ...hydratedSettings
     };
 
+    if (this.tokenHydrationError) {
+      await this.disconnectForApplySettings(applySettingsGeneration, {
+        nextStatus: {
+          state: "error",
+          message: this.tokenHydrationError
+        }
+      });
+      return this.getStatus();
+    }
+
     if (!hasRequiredSettings(hydratedSettings)) {
-      this.stopTokenValidationLoop();
-      await this.disconnect({
+      await this.disconnectForApplySettings(applySettingsGeneration, {
         nextStatus: {
           state: "needs_configuration",
           message: "Set Twitch channel, bot username, and OAuth token to connect chat."
@@ -108,34 +150,55 @@ export class TwitchBotService {
 
     const nextSignature = buildConfigSignature(hydratedSettings);
     if (this.bot && this.configSignature === nextSignature) {
-      this.bot.updateConfig?.(toBotConfig(hydratedSettings));
-      await this.refreshCategoryPolicy();
+      const bot = this.bot;
+      bot.updateConfig?.(toBotConfig(hydratedSettings));
+      const categoryPolicyApplied = await this.refreshCategoryPolicy({
+        expectedBot: bot,
+        applySettingsGeneration
+      });
+      if (!isCurrentApply() || !categoryPolicyApplied) {
+        return this.getStatus();
+      }
       this.startCategoryPolicyLoop();
       this.startTokenValidationLoop();
       return this.getStatus();
     }
 
-    await this.disconnect();
+    const disconnected = await this.disconnectForApplySettings(applySettingsGeneration);
+    if (!disconnected || !isCurrentApply()) {
+      return this.getStatus();
+    }
     this.status = {
       state: "connecting",
       message: `Connecting to Twitch chat for #${hydratedSettings.twitchChannel}...`
     };
 
-    const bot = this.botFactory({
+    let bot = null;
+    bot = this.botFactory({
       config: toBotConfig(hydratedSettings),
       playerController: this.playerController,
+      autoDjController: this.autoDjController,
       updateSettings: async (partialSettings) => {
         const nextSettings = await this.persistSettings(partialSettings);
+        if (!isCurrentApply()) {
+          return nextSettings;
+        }
         this.currentSettings = {
           ...nextSettings
         };
-        this.bot?.updateConfig?.(toBotConfig(nextSettings));
+        if (!this.bot || this.bot === bot) {
+          bot?.updateConfig?.(toBotConfig(nextSettings));
+        }
         return nextSettings;
       }
     });
 
     try {
       await bot.connect();
+      if (!isCurrentApply()) {
+        await bot.disconnect().catch(() => {});
+        return this.getStatus();
+      }
       this.bot = bot;
       this.configSignature = nextSignature;
       this.status = {
@@ -147,13 +210,24 @@ export class TwitchBotService {
         channel: hydratedSettings.twitchChannel,
         username: hydratedSettings.twitchUsername
       });
-      await this.refreshCategoryPolicy();
+      const categoryPolicyApplied = await this.refreshCategoryPolicy({
+        expectedBot: bot,
+        applySettingsGeneration
+      });
+      if (!isCurrentApply() || !categoryPolicyApplied) {
+        return this.getStatus();
+      }
       this.startCategoryPolicyLoop();
       this.startTokenValidationLoop();
     } catch (error) {
+      if (this.bot === bot) {
+        this.bot = null;
+        this.configSignature = "";
+      }
       await bot.disconnect().catch(() => {});
-      this.bot = null;
-      this.configSignature = "";
+      if (!isCurrentApply()) {
+        return this.getStatus();
+      }
       this.stopTokenValidationLoop();
       this.status = {
         state: "error",
@@ -168,29 +242,87 @@ export class TwitchBotService {
     return this.getStatus();
   }
 
-  async disconnect({ nextStatus = null } = {}) {
+  async disconnectForApplySettings(applySettingsGeneration, { nextStatus = null } = {}) {
+    if (applySettingsGeneration !== this.applySettingsGeneration) {
+      return false;
+    }
+
     this.stopCategoryPolicyLoop();
     this.stopTokenValidationLoop();
+    const bot = this.bot;
+    this.bot = null;
+    this.configSignature = "";
 
-    if (this.bot) {
+    if (bot) {
       try {
-        await this.bot.disconnect();
+        await bot.disconnect();
       } catch (error) {
         logWarn("Failed to disconnect Twitch bot cleanly", {
           message: error?.message ?? String(error)
         });
       }
+      if (applySettingsGeneration !== this.applySettingsGeneration) {
+        return false;
+      }
     }
 
-    this.bot = null;
-    this.configSignature = "";
-
     try {
-      await this.playerController.setPlaybackSuppressed?.(false);
+      await this.applyPlaybackSuppressionState({
+        suppressMusicPlayback: false,
+        categoryName: ""
+      }, { applySettingsGeneration });
     } catch (error) {
       logWarn("Failed to clear playback suppression after Twitch bot disconnect", {
         message: error?.message ?? String(error)
       });
+    }
+    if (applySettingsGeneration !== this.applySettingsGeneration) {
+      return false;
+    }
+
+    if (nextStatus) {
+      this.status = nextStatus;
+    }
+    return true;
+  }
+
+  async disconnect({ nextStatus = null } = {}) {
+    const disconnectGeneration = ++this.applySettingsGeneration;
+    this.latestPlaybackSuppressionCommit = this.createPlaybackSuppressionCommit({
+      suppressMusicPlayback: false,
+      categoryName: ""
+    }, disconnectGeneration);
+    this.stopCategoryPolicyLoop();
+    this.stopTokenValidationLoop();
+    const bot = this.bot;
+    this.bot = null;
+    this.configSignature = "";
+
+    if (bot) {
+      try {
+        await bot.disconnect();
+      } catch (error) {
+        logWarn("Failed to disconnect Twitch bot cleanly", {
+          message: error?.message ?? String(error)
+        });
+      }
+      if (disconnectGeneration !== this.applySettingsGeneration) {
+        return;
+      }
+    }
+
+    try {
+      await this.applyPlaybackSuppressionState({
+        suppressMusicPlayback: false,
+        categoryName: ""
+      }, { applySettingsGeneration: disconnectGeneration });
+    } catch (error) {
+      logWarn("Failed to clear playback suppression after Twitch bot disconnect", {
+        message: error?.message ?? String(error)
+      });
+    }
+    if (disconnectGeneration !== this.applySettingsGeneration) {
+      return;
     }
 
     if (nextStatus) {
@@ -244,7 +376,11 @@ export class TwitchBotService {
     return this.getAuthStatus();
   }
 
-  async hydrateSettingsFromToken(settings) {
+  async hydrateSettingsFromToken(settings, { applySettingsGeneration = null } = {}) {
+    const isCurrentApply = () => (
+      applySettingsGeneration === null ||
+      applySettingsGeneration === this.applySettingsGeneration
+    );
     if (!settings.twitchOauthToken) {
       return settings;
     }
@@ -256,8 +392,12 @@ export class TwitchBotService {
         oauthToken: settings.twitchOauthToken,
         refreshToken: settings.twitchRefreshToken
       });
+      if (!isCurrentApply()) {
+        return settings;
+      }
 
       if (!ensuredToken) {
+        this.markStoredLoginExpired();
         return settings;
       }
 
@@ -273,21 +413,43 @@ export class TwitchBotService {
         nextSettings.twitchRefreshToken !== settings.twitchRefreshToken ||
         nextSettings.twitchUsername !== settings.twitchUsername;
 
+      this.authStatus = {
+        state: "success",
+        message: `Connected bot account ${nextSettings.twitchUsername}.`,
+        botUsername: nextSettings.twitchUsername
+      };
+
       if (!shouldPersist) {
         return nextSettings;
       }
 
-      return this.persistSettings({
+      const persistedSettings = await this.persistSettings({
         twitchOauthToken: nextSettings.twitchOauthToken,
         twitchRefreshToken: nextSettings.twitchRefreshToken,
         twitchUsername: nextSettings.twitchUsername
       });
+      return isCurrentApply() ? persistedSettings : settings;
     } catch (error) {
+      if (!isCurrentApply()) {
+        return settings;
+      }
       logWarn("Could not validate Twitch bot token before connect", {
         message: error?.message ?? String(error)
       });
+      if (error?.status === 400 || error?.status === 401) {
+        this.markStoredLoginExpired();
+      }
       return settings;
     }
+  }
+
+  markStoredLoginExpired() {
+    const message = "Twitch bot login expired or was revoked. Reconnect HornBots from Settings.";
+    this.tokenHydrationError = message;
+    this.authStatus = {
+      state: "error",
+      message
+    };
   }
 
   startTokenValidationLoop() {
@@ -318,8 +480,13 @@ export class TwitchBotService {
       return;
     }
 
+    const expectedBot = this.bot;
+    const applySettingsGeneration = this.applySettingsGeneration;
     this.categoryPolicyTimer = setInterval(() => {
-      void this.refreshCategoryPolicy();
+      void this.refreshCategoryPolicy({
+        expectedBot,
+        applySettingsGeneration
+      });
     }, 30_000);
   }
 
@@ -332,15 +499,100 @@ export class TwitchBotService {
     this.categoryPolicyTimer = null;
   }
 
-  async refreshCategoryPolicy() {
-    if (!this.bot?.channelInfo) {
-      await this.playerController.setPlaybackSuppressed(false);
-      return;
+  createPlaybackSuppressionCommit(suppressionState, applySettingsGeneration) {
+    return {
+      sequence: ++this.playbackSuppressionCommitSequence,
+      applySettingsGeneration,
+      suppressMusicPlayback: Boolean(suppressionState?.suppressMusicPlayback),
+      categoryName: suppressionState?.categoryName || ""
+    };
+  }
+
+  async publishPlaybackSuppressionCommit(commit) {
+    await this.playerController.setPlaybackSuppressed(
+      commit.suppressMusicPlayback,
+      { category: commit.categoryName }
+    );
+  }
+
+  async reassertLatestPlaybackSuppressionState() {
+    while (true) {
+      const latestCommit = this.latestPlaybackSuppressionCommit;
+      if (
+        !latestCommit ||
+        latestCommit.applySettingsGeneration !== this.applySettingsGeneration
+      ) {
+        return false;
+      }
+
+      await this.publishPlaybackSuppressionCommit(latestCommit);
+      if (
+        this.latestPlaybackSuppressionCommit === latestCommit &&
+        latestCommit.applySettingsGeneration === this.applySettingsGeneration
+      ) {
+        this.lastSettledPlaybackSuppressionState = {
+          suppressMusicPlayback: latestCommit.suppressMusicPlayback,
+          categoryName: latestCommit.categoryName
+        };
+        return true;
+      }
+    }
+  }
+
+  async applyPlaybackSuppressionState(suppressionState, {
+    applySettingsGeneration = this.applySettingsGeneration
+  } = {}) {
+    const ownedGeneration = applySettingsGeneration ?? this.applySettingsGeneration;
+    if (ownedGeneration !== this.applySettingsGeneration) {
+      return false;
     }
 
-    const suppressionState = await this.bot.channelInfo.getCategorySuppressionState();
-    await this.playerController.setPlaybackSuppressed(suppressionState.suppressMusicPlayback, {
-      category: suppressionState.categoryName || ""
+    const commit = this.createPlaybackSuppressionCommit(
+      suppressionState,
+      ownedGeneration
+    );
+    this.latestPlaybackSuppressionCommit = commit;
+    await this.publishPlaybackSuppressionCommit(commit);
+    if (
+      this.latestPlaybackSuppressionCommit === commit &&
+      ownedGeneration === this.applySettingsGeneration
+    ) {
+      this.lastSettledPlaybackSuppressionState = {
+        suppressMusicPlayback: commit.suppressMusicPlayback,
+        categoryName: commit.categoryName
+      };
+      return true;
+    }
+
+    await this.reassertLatestPlaybackSuppressionState();
+    return false;
+  }
+
+  async refreshCategoryPolicy({
+    expectedBot = this.bot,
+    applySettingsGeneration = null
+  } = {}) {
+    const ownsPolicy = () => (
+      (applySettingsGeneration === null ||
+        applySettingsGeneration === this.applySettingsGeneration) &&
+      this.bot === expectedBot
+    );
+    if (!ownsPolicy()) {
+      return false;
+    }
+    if (!expectedBot?.channelInfo) {
+      return this.applyPlaybackSuppressionState({
+        suppressMusicPlayback: false,
+        categoryName: ""
+      }, { applySettingsGeneration });
+    }
+
+    const suppressionState = await expectedBot.channelInfo.getCategorySuppressionState();
+    if (!ownsPolicy()) {
+      return false;
+    }
+    return this.applyPlaybackSuppressionState(suppressionState, {
+      applySettingsGeneration
     });
   }
 

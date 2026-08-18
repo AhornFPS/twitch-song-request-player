@@ -582,6 +582,105 @@ function splitArtistAndTitle(value) {
   };
 }
 
+function cleanYouTubeChannelArtist(value) {
+  const original = normalizeTrackTitle(value, "");
+  if (!original) {
+    return "";
+  }
+  let cleaned = original
+    .replace(/\s*-\s*Topic$/i, "")
+    .replace(/VEVO$/i, "")
+    .replace(/^Official\s+/i, "")
+    .replace(/\s+Official$/i, "")
+    .trim();
+  if (cleaned !== original) {
+    cleaned = cleaned.replace(/([a-z])([A-Z])/g, "$1 $2").trim();
+  }
+  return cleaned || original;
+}
+
+function parseYouTubeDescriptionIdentity(description) {
+  const lines = String(description ?? "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  let labeledArtist = "";
+  let labeledTitle = "";
+  for (const line of lines.slice(0, 30)) {
+    const artistMatch = line.match(/^(?:artist|performed by)\s*:\s*(.+)$/i);
+    const titleMatch = line.match(/^(?:title|track|song)\s*:\s*(.+)$/i);
+    if (artistMatch && !labeledArtist) {
+      labeledArtist = normalizeTrackTitle(artistMatch[1], "");
+    }
+    if (titleMatch && !labeledTitle) {
+      labeledTitle = normalizeTrackTitle(titleMatch[1], "");
+    }
+  }
+  if (labeledArtist && labeledTitle) {
+    return { artist: labeledArtist, trackTitle: labeledTitle, source: "description_labels" };
+  }
+
+  const providedIndex = lines.findIndex((line) => /^provided to youtube by\b/i.test(line));
+  const candidates = providedIndex >= 0
+    ? lines.slice(providedIndex + 1, providedIndex + 8)
+    : [];
+  for (const line of candidates) {
+    const parts = line.split(/\s+·\s+/).map((part) => normalizeTrackTitle(part, "")).filter(Boolean);
+    if (parts.length >= 2) {
+      return {
+        trackTitle: parts[0],
+        artist: parts[1],
+        source: "youtube_provided_metadata"
+      };
+    }
+  }
+  return null;
+}
+
+export function resolveYouTubeMusicIdentity(
+  videoTitle,
+  channelTitle = "",
+  description = "",
+  { preferExplicitVideoTitle = false } = {}
+) {
+  const normalizedTitle = normalizeTrackTitle(videoTitle, "");
+  const separated = splitArtistAndTitle(normalizedTitle);
+  const described = parseYouTubeDescriptionIdentity(description);
+  if (described && !(preferExplicitVideoTitle && separated)) {
+    return described;
+  }
+  if (separated) {
+    const channelArtist = cleanYouTubeChannelArtist(channelTitle);
+    const channelCoverageOnLeft = getTokenCoverage(channelArtist, separated.artist);
+    const channelCoverageOnRight = getTokenCoverage(channelArtist, separated.trackTitle);
+    if (
+      channelArtist &&
+      channelCoverageOnRight === 1 &&
+      channelCoverageOnLeft < 1
+    ) {
+      // Some official uploads use "Song - Artist ft Guest" even though the
+      // prevailing YouTube convention is "Artist - Song". The channel is
+      // strong evidence for reversing this specific layout; without it, keep
+      // the conservative left-to-right interpretation.
+      return {
+        artist: separated.trackTitle,
+        trackTitle: separated.artist,
+        source: "video_title_reversed_by_channel"
+      };
+    }
+    return {
+      artist: separated.artist,
+      trackTitle: separated.trackTitle,
+      source: "video_title"
+    };
+  }
+  return {
+    artist: cleanYouTubeChannelArtist(channelTitle),
+    trackTitle: normalizedTitle,
+    source: "channel_and_title"
+  };
+}
+
 function pushUniqueQuery(queries, value) {
   const normalizedValue = typeof value === "string" ? value.trim() : "";
 
@@ -1180,11 +1279,15 @@ export async function resolveYouTubeTrackFromApi(rawUrl, youtubeApiKey) {
   }
 
   return buildYouTubeTrackFromVideoApiItem(item, {
-    url
+    url,
+    preferExplicitVideoTitle: true
   });
 }
 
-function buildYouTubeTrackFromVideoApiItem(item, { url = "" } = {}) {
+function buildYouTubeTrackFromVideoApiItem(item, {
+  url = "",
+  preferExplicitVideoTitle = false
+} = {}) {
   const snippet = item.snippet ?? {};
   const thumbnails = snippet.thumbnails ?? {};
   const contentDetails = item.contentDetails ?? {};
@@ -1194,11 +1297,23 @@ function buildYouTubeTrackFromVideoApiItem(item, { url = "" } = {}) {
     : "none";
   const videoId = typeof item.id === "string" ? item.id.trim() : "";
   const sourceName = typeof snippet.channelTitle === "string" ? snippet.channelTitle.trim() : "";
+  const identity = resolveYouTubeMusicIdentity(
+    snippet.title,
+    sourceName,
+    snippet.description,
+    { preferExplicitVideoTitle }
+  );
+  const displayTitle = identity.artist && identity.trackTitle
+    ? `${identity.artist} - ${identity.trackTitle}`
+    : buildYouTubeTrackTitle(snippet.title, sourceName, `YouTube video ${videoId}`);
 
   return {
     provider: "youtube",
     url: url || `https://www.youtube.com/watch?v=${videoId}`,
-    title: buildYouTubeTrackTitle(snippet.title, sourceName, `YouTube video ${videoId}`),
+    title: displayTitle,
+    artist: identity.artist,
+    trackTitle: identity.trackTitle,
+    metadataIdentitySource: identity.source,
     key: `youtube:${videoId}`,
     artworkUrl:
       thumbnails.maxres?.url ??
@@ -1426,11 +1541,18 @@ export async function resolveTrackFromUrl(rawUrl, { youtubeApiKey = "" } = {}) {
     const oEmbedUrl = `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`;
     const metadata = await fetchJson(oEmbedUrl);
     const sourceName = typeof metadata.author_name === "string" ? metadata.author_name.trim() : "";
+    const identity = resolveYouTubeMusicIdentity(metadata.title, sourceName);
+    const displayTitle = identity.artist && identity.trackTitle
+      ? `${identity.artist} - ${identity.trackTitle}`
+      : buildYouTubeTrackTitle(metadata.title, sourceName, `YouTube video ${videoId}`);
 
     return {
       provider,
       url,
-      title: buildYouTubeTrackTitle(metadata.title, sourceName, `YouTube video ${videoId}`),
+      title: displayTitle,
+      artist: identity.artist,
+      trackTitle: identity.trackTitle,
+      metadataIdentitySource: identity.source,
       key: `youtube:${videoId}`,
       artworkUrl: metadata.thumbnail_url ?? "",
       durationSeconds: null,
@@ -1535,9 +1657,26 @@ async function searchYouTubeMusicForExternalTrack(track, youtubeApiKey, { safeSe
 
 export async function resolveSongRequest(input, youtubeApiKey, options = {}) {
   if (isLikelyUrl(input)) {
-    const directTrack = await resolveTrackFromUrl(input, {
-      youtubeApiKey: options.preferYouTubeApiMetadata ? youtubeApiKey : ""
-    });
+    let directTrack;
+    try {
+      directTrack = await resolveTrackFromUrl(input, {
+        // Direct links need authoritative title, artist, duration, and channel
+        // metadata before the owned-library matcher sees them.
+        youtubeApiKey
+      });
+    } catch (error) {
+      if (
+        !youtubeApiKey ||
+        detectProvider(input) !== "youtube" ||
+        error?.code === "youtube_video_unavailable"
+      ) {
+        throw error;
+      }
+      directTrack = {
+        ...(await resolveTrackFromUrl(input)),
+        metadataResolutionFallback: "youtube_oembed"
+      };
+    }
 
     if (directTrack.provider === "spotify") {
       if (!youtubeApiKey) {

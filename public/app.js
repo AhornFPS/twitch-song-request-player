@@ -16,9 +16,10 @@ function sendClientLog(level, message, details = null) {
   }).catch(() => {
   });
 }
+const playbackOutputMuted = window.__playbackOutputMuted === true;
 const playbackClientRole = (() => {
   try {
-    return new URL(window.location.href).searchParams.get("embedded") === "desktop" ? "desktop" : "obs";
+    return new URL(window.location.href).searchParams.get("embedded") === "desktop" ? playbackOutputMuted ? "observer" : "desktop" : "obs";
   } catch {
     return "obs";
   }
@@ -30,7 +31,8 @@ const socket = typeof window.io === "function" ? window.io({
 }) : null;
 const youtubeContainer = document.getElementById("youtube-player");
 let soundCloudFrame = document.getElementById("soundcloud-player");
-const sunoAudio = document.getElementById("suno-player");
+const audioElement = document.getElementById("suno-player");
+const sunoAudio = audioElement;
 const currentTitle = document.getElementById("current-title");
 const currentTitleMarquee = document.getElementById("current-title-marquee");
 const currentTitleText = document.getElementById("current-title-text");
@@ -64,6 +66,8 @@ let serverTimelineElapsedSeconds = null;
 let serverTimelineDurationSeconds = null;
 let serverTimelineSyncedAt = 0;
 let serverTimelineIsRunning = false;
+let serverTimelinePlaybackRate = 1;
+let latestPlayerState = null;
 let soundCloudDurationProbeTimer = null;
 let soundCloudAutoplayRetryTimer = null;
 let soundCloudLoadTimeoutTimer = null;
@@ -74,6 +78,8 @@ let youtubeApiReady = false;
 let youtubePlayerReady = false;
 let youtubeEndedTrackId = "";
 let youtubeStartupRecoveryTrackId = "";
+let failedArtworkUrl = "";
+let artworkRequestId = 0;
 let youtubeStartupHardResetAttempts = 0;
 let displayedTrackId = null;
 let trackExitTimer = null;
@@ -226,7 +232,7 @@ function applyStartupTimeoutSetting(value) {
   const timeoutSeconds = normalizeStartupTimeoutSeconds(value);
   startupTimeoutMs = timeoutSeconds > 0 ? timeoutSeconds * 1e3 : 0;
 }
-function isSunoAudioPlayer(element) {
+function isHtmlAudioPlayer(element) {
   return Boolean(
     element && typeof element === "object" && typeof element.play === "function" && typeof element.pause === "function" && typeof element.load === "function"
   );
@@ -236,8 +242,9 @@ function applyYouTubeVolume() {
     return;
   }
   try {
-    youtubePlayer.setVolume?.(desiredPlayerVolume);
-    if (desiredPlayerVolume <= 0) {
+    const volume = playbackOutputMuted ? 0 : desiredPlayerVolume;
+    youtubePlayer.setVolume?.(volume);
+    if (volume <= 0) {
       youtubePlayer.mute?.();
     } else {
       youtubePlayer.unMute?.();
@@ -245,7 +252,7 @@ function applyYouTubeVolume() {
   } catch (error) {
     sendClientLog("warn", "Failed to apply YouTube volume", {
       message: error?.message ?? String(error),
-      volume: desiredPlayerVolume
+      volume: playbackOutputMuted ? 0 : desiredPlayerVolume
     });
   }
 }
@@ -254,32 +261,39 @@ function applySoundCloudVolume() {
     return;
   }
   try {
-    soundCloudWidget.setVolume?.(desiredPlayerVolume);
+    soundCloudWidget.setVolume?.(playbackOutputMuted ? 0 : desiredPlayerVolume);
   } catch (error) {
     sendClientLog("warn", "Failed to apply SoundCloud volume", {
       message: error?.message ?? String(error),
-      volume: desiredPlayerVolume
+      volume: playbackOutputMuted ? 0 : desiredPlayerVolume
     });
   }
 }
-function applySunoVolume() {
-  if (!isSunoAudioPlayer(sunoAudio)) {
+function applyAudioElementVolume() {
+  if (!isHtmlAudioPlayer(audioElement)) {
     return;
   }
   try {
-    sunoAudio.volume = desiredPlayerVolume / 100;
-    sunoAudio.muted = desiredPlayerVolume <= 0;
+    const volume = playbackOutputMuted ? 0 : desiredPlayerVolume;
+    audioElement.volume = volume / 100;
+    audioElement.muted = volume <= 0;
   } catch (error) {
-    sendClientLog("warn", "Failed to apply Suno volume", {
+    sendClientLog("warn", "Failed to apply HTML audio volume", {
       message: error?.message ?? String(error),
-      volume: desiredPlayerVolume
+      volume: playbackOutputMuted ? 0 : desiredPlayerVolume
     });
   }
 }
 function applyPlayerVolume() {
   applyYouTubeVolume();
   applySoundCloudVolume();
-  applySunoVolume();
+  applyAudioElementVolume();
+}
+function applySunoVolume() {
+  applyAudioElementVolume();
+}
+function isSunoAudioPlayer(element) {
+  return isHtmlAudioPlayer(element);
 }
 function setPlayerVolume(nextVolume) {
   desiredPlayerVolume = normalizePlayerVolume(nextVolume);
@@ -291,6 +305,7 @@ function clearServerTimelineState() {
   serverTimelineDurationSeconds = null;
   serverTimelineSyncedAt = 0;
   serverTimelineIsRunning = false;
+  serverTimelinePlaybackRate = 1;
 }
 function getServerTimelineElapsedSeconds(trackId = currentTrackId) {
   if (!trackId || serverTimelineTrackId !== trackId || !Number.isFinite(serverTimelineElapsedSeconds)) {
@@ -298,7 +313,7 @@ function getServerTimelineElapsedSeconds(trackId = currentTrackId) {
   }
   let elapsedSeconds = serverTimelineElapsedSeconds;
   if (serverTimelineIsRunning && serverTimelineSyncedAt > 0) {
-    elapsedSeconds += (Date.now() - serverTimelineSyncedAt) / 1e3;
+    elapsedSeconds += (Date.now() - serverTimelineSyncedAt) / 1e3 * serverTimelinePlaybackRate;
   }
   if (Number.isFinite(serverTimelineDurationSeconds) && serverTimelineDurationSeconds > 0) {
     elapsedSeconds = Math.min(elapsedSeconds, serverTimelineDurationSeconds);
@@ -315,6 +330,7 @@ function syncServerTimelineFromTrackState(track) {
   serverTimelineDurationSeconds = Number.isFinite(track.durationSeconds) ? Math.max(track.durationSeconds, 0) : null;
   serverTimelineSyncedAt = Date.now();
   serverTimelineIsRunning = track.isPaused !== true;
+  serverTimelinePlaybackRate = Number.isFinite(track.playbackRate) && track.playbackRate > 0 ? track.playbackRate : 1;
 }
 function updateTimeline(currentTimeSeconds, durationSeconds, { allowPositionRegression = true } = {}) {
   let current = Number.isFinite(currentTimeSeconds) ? Math.max(0, currentTimeSeconds) : currentPositionSeconds;
@@ -470,13 +486,19 @@ function scheduleSoundCloudLoadTimeout(track) {
     }
     stopSoundCloudAutoplayRetry();
     stopSoundCloudDurationProbe();
+    const resource = getSoundCloudWidgetResource(track);
     sendClientLog("error", "SoundCloud track load timed out", {
       trackId: track.id,
       title: track.title,
-      url: track.url
+      resourceKind: resource.kind,
+      privateResource: resource.privateResource
     });
     reportClientError("This SoundCloud track could not be played in the embedded player.");
-    emitStatus("error", { reason: "soundcloud_load_timeout" });
+    emitStatus("error", {
+      reason: "soundcloud_load_timeout",
+      resourceKind: resource.kind,
+      privateResource: resource.privateResource
+    });
   }, startupTimeoutMs);
 }
 function getPendingSoundCloudToYoutubeReloadTrackId() {
@@ -953,15 +975,33 @@ function getProviderFallbackText(provider) {
   return "SR";
 }
 function setArtwork(url, fallbackText = "SR") {
-  if (url) {
-    artworkImage.src = url;
-    artworkImage.classList.add("is-visible");
-    artworkFallback.classList.add("is-hidden");
-  } else {
-    artworkImage.removeAttribute("src");
+  const requestId = ++artworkRequestId;
+  const showFallback = () => {
+    artworkImage.removeAttribute?.("src");
     artworkImage.classList.remove("is-visible");
     artworkFallback.classList.remove("is-hidden");
     artworkFallback.textContent = fallbackText;
+  };
+  showFallback();
+  if (url && url !== failedArtworkUrl) {
+    artworkImage.onerror = () => {
+      if (requestId !== artworkRequestId || artworkImage.getAttribute?.("src") !== url) return;
+      failedArtworkUrl = url;
+      showFallback();
+    };
+    artworkImage.onload = () => {
+      if (requestId !== artworkRequestId || artworkImage.getAttribute?.("src") !== url) return;
+      if (failedArtworkUrl === url) {
+        failedArtworkUrl = "";
+      }
+      artworkImage.classList.add("is-visible");
+      artworkFallback.classList.add("is-hidden");
+    };
+    if (typeof artworkImage.setAttribute === "function") {
+      artworkImage.setAttribute("src", url);
+    } else {
+      artworkImage.src = url;
+    }
   }
 }
 function resolveArtwork(track) {
@@ -1053,9 +1093,66 @@ function getDisplayedTrackText(track) {
     meta: requester ? `Requested by ${requester}` : getProviderLabel(track.provider)
   };
 }
+function getOverlayQueueTrackIdentity(track) {
+  if (!track || typeof track !== "object") {
+    return "";
+  }
+  const key = typeof track.key === "string" ? track.key.trim().toLowerCase() : "";
+  if (key) {
+    return `key:${key}`;
+  }
+  const id = typeof track.id === "string" ? track.id.trim() : "";
+  if (id) {
+    return `id:${id}`;
+  }
+  const provider = typeof track.provider === "string" ? track.provider.trim().toLowerCase() : "";
+  const url = typeof track.url === "string" ? track.url.trim() : "";
+  if (url) {
+    return `url:${provider}:${url}`;
+  }
+  const title = typeof track.title === "string" ? track.title.trim().toLowerCase() : "";
+  return title ? `title:${provider}:${title}` : "";
+}
+function buildOverlayUpNextQueue(state = latestPlayerState) {
+  const normalQueue = Array.isArray(state?.queue) ? state.queue : [];
+  const stateCurrentTrack = state?.currentTrack ?? null;
+  const candidates = normalQueue;
+  const currentIdentities = new Set(
+    [stateCurrentTrack, activeTrack].map(getOverlayQueueTrackIdentity).filter(Boolean)
+  );
+  const seen = /* @__PURE__ */ new Set();
+  return candidates.filter((track) => {
+    const identity = getOverlayQueueTrackIdentity(track);
+    if (identity && currentIdentities.has(identity) || identity && seen.has(identity)) {
+      return false;
+    }
+    if (track?.id && (track.id === stateCurrentTrack?.id || track.id === currentTrackId)) {
+      return false;
+    }
+    if (identity) {
+      seen.add(identity);
+    }
+    return Boolean(track);
+  });
+}
+function getOverlayQueueMeta(track) {
+  if (track?.origin === "radio") {
+    return "radio";
+  }
+  const requester = track?.requestedBy?.displayName || track?.requestedBy?.username || "";
+  if (requester) {
+    return requester;
+  }
+  return "playlist";
+}
+function refreshOverlayQueue(state = latestPlayerState) {
+  const queue = buildOverlayUpNextQueue(state);
+  queueCount.textContent = `${queue.length} queued`;
+  renderQueue(queue);
+  return queue;
+}
 function applyStateToUi(state) {
   const currentTrack = state.currentTrack;
-  const queue = state.queue ?? [];
   const displayText = getDisplayedTrackText(currentTrack);
   const titleText = displayText.title;
   const titleChanged = (currentTitleText?.textContent ?? "") !== titleText || (currentTitleTextClone?.textContent ?? "") !== titleText;
@@ -1077,8 +1174,7 @@ function applyStateToUi(state) {
     resolveArtwork(currentTrack),
     currentTrack ? getProviderFallbackText(currentTrack.provider) : "SR"
   );
-  queueCount.textContent = `${queue.length} queued`;
-  renderQueue(queue);
+  refreshOverlayQueue(state);
   displayedTrackId = currentTrack?.id ?? null;
 }
 function stopTrackTransitionTimers() {
@@ -1108,6 +1204,25 @@ function animateUiToState(state) {
     trackExitTimer = null;
   }, 340);
 }
+function notifyUnifiedOverlayParent(state) {
+  try {
+    if (!window.location?.search?.includes("unifiedOverlay=1") || !window.parent || window.parent === window) {
+      return;
+    }
+    const currentTrack = state?.currentTrack;
+    window.parent.postMessage({
+      type: "tsrp:overlay-state",
+      activeEngine: "center",
+      currentTrack: currentTrack ? {
+        id: currentTrack.id ?? "",
+        provider: currentTrack.provider ?? "",
+        origin: currentTrack.origin ?? ""
+      } : null,
+      playbackStatus: state?.playbackStatus ?? ""
+    }, "*");
+  } catch (_error) {
+  }
+}
 function updateState(state) {
   if (typeof state.overlayBuildToken === "string" && state.overlayBuildToken && overlayBuildToken && state.overlayBuildToken !== overlayBuildToken) {
     sendClientLog("warn", "Overlay build token changed, reloading browser source", {
@@ -1117,8 +1232,10 @@ function updateState(state) {
     window.location.reload();
     return;
   }
+  latestPlayerState = state;
   const currentTrack = state.currentTrack;
-  const queue = state.queue ?? [];
+  const queue = buildOverlayUpNextQueue(state);
+  notifyUnifiedOverlayParent(state);
   desiredPausedState = Boolean(currentTrack?.isPaused);
   const stateSignature = JSON.stringify({
     currentTrackId: currentTrack?.id ?? null,
@@ -1187,9 +1304,9 @@ function renderQueue(queue) {
   const visibleQueue = queue.slice(0, 3);
   const queueSignature = JSON.stringify(
     visibleQueue.map((track) => ({
-      id: track.id,
+      identity: getOverlayQueueTrackIdentity(track),
       title: track.title,
-      requester: track.requestedBy?.displayName || track.requestedBy?.username || "playlist",
+      requester: getOverlayQueueMeta(track),
       isSaved: Boolean(track.isSaved)
     }))
   );
@@ -1202,7 +1319,7 @@ function renderQueue(queue) {
     const item = document.createElement("li");
     item.className = "queue-item";
     item.style.animationDelay = `${index * 70}ms`;
-    const requester = track.origin === "radio" ? "radio" : track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    const requester = getOverlayQueueMeta(track);
     const title = document.createElement("span");
     title.className = "queue-title";
     title.textContent = track.title;
@@ -1262,10 +1379,6 @@ function handleSocketDisconnect() {
 function handleSocketConnect() {
   socketConnected = true;
   sendClientLog("info", "Socket connected");
-  void fetchState().then(() => {
-    requestAnimationFrame(() => reportOverlaySize());
-  }).catch(() => {
-  });
 }
 function postPlayerEvent(eventPayload) {
   return fetch("/api/player-event", {
@@ -1284,11 +1397,14 @@ function getReportedDurationSeconds(value = currentDurationSeconds) {
   return Math.floor(durationSeconds);
 }
 function emitStatus(status, extra = {}) {
-  if (!currentTrackId) {
+  emitTrackStatus(currentTrackId, status, extra);
+}
+function emitTrackStatus(trackId, status, extra = {}) {
+  if (!trackId) {
     return;
   }
   const eventPayload = {
-    trackId: currentTrackId,
+    trackId,
     status,
     ...extra
   };
@@ -1300,7 +1416,7 @@ function emitStatus(status, extra = {}) {
       delete eventPayload.durationSeconds;
     }
   }
-  const dedupeKey = status === "playing" && Number.isFinite(eventPayload.durationSeconds) ? `${currentTrackId}:${status}:${eventPayload.durationSeconds}` : `${currentTrackId}:${status}`;
+  const dedupeKey = status === "playing" && Number.isFinite(eventPayload.durationSeconds) ? `${trackId}:${status}:${eventPayload.durationSeconds}` : `${trackId}:${status}`;
   if (lastReportedStatus === dedupeKey) {
     return;
   }
@@ -1379,18 +1495,65 @@ function extractYouTubeVideoId(url) {
   const index = parts.findIndex((part) => part === "embed" || part === "shorts");
   return index >= 0 ? parts[index + 1] : null;
 }
-function getSoundCloudWidgetResourceUrl(track) {
-  const canonicalResourceUrl = typeof track?.soundCloudResourceUrl === "string" ? track.soundCloudResourceUrl.trim() : "";
-  if (canonicalResourceUrl) {
-    try {
-      const parsedUrl = new URL(canonicalResourceUrl);
-      if (parsedUrl.protocol === "https:" && parsedUrl.hostname.toLowerCase() === "api.soundcloud.com" && /^\/(?:tracks|playlists)\/\d+\/?$/.test(parsedUrl.pathname)) {
-        return parsedUrl.toString();
-      }
-    } catch {
-    }
+function parseSoundCloudWidgetResourceUrl(value) {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  if (!candidate) {
+    return null;
   }
-  return track.url;
+  try {
+    const parsedUrl = new URL(candidate);
+    const hostname = parsedUrl.hostname.toLowerCase();
+    const isSoundCloudHost = hostname === "soundcloud.com" || hostname === "www.soundcloud.com" || hostname === "m.soundcloud.com" || hostname === "api.soundcloud.com";
+    if (parsedUrl.protocol !== "https:" || !isSoundCloudHost) {
+      return null;
+    }
+    const secretToken = parsedUrl.searchParams.get("secret_token")?.trim() ?? "";
+    const secretSharePath = /(?:^|\/)s-[a-z0-9_-]+(?:\/|$)/i.test(parsedUrl.pathname);
+    return {
+      url: parsedUrl.toString(),
+      privateResource: Boolean(secretToken || secretSharePath)
+    };
+  } catch {
+    return null;
+  }
+}
+function getSoundCloudWidgetResource(track) {
+  const canonicalResourceUrl = typeof track?.soundCloudResourceUrl === "string" ? track.soundCloudResourceUrl.trim() : "";
+  const canonical = parseSoundCloudWidgetResourceUrl(canonicalResourceUrl);
+  const canonicalApi = canonical && new URL(canonical.url).hostname.toLowerCase() === "api.soundcloud.com" && /^\/(?:tracks|playlists)\/\d+\/?$/.test(new URL(canonical.url).pathname) ? canonical : null;
+  const original = parseSoundCloudWidgetResourceUrl(track?.url);
+  if (canonicalApi?.privateResource) {
+    return { ...canonicalApi, kind: "private-api-resource" };
+  }
+  if (original?.privateResource) {
+    return { ...original, kind: "private-share-url" };
+  }
+  if (canonicalApi) {
+    return { ...canonicalApi, kind: "canonical-api-resource" };
+  }
+  return {
+    url: original?.url ?? String(track?.url ?? ""),
+    privateResource: false,
+    kind: "track-url"
+  };
+}
+function getSoundCloudWidgetResourceUrl(track) {
+  return getSoundCloudWidgetResource(track).url;
+}
+function soundCloudWidgetErrorTelemetry(event) {
+  const record = event && typeof event === "object" ? event : {};
+  const boundedText = (value, maximum = 240) => {
+    const text = typeof value === "string" || typeof value === "number" ? String(value).trim() : "";
+    return text.slice(0, maximum);
+  };
+  const providerErrorCode = boundedText(record.code ?? record.errorCode ?? event, 80);
+  const providerErrorMessage = boundedText(record.message ?? record.error ?? record.reason);
+  const providerHttpStatus = Number(record.status ?? record.statusCode);
+  return {
+    ...providerErrorCode ? { providerErrorCode } : {},
+    ...providerErrorMessage ? { providerErrorMessage } : {},
+    ...Number.isInteger(providerHttpStatus) && providerHttpStatus >= 100 && providerHttpStatus <= 599 ? { providerHttpStatus } : {}
+  };
 }
 function scheduleSoundCloudWidgetRecovery(track, recoveryAttempt, event) {
   if (recoveryAttempt >= maxSoundCloudRecoveryAttempts) {
@@ -1400,10 +1563,13 @@ function scheduleSoundCloudWidgetRecovery(track, recoveryAttempt, event) {
   stopSoundCloudAutoplayRetry();
   stopSoundCloudDurationProbe();
   stopSoundCloudRecovery();
+  const resource = getSoundCloudWidgetResource(track);
   sendClientLog("warn", "SoundCloud widget error; retrying track", {
     id: track.id,
     title: track.title,
-    event,
+    ...soundCloudWidgetErrorTelemetry(event),
+    resourceKind: resource.kind,
+    privateResource: resource.privateResource,
     recoveryAttempt: recoveryAttempt + 1
   });
   soundCloudRecoveryTimer = window.setTimeout(() => {
@@ -1423,14 +1589,15 @@ function loadSoundCloudTrack(track, { recoveryAttempt = 0 } = {}) {
     return;
   }
   hardResetSoundCloudPlayer();
+  const soundCloudResource = getSoundCloudWidgetResource(track);
   sendClientLog("info", "Loading SoundCloud track", {
     id: track.id,
     title: track.title,
-    url: track.url,
-    resourceUrl: getSoundCloudWidgetResourceUrl(track),
+    resourceKind: soundCloudResource.kind,
+    privateResource: soundCloudResource.privateResource,
     recoveryAttempt
   });
-  const soundCloudResourceUrl = getSoundCloudWidgetResourceUrl(track);
+  const soundCloudResourceUrl = soundCloudResource.url;
   soundCloudFrame.style.display = "block";
   soundCloudFrame.src = `https://w.soundcloud.com/player/?url=${encodeURIComponent(soundCloudResourceUrl)}&auto_play=true&hide_related=true&show_artwork=false&visual=false`;
   soundCloudWidget = window.SC.Widget(soundCloudFrame);
@@ -1501,13 +1668,25 @@ function loadSoundCloudTrack(track, { recoveryAttempt = 0 } = {}) {
     stopSoundCloudLoadTimeout();
     stopSoundCloudAutoplayRetry();
     stopSoundCloudDurationProbe();
+    const resource = getSoundCloudWidgetResource(track);
+    const errorTelemetry = soundCloudWidgetErrorTelemetry(event);
     sendClientLog("error", "SoundCloud widget error", {
       id: track.id,
       title: track.title,
-      event
+      ...errorTelemetry,
+      resourceKind: resource.kind,
+      privateResource: resource.privateResource,
+      recoveryAttempts: recoveryAttempt
     });
+    hardResetSoundCloudPlayer();
     reportClientError("This SoundCloud track could not be played in the embedded player.");
-    emitStatus("error", { reason: "soundcloud_widget_error" });
+    emitStatus("error", {
+      reason: "soundcloud_widget_error",
+      ...errorTelemetry,
+      resourceKind: resource.kind,
+      privateResource: resource.privateResource,
+      recoveryAttempts: recoveryAttempt
+    });
   });
   soundCloudWidget.bind(window.SC.Widget.Events.FINISH, () => {
     if (!isActiveProviderTrack(track, "soundcloud")) {

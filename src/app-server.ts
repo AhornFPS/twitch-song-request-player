@@ -1,4 +1,5 @@
 // @ts-nocheck
+import crypto from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
@@ -17,6 +18,9 @@ import { findYouTubeRadioTracks, getTrackKey, resolveSongRequest, resolveYouTube
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
+import { AutoDjServiceClient } from "./autodj-service-client.js";
+import { normalizeAutoDjServiceUrl } from "./autodj-service-contract.js";
+import { discoverAutoDjEngines, startLanDiscoveryResponder } from "./lan-discovery.js";
 
 function loadAppVersion() {
   const moduleDir = path.resolve(
@@ -399,6 +403,7 @@ function toClientSettings(settings) {
     twitchOauthToken,
     twitchClientSecret,
     obsWebSocketPassword,
+    autoDjServiceToken,
     ...clientSettings
   } = settings;
 
@@ -406,7 +411,8 @@ function toClientSettings(settings) {
     ...clientSettings,
     hasTwitchOauthToken: Boolean(twitchOauthToken),
     hasTwitchClientSecret: Boolean(twitchClientSecret),
-    hasObsWebSocketPassword: Boolean(obsWebSocketPassword)
+    hasObsWebSocketPassword: Boolean(obsWebSocketPassword),
+    hasAutoDjServiceToken: Boolean(autoDjServiceToken)
   };
 }
 
@@ -561,7 +567,10 @@ export async function startAppServer({
   noBrowser = false,
   configStore = createConfigStore(),
   updateService = null,
-  desktopIntegration = null
+  desktopIntegration = null,
+  autoDjServiceClientFactory = (options) => new AutoDjServiceClient(options),
+  discoverAutoDjEnginesFactory = discoverAutoDjEngines,
+  lanDiscoveryResponderFactory = startLanDiscoveryResponder
 } = {}) {
   const runtimeConfig = await configStore.loadRuntimeConfig();
   const overlayBuildToken = `${appVersion}-${Date.now().toString(36)}`;
@@ -569,6 +578,61 @@ export async function startAppServer({
   let activePort = currentSettings.port;
   let usingFallbackPort = false;
   let overlayLoaderFilePath = buildObsOverlayLoaderPath(runtimeConfig.runtimeDir);
+  let autoDjAuthoritySynchronized = false;
+  let lanDiscoveryResponder = null;
+  const pendingLanPairings = new Map();
+
+  function publicLanPairingRequest(entry) {
+    return {
+      requestId: entry.requestId,
+      role: entry.role,
+      displayName: entry.displayName,
+      hostname: entry.hostname,
+      address: entry.address,
+      servicePort: entry.servicePort,
+      apiPath: entry.apiPath,
+      appVersion: entry.appVersion,
+      requestedAt: entry.requestedAt,
+      expiresAt: entry.expiresAt
+    };
+  }
+
+  function registerIncomingLanPairing(request) {
+    if (pendingLanPairings.has(request.requestId)) return;
+    const requestedAt = new Date();
+    const expiresAt = new Date(requestedAt.getTime() + 60_000);
+    const timeoutHandle = setTimeout(() => {
+      const entry = pendingLanPairings.get(request.requestId);
+      if (!entry) return;
+      pendingLanPairings.delete(request.requestId);
+      io.emit("lan-pairing:resolved", { requestId: request.requestId, decision: "expired" });
+    }, 60_000);
+    timeoutHandle.unref?.();
+    const entry = {
+      ...request,
+      requestedAt: requestedAt.toISOString(),
+      expiresAt: expiresAt.toISOString(),
+      timeoutHandle
+    };
+    pendingLanPairings.set(request.requestId, entry);
+    io.emit("lan-pairing:request", publicLanPairingRequest(entry));
+  }
+
+  async function enableLanDiscovery() {
+    if (!lanDiscoveryResponder) {
+      lanDiscoveryResponder = lanDiscoveryResponderFactory({
+        role: "music-control-center",
+        displayName: "HornGaming Music Control Center",
+        servicePort: activePort,
+        apiPath: "/",
+        appVersion,
+        loopbackOnly: true,
+        pairingTimeoutMs: 60_000,
+        onPairingRequest: registerIncomingLanPairing
+      });
+    }
+    return lanDiscoveryResponder.ready;
+  }
 
   async function getDesktopIntegrationState() {
     if (!desktopIntegration?.getState) {
@@ -600,6 +664,118 @@ export async function startAppServer({
   await playlistRepository.init();
   const runtimeStateStore = new RuntimeStateStore(runtimeConfig.runtimeStatePath);
   const requestAuditStore = new RequestAuditStore(runtimeConfig.requestAuditPath);
+  const stableClientInstanceId = `request-player-${crypto
+    .createHash("sha256")
+    .update(runtimeConfig.runtimeDir)
+    .digest("hex")
+    .slice(0, 16)}`;
+  let autoDjServiceClient = null;
+
+  function createAutoDjServiceClient(settings) {
+    const serviceUrl = normalizeAutoDjServiceUrl(settings.autoDjServiceUrl);
+    if (!serviceUrl) return null;
+    return autoDjServiceClientFactory({
+      serviceUrl,
+      browserOutputUrl: settings.autoDjBrowserOutputUrl,
+      token: settings.autoDjServiceToken,
+      leaseSeconds: settings.autoDjServiceLeaseSeconds,
+      clientInstanceId: stableClientInstanceId,
+      logInfo,
+      logWarn
+    });
+  }
+
+  autoDjServiceClient = createAutoDjServiceClient(currentSettings);
+  autoDjAuthoritySynchronized = !autoDjServiceClient;
+
+  function getAutoDjControllerStatus() {
+    const service = autoDjServiceClient?.getStatus?.() ?? {
+      configured: false,
+      connected: false,
+      liveness: "unavailable",
+      lastSeenAt: null,
+      lastSeenAgeMs: null,
+      takeoverActive: false,
+      browserOutputUrl: currentSettings.autoDjBrowserOutputUrl || "",
+      lastError: normalizeAutoDjServiceUrl(currentSettings.autoDjServiceUrl)
+        ? "AutoDJ has not been contacted yet."
+        : "Pair or configure the standalone AutoDJ app."
+    };
+    const remoteState = service.state && typeof service.state === "object" ? service.state : {};
+    const remoteAutoDj = remoteState.autoDj && typeof remoteState.autoDj === "object"
+      ? remoteState.autoDj
+      : remoteState;
+    const activation = remoteState.activation ?? service.activation ?? {};
+    const application = remoteState.application ?? {};
+    const takeover = remoteState.takeover ?? null;
+    const desiredActivation = currentSettings.autoDjEnabled === true;
+    const effectiveActivation = typeof activation.effective === "boolean"
+      ? activation.effective
+      : null;
+    return {
+      role: "controller-request-player",
+      configured: Boolean(autoDjServiceClient),
+      connection: {
+        state: service.liveness || (service.connected ? "responding" : "unavailable"),
+        responding: service.connected === true,
+        lastSeenAt: service.lastSeenAt ?? service.lastSuccessAt ?? null,
+        lastSeenAgeMs: service.lastSeenAgeMs ?? null
+      },
+      activation: {
+        desired: desiredActivation,
+        effective: effectiveActivation,
+        synchronized: autoDjAuthoritySynchronized && (
+          effectiveActivation === null || effectiveActivation === desiredActivation
+        )
+      },
+      takeover: {
+        active: Boolean(takeover || service.takeoverActive),
+        leaseId: takeover?.leaseId ? "active" : null,
+        expiresAt: takeover?.expiresAt ?? null,
+        application: {
+          pendingSequence: application.pendingSequence ?? null,
+          lastAppliedSequence: application.lastAppliedSequence ?? null,
+          outcome: application.lastApplyOutcome ?? "",
+          error: application.lastApplyError ?? ""
+        }
+      },
+      currentTrack: remoteAutoDj.currentTrack ?? null,
+      upcomingTracks: Array.isArray(remoteAutoDj.queue)
+        ? remoteAutoDj.queue.slice(0, 10)
+        : Array.isArray(remoteAutoDj.upcomingTracks)
+          ? remoteAutoDj.upcomingTracks.slice(0, 10)
+          : [],
+      queueSummary: remoteAutoDj.queueSummary ?? null,
+      browserOutputUrl: autoDjServiceClient?.getBrowserOutputUrl?.() || currentSettings.autoDjBrowserOutputUrl || "",
+      error: service.lastError || application.lastApplyError || ""
+    };
+  }
+
+  async function synchronizeAutoDjActivation(enabled, { persist = false } = {}) {
+    if (persist) {
+      currentSettings = await configStore.saveSettings({
+        ...currentSettings,
+        autoDjEnabled: enabled === true
+      });
+    }
+    if (!autoDjServiceClient) {
+      autoDjAuthoritySynchronized = enabled !== true;
+      if (enabled) throw new Error("Pair or configure the standalone AutoDJ app first.");
+      return getAutoDjControllerStatus();
+    }
+    autoDjAuthoritySynchronized = false;
+    try {
+      await autoDjServiceClient.probe();
+      await autoDjServiceClient.setActivation(enabled, {
+        reason: "music_control_center_authority"
+      });
+      autoDjAuthoritySynchronized = true;
+      return getAutoDjControllerStatus();
+    } catch (error) {
+      autoDjAuthoritySynchronized = false;
+      throw error;
+    }
+  }
 
   let playerController;
   const obsYoutubeFallback = new ObsYoutubeFallback({
@@ -638,7 +814,7 @@ export async function startAppServer({
     runtimeStateStore,
     requestAuditStore,
     requestPolicy: currentSettings.requestPolicy,
-    radioModeEnabled: currentSettings.radioModeEnabled,
+    radioModeEnabled: currentSettings.autoDjEnabled ? false : currentSettings.radioModeEnabled,
     radioTrackCount: currentSettings.radioTrackCount,
     getRadioTracks: async ({ seedTrack, excludeTrackKeys = [], excludeTracks = [], count = 3 }) =>
       findYouTubeRadioTracks(seedTrack, currentSettings.youtubeApiKey, {
@@ -648,11 +824,66 @@ export async function startAppServer({
         excludeTracks,
         isTrackAllowed: async (track) => !playlistRepository.hasTrack(track)
       }),
-    externalPlayback: obsYoutubeFallback
+    routeOwnedRequest: async (track) => {
+      if (!currentSettings.autoDjEnabled || !autoDjServiceClient) {
+        return { matched: false, queued: false, track: null };
+      }
+      return autoDjServiceClient.queueOwnedRequest(track);
+    },
+    beforeTrackStart: async (track) => {
+      if (!autoDjServiceClient) {
+        if (currentSettings.autoDjEnabled) {
+          return { ready: false, error: "AutoDJ is enabled but not configured." };
+        }
+        return { ready: true };
+      }
+      if (!autoDjAuthoritySynchronized) {
+        return { ready: false, error: "AutoDJ authority is not synchronized." };
+      }
+      if (!currentSettings.autoDjEnabled) {
+        return { ready: true };
+      }
+      if (track.origin !== "queue") {
+        if (autoDjServiceClient.getStatus().takeoverActive) {
+          await autoDjServiceClient.release("request_queue_empty");
+        }
+        return { ready: false, error: "Standalone AutoDJ owns idle playback." };
+      }
+      await autoDjServiceClient.acquire(track);
+      return { ready: true };
+    },
+    externalPlayback: obsYoutubeFallback,
+    decorateBroadcastState: (state) => ({
+      ...state,
+      autoDjController: getAutoDjControllerStatus()
+    })
   });
   await playerController.restoreRuntimeState();
+  playerController.onTrackFinish(async () => {
+    const status = autoDjServiceClient?.getStatus?.();
+    if (status?.takeoverActive && playerController.getPublicState().queue.length === 0) {
+      await autoDjServiceClient.release("final_request_finished");
+    }
+  });
+  const remoteAutoDjController = {
+    getRemoteCurrentTrack: () => autoDjServiceClient?.getRemoteCurrentTrack?.() ?? null,
+    mixNext: async ({ triggeredBy = "twitch_chat", leadSeconds = 5 } = {}) => {
+      const status = getAutoDjControllerStatus();
+      if (
+        !autoDjServiceClient ||
+        !status.connection.responding ||
+        !status.activation.desired ||
+        !status.activation.synchronized ||
+        status.takeover.active
+      ) {
+        return null;
+      }
+      return autoDjServiceClient.mixNext({ triggeredBy, leadSeconds });
+    }
+  };
   const twitchBotService = new TwitchBotService({
     playerController,
+    autoDjController: remoteAutoDjController,
     persistSettings: async (partialSettings) => {
       const nextSettings = await configStore.saveSettings({
         ...currentSettings,
@@ -758,6 +989,105 @@ export async function startAppServer({
         error: "Could not prepare browser playback."
       });
     });
+  });
+
+  app.get("/api/autodj-service/status", async (_request, response) => {
+    if (autoDjServiceClient) {
+      await autoDjServiceClient.probe();
+    }
+    response.json(getAutoDjControllerStatus());
+  });
+
+  app.post("/api/autodj-service/activation", async (request, response) => {
+    const enabled = request.body?.enabled === true;
+    try {
+      const status = await synchronizeAutoDjActivation(enabled, { persist: true });
+      await playerController.setRadioSettings({
+        enabled: enabled ? false : currentSettings.radioModeEnabled,
+        trackCount: currentSettings.radioTrackCount
+      });
+      if (!enabled) {
+        await autoDjServiceClient?.release?.("autodj_disabled").catch(() => {});
+        await playerController.ensurePlayback();
+      }
+      response.json(status);
+    } catch (error) {
+      response.status(503).json({
+        ...getAutoDjControllerStatus(),
+        error: error?.message ?? String(error),
+        retryable: true
+      });
+    }
+  });
+
+  app.post("/api/autodj-service/mix-next", async (request, response) => {
+    const status = getAutoDjControllerStatus();
+    if (
+      !autoDjServiceClient ||
+      !status.connection.responding ||
+      !status.activation.desired ||
+      !status.activation.synchronized ||
+      status.takeover.active
+    ) {
+      response.status(409).json({
+        error: "Mix Next requires connected, enabled, synchronized AutoDJ without a viewer-request takeover.",
+        service: status
+      });
+      return;
+    }
+    const track = await autoDjServiceClient.mixNext({
+      triggeredBy: "dashboard",
+      leadSeconds: request.body?.leadSeconds ?? 5
+    });
+    if (!track) {
+      response.status(503).json({
+        error: autoDjServiceClient.getStatus().lastError || "AutoDJ could not queue the next mix.",
+        service: getAutoDjControllerStatus()
+      });
+      return;
+    }
+    response.json({ track, service: getAutoDjControllerStatus() });
+  });
+
+  app.post("/api/lan-discovery/autodj", async (_request, response) => {
+    try {
+      await enableLanDiscovery();
+      response.json({
+        protocol: "horngaming-music-link",
+        peers: await discoverAutoDjEnginesFactory(60_000, {
+          role: "music-control-center",
+          displayName: "HornGaming Music Control Center",
+          servicePort: activePort,
+          apiPath: "/",
+          appVersion
+        })
+      });
+    } catch (error) {
+      response.status(503).json({ error: `Local-network search could not start: ${error?.message ?? String(error)}` });
+    }
+  });
+
+  app.get("/api/lan-pairing/requests", (_request, response) => {
+    response.json({ requests: [...pendingLanPairings.values()].map(publicLanPairingRequest) });
+  });
+
+  app.post("/api/lan-pairing/requests/:requestId", (request, response) => {
+    const requestId = String(request.params.requestId ?? "").trim();
+    const decision = request.body?.decision;
+    if (decision !== "accepted" && decision !== "declined") {
+      response.status(400).json({ error: "Choose Accept or Decline for this connection request." });
+      return;
+    }
+    const entry = pendingLanPairings.get(requestId);
+    if (!entry) {
+      response.status(404).json({ error: "This connection request expired or was already answered." });
+      return;
+    }
+    clearTimeout(entry.timeoutHandle);
+    pendingLanPairings.delete(requestId);
+    entry.respond(decision);
+    io.emit("lan-pairing:resolved", { requestId, decision });
+    response.json({ requestId, decision });
   });
 
   app.get("/api/settings", (_request, response) => {
@@ -1360,18 +1690,42 @@ export async function startAppServer({
 
       const previousSettings = currentSettings;
       const previousTwitchStatus = twitchBotService.getStatus();
+      const settingsPatch = { ...(request.body ?? {}) };
+      delete settingsPatch.autoDjEnabled;
       const nextSettings = await configStore.saveSettings({
         ...currentSettings,
-        ...(request.body ?? {})
+        ...settingsPatch
       });
 
       currentSettings = nextSettings;
       playlistRepository.setYoutubeApiKey(nextSettings.youtubeApiKey);
       playerController.setRequestPolicy(nextSettings.requestPolicy);
       await playerController.setRadioSettings({
-        enabled: nextSettings.radioModeEnabled,
+        enabled: nextSettings.autoDjEnabled ? false : nextSettings.radioModeEnabled,
         trackCount: nextSettings.radioTrackCount
       });
+
+      const autoDjConnectionChanged = settingsChanged(previousSettings, nextSettings, [
+        "autoDjServiceUrl",
+        "autoDjBrowserOutputUrl",
+        "autoDjServiceToken",
+        "autoDjServiceLeaseSeconds"
+      ]);
+      if (autoDjConnectionChanged) {
+        await autoDjServiceClient?.close?.();
+        autoDjServiceClient = createAutoDjServiceClient(nextSettings);
+        autoDjAuthoritySynchronized = !autoDjServiceClient;
+        if (autoDjServiceClient) {
+          try {
+            await synchronizeAutoDjActivation(nextSettings.autoDjEnabled === true);
+            await autoDjServiceClient.startTrackMonitor();
+          } catch (error) {
+            logWarn("AutoDJ settings were saved but authority could not be synchronized", {
+              message: error?.message ?? String(error)
+            });
+          }
+        }
+      }
 
       if (
         Object.prototype.hasOwnProperty.call(request.body ?? {}, "startWithWindows") &&
@@ -1567,6 +1921,9 @@ export async function startAppServer({
   app.post("/api/playback/stop", async (_request, response) => {
     try {
       const result = await playerController.stopPlayback("dashboard");
+      if (autoDjServiceClient?.getStatus?.().takeoverActive) {
+        await autoDjServiceClient.release("request_cancelled");
+      }
       response.json({
         result,
         state: playerController.getPublicState()
@@ -1637,6 +1994,26 @@ export async function startAppServer({
     }
   });
 
+  app.get("/autodj-output", async (_request, response) => {
+    if (!autoDjServiceClient) {
+      response.status(503).type("text/plain").send(
+        "Standalone AutoDJ is not configured. Pair it from the Music Control Center dashboard."
+      );
+      return;
+    }
+    if (!autoDjServiceClient.getBrowserOutputUrl()) {
+      await autoDjServiceClient.probe();
+    }
+    const browserOutputUrl = autoDjServiceClient.getBrowserOutputUrl();
+    if (!browserOutputUrl) {
+      response.status(503).type("text/plain").send(
+        "Standalone AutoDJ is unavailable or did not advertise a browser output."
+      );
+      return;
+    }
+    response.redirect(302, browserOutputUrl);
+  });
+
   app.use(express.static(runtimeConfig.publicDir));
 
   server.on("connection", (socket) => {
@@ -1693,6 +2070,17 @@ export async function startAppServer({
 
   void (async () => {
     try {
+      if (autoDjServiceClient) {
+        try {
+          await synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true);
+        } catch (error) {
+          logWarn("Startup playback remains held until AutoDJ authority can be synchronized", {
+            desiredAutoDjEnabled: currentSettings.autoDjEnabled === true,
+            message: error?.message ?? String(error)
+          });
+        }
+        await autoDjServiceClient.startTrackMonitor();
+      }
       await twitchBotService.applySettings(currentSettings);
       await playerController.ensurePlayback();
     } catch (error) {
@@ -1721,7 +2109,16 @@ export async function startAppServer({
     },
     async close() {
       obsYoutubeFallback.shutdown();
-      await twitchBotService.disconnect();
+      for (const entry of pendingLanPairings.values()) {
+        clearTimeout(entry.timeoutHandle);
+        entry.respond("declined");
+      }
+      pendingLanPairings.clear();
+      await Promise.all([
+        twitchBotService.disconnect(),
+        autoDjServiceClient?.close?.(),
+        lanDiscoveryResponder?.close?.()
+      ]);
       io.disconnectSockets(true);
       io.close();
       

@@ -10,6 +10,7 @@ const TRACK_DESCRIPTOR_WORDS = new Set([
   "bootleg",
   "clean",
   "clip",
+  "club",
   "cut",
   "demo",
   "deluxe",
@@ -36,10 +37,12 @@ const TRACK_DESCRIPTOR_WORDS = new Set([
   "newsong",
   "official",
   "on",
+  "original",
   "out",
   "performance",
   "premiere",
   "release",
+  "radio",
   "remaster",
   "remastered",
   "remix",
@@ -106,6 +109,20 @@ const TRACK_VARIANT_SIGNAL_WORDS = new Set([
   "visualizer"
 ]);
 
+const TRACK_FAMILY_VARIANT_WORDS = new Set([
+  ...TRACK_VARIANT_SIGNAL_WORDS,
+  "club",
+  "extended",
+  "festival",
+  "mix",
+  "original",
+  "radio",
+  "remake",
+  "rework",
+  "vip",
+  "vocal"
+]);
+
 function normalizeTrackText(value, fallback = "") {
   const normalizedValue = typeof value === "string"
     ? value.trim()
@@ -158,6 +175,7 @@ function normalizeMatchText(value) {
 
 function getIdentityTokens(value) {
   return normalizeMatchText(value)
+    .replace(/\bre\s+master(?:ed)?\b/g, "remastered")
     .split(" ")
     .map((token) => token.trim())
     .filter(Boolean);
@@ -295,9 +313,73 @@ function stripSeparatedDescriptors(value) {
   return currentValue;
 }
 
+function isTrackFamilyVariantFragment(value) {
+  const tokens = getIdentityTokens(value);
+
+  return tokens.length > 0 &&
+    tokens.length <= 12 &&
+    tokens.some((token) => TRACK_FAMILY_VARIANT_WORDS.has(token));
+}
+
+function stripBracketedTrackFamilyVariants(value) {
+  let currentValue = normalizeTrackText(value, "");
+  let changed = true;
+
+  while (changed && currentValue) {
+    changed = false;
+    const suffixMatch = currentValue.match(/^(.*)\s[\(\[\{]([^\)\]\}]{1,120})[\)\]\}]\s*$/);
+
+    if (suffixMatch && isTrackFamilyVariantFragment(suffixMatch[2])) {
+      currentValue = normalizeTrackText(suffixMatch[1], "");
+      changed = true;
+    }
+  }
+
+  return currentValue;
+}
+
+function stripSeparatedTrackFamilyVariants(value) {
+  const separators = [" - ", " – ", " — ", ": ", " | ", ", ", " / "];
+  let currentValue = normalizeTrackText(value, "");
+  let changed = true;
+
+  while (changed && currentValue) {
+    changed = false;
+
+    for (const separator of separators) {
+      if (!currentValue.includes(separator)) {
+        continue;
+      }
+
+      const parts = currentValue.split(separator);
+      const left = normalizeTrackText(parts.slice(0, -1).join(separator), "");
+      const right = normalizeTrackText(parts.at(-1), "");
+
+      if (left && right && isTrackFamilyVariantFragment(right)) {
+        currentValue = left;
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  return currentValue;
+}
+
 function extractCoreTrackTitle(value) {
   let currentValue = extractQuotedTitle(value);
 
+  currentValue = stripBracketedDescriptors(currentValue);
+  currentValue = stripSeparatedDescriptors(currentValue);
+
+  return normalizeTrackText(currentValue, "");
+}
+
+function extractTrackFamilyTitle(value) {
+  let currentValue = extractQuotedTitle(value);
+
+  currentValue = stripBracketedTrackFamilyVariants(currentValue);
+  currentValue = stripSeparatedTrackFamilyVariants(currentValue);
   currentValue = stripBracketedDescriptors(currentValue);
   currentValue = stripSeparatedDescriptors(currentValue);
 
@@ -335,26 +417,38 @@ function stripArtistPrefixFromTitle(value, artist) {
   return normalizedValue;
 }
 
-export function getTrackIdentity(track, options = {}) {
-  const {
-    titleOnly = false
-  } = options;
-  const fullTitle = track?.requestedFromTitle || track?.title || "";
+function resolveTrackIdentitySource(track) {
+  const explicitTrackTitle = track?.trackTitle || track?.resolvedTrackTitle || "";
+  const fullTitle = explicitTrackTitle || track?.requestedFromTitle || track?.title || "";
   const separatedTitle = splitArtistAndTitle(
     fullTitle
   );
   const rawArtist =
+    track?.artist ||
+    track?.resolvedArtist ||
     track?.requestedFromName ||
     track?.sourceName ||
     separatedTitle?.artist ||
     "";
   const sourceStrippedTitle = stripArtistPrefixFromTitle(fullTitle, rawArtist);
-  const rawTitle = sourceStrippedTitle !== fullTitle
+  const rawTitle = explicitTrackTitle || (sourceStrippedTitle !== fullTitle
     ? sourceStrippedTitle
     : stripArtistPrefixFromTitle(
       separatedTitle?.trackTitle || fullTitle,
       rawArtist
-    );
+    ));
+
+  return {
+    rawArtist,
+    rawTitle
+  };
+}
+
+export function getTrackIdentity(track, options = {}) {
+  const {
+    titleOnly = false
+  } = options;
+  const { rawArtist, rawTitle } = resolveTrackIdentitySource(track);
   const title = normalizeMatchText(extractCoreTrackTitle(rawTitle));
   const artist = titleOnly ? "" : normalizeMatchText(rawArtist);
 
@@ -362,6 +456,86 @@ export function getTrackIdentity(track, options = {}) {
     title,
     artist
   };
+}
+
+export function getTrackFamilyIdentity(track, options = {}) {
+  const {
+    titleOnly = false
+  } = options;
+  const { rawArtist, rawTitle } = resolveTrackIdentitySource(track);
+  const fullTitle =
+    track?.trackTitle ||
+    track?.resolvedTrackTitle ||
+    track?.requestedFromTitle ||
+    track?.title ||
+    "";
+  const parsedArtist = splitArtistAndTitle(fullTitle)?.artist || "";
+  const familyArtist =
+    track?.artist ||
+    track?.resolvedArtist ||
+    parsedArtist ||
+    rawArtist;
+
+  return {
+    title: normalizeMatchText(extractTrackFamilyTitle(rawTitle)),
+    artist: titleOnly ? "" : normalizeMatchText(familyArtist)
+  };
+}
+
+function trackFamilyArtistTitleKey(identity) {
+  return `${identity.artist}\u0000${identity.title}`;
+}
+
+function trackFamilyArtistAliases(artist) {
+  const normalizedArtist = normalizeMatchText(artist);
+  if (!normalizedArtist) {
+    return [];
+  }
+  const aliases = new Set([normalizedArtist]);
+  for (const fragment of normalizedArtist.split(/\b(?:aka|also known as)\b/g)) {
+    const normalizedFragment = normalizeMatchText(fragment);
+    if (normalizedFragment.length >= 3) {
+      aliases.add(normalizedFragment);
+    }
+  }
+  return Array.from(aliases);
+}
+
+export function buildTrackFamilyExclusions(tracks: any[] = []) {
+  const titles = new Set();
+  const titleOnly = new Set();
+  const artistTitles = new Set();
+
+  for (const track of Array.isArray(tracks) ? tracks : []) {
+    const identity = getTrackFamilyIdentity(track);
+    if (!identity.title) {
+      continue;
+    }
+    titles.add(identity.title);
+    if (identity.artist) {
+      for (const artist of trackFamilyArtistAliases(identity.artist)) {
+        artistTitles.add(trackFamilyArtistTitleKey({ ...identity, artist }));
+      }
+    } else {
+      titleOnly.add(identity.title);
+    }
+  }
+
+  return { titles, titleOnly, artistTitles };
+}
+
+export function trackMatchesSongFamilyExclusions(track: any, exclusions: any) {
+  const identity = getTrackFamilyIdentity(track);
+  if (!identity.title) {
+    return false;
+  }
+  if (!identity.artist) {
+    return exclusions?.titles?.has(identity.title) === true;
+  }
+  return exclusions?.titleOnly?.has(identity.title) === true ||
+    trackFamilyArtistAliases(identity.artist).some((artist) => (
+      exclusions?.artistTitles?.has(trackFamilyArtistTitleKey({ ...identity, artist })) === true
+    ));
 }
 
 export function trackTitlesOverlap(firstTrack, secondTrack) {
@@ -411,6 +585,25 @@ export function tracksShareIdentity(firstTrack, secondTrack, options = {}) {
   }
 
   if (firstIdentity.title !== secondIdentity.title) {
+    return false;
+  }
+
+  if (firstIdentity.artist && secondIdentity.artist) {
+    const firstAliases = new Set(trackFamilyArtistAliases(firstIdentity.artist));
+    return trackFamilyArtistAliases(secondIdentity.artist).some((artist) => firstAliases.has(artist));
+  }
+
+  return true;
+}
+
+export function tracksShareSongFamily(firstTrack, secondTrack, options = {}) {
+  const {
+    titleOnly = false
+  } = options;
+  const firstIdentity = getTrackFamilyIdentity(firstTrack, { titleOnly });
+  const secondIdentity = getTrackFamilyIdentity(secondTrack, { titleOnly });
+
+  if (!firstIdentity.title || firstIdentity.title !== secondIdentity.title) {
     return false;
   }
 

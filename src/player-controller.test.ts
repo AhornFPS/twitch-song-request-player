@@ -11,7 +11,11 @@ function createController({
   radioTrackCount = 3,
   playlistRepositoryOverrides = {},
   getRadioTracks = null,
-  externalPlayback = null
+  externalPlayback = null,
+  routeOwnedRequest = null,
+  beforeTrackStart = null,
+  setTimeoutFn = setTimeout,
+  clearTimeoutFn = clearTimeout
 } = {}) {
   const emittedEvents = [];
   const io = {
@@ -51,7 +55,11 @@ function createController({
       radioModeEnabled,
       radioTrackCount,
       getRadioTracks,
-      externalPlayback
+      externalPlayback,
+      routeOwnedRequest,
+      beforeTrackStart,
+      setTimeoutFn,
+      clearTimeoutFn
     }),
     emittedEvents
   };
@@ -2355,4 +2363,106 @@ test("request audit restores persisted request events and requester totals", asy
   assert.equal(requestAudit.requesterStats.length, 1);
   assert.equal(requestAudit.requesterStats[0].requester.displayName, "ViewerOne");
   assert.equal(requestAudit.requesterStats[0].acceptedRequests, 1);
+});
+
+test("online player load is held when the AutoDJ takeover is not acknowledged", async () => {
+  const timers = [];
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({ matched: false }),
+    beforeTrackStart: async () => ({ ready: false, error: "AutoDJ unavailable" }),
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/held",
+    title: "Held Request",
+    key: "youtube:held",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+  assert.equal(controller.getPublicState().queue.length, 1);
+  assert.equal(controller.getPublicState().currentTrack, null);
+  assert.equal(timers[0].delay, 5_000);
+});
+
+test("a final owned-request check can move a newly indexed track to AutoDJ before playback", async () => {
+  let checks = 0;
+  let takeoverCalls = 0;
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({
+      matched: ++checks === 2,
+      queued: checks === 2,
+      track: checks === 2 ? { provider: "local", title: "Owned" } : null
+    }),
+    beforeTrackStart: async () => {
+      takeoverCalls += 1;
+      return { ready: true };
+    },
+    setTimeoutFn: () => ({ unref() {} }),
+    clearTimeoutFn() {}
+  });
+
+  const result = await controller.addRequest({
+    provider: "suno",
+    url: "https://suno.com/song/owned-late",
+    audioUrl: "https://cdn1.suno.ai/owned-late.mp3",
+    title: "Owned Late",
+    key: "suno:owned-late",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+
+  assert.equal(result.alreadyQueued, false);
+  assert.equal(checks, 2);
+  assert.equal(takeoverCalls, 0);
+  assert.equal(controller.getPublicState().queue.length, 0);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+});
+
+test("queued ownership rechecks apply a late match only while the request remains queued", async () => {
+  const timers = [];
+  let checks = 0;
+  const { controller } = createController({
+    routeOwnedRequest: async () => ({
+      matched: ++checks > 1,
+      queued: checks > 1,
+      track: checks > 1 ? { provider: "local", title: "Indexed Later" } : null
+    }),
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn() {}
+  });
+  controller.currentTrack = {
+    id: "playing",
+    provider: "youtube",
+    url: "https://youtu.be/playing",
+    title: "Playing",
+    key: "youtube:playing",
+    origin: "queue"
+  };
+
+  await controller.addRequest({
+    provider: "soundcloud",
+    url: "https://soundcloud.com/example/indexed-later",
+    title: "Indexed Later",
+    key: "soundcloud:indexed-later",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+  assert.equal(controller.getPublicState().queue.length, 1);
+  assert.equal(timers[0].delay, 5_000);
+
+  timers[0].callback();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(controller.getPublicState().queue.length, 0);
+  assert.equal(checks, 2);
 });

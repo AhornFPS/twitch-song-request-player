@@ -33,7 +33,9 @@ function createBotHarness({
   skipToNextTrackResult = null,
   skipCurrentTrackImpl = null,
   skipToNextTrackImpl = null,
+  playbackAdvancePending = false,
   ensurePlaybackImpl = null,
+  autoDjController = null,
   updateSettings = async () => ({ requestPolicy })
 }) {
   let playbackListener = null;
@@ -96,6 +98,9 @@ function createBotHarness({
 
       return skipToNextTrackResult;
     },
+    isPlaybackAdvancePending() {
+      return playbackAdvancePending;
+    },
     async ensurePlayback() {
       if (typeof ensurePlaybackImpl === "function") {
         return ensurePlaybackImpl();
@@ -134,6 +139,7 @@ function createBotHarness({
       requestPolicy
     },
     playerController,
+    autoDjController,
     client,
     channelInfo,
     chatApi,
@@ -449,6 +455,123 @@ test("renamed chat commands are honored", async () => {
       message: "Current song: Playlist Track https://youtu.be/example"
     }
   ]);
+});
+
+test("owned requests tell viewers they are queued for the next AutoDJ mix", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/owned-mix",
+      title: "Artist - Owned Mix",
+      key: "youtube:owned-mix",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "local-request-1",
+      provider: "local",
+      url: "",
+      title: "Artist — Owned Mix",
+      key: "local:owned-mix",
+      origin: "local",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      queuedForAutoDj: true,
+      alreadyQueued: false,
+      duplicateType: null
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr owned mix");
+
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "Queued for the next AutoDJ mix: Artist - Owned Mix (requested by ViewerOne)"
+  }]);
+});
+
+test("Suno requests tell viewers when AutoDJ download and analysis is running", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "suno",
+      url: "https://suno.com/song/request-123",
+      title: "Neon Test",
+      key: "suno:request-123",
+      audioUrl: "https://cdn1.suno.ai/request-123.mp3",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "suno-request-queue-1",
+      provider: "suno",
+      url: "https://suno.com/song/request-123",
+      title: "Neon Test",
+      key: "suno:request-123",
+      origin: "queue",
+      audioUrl: "https://cdn1.suno.ai/request-123.mp3",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      autoDjPreparationPending: true,
+      alreadyQueued: false,
+      duplicateType: null
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr https://suno.com/song/request-123");
+
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "Queued for AutoDJ preparation: Neon Test (Suno download and analysis running; requested by ViewerOne)"
+  }]);
+});
+
+test("late owned requests tell viewers they are queued for the mix after next", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    resolvedTrack: {
+      provider: "youtube",
+      url: "https://youtu.be/owned-following-mix",
+      title: "Artist - Owned Following Mix",
+      key: "youtube:owned-following-mix",
+      artworkUrl: ""
+    },
+    addRequestResult: {
+      id: "local-request-following",
+      provider: "local",
+      url: "",
+      title: "Artist — Owned Following Mix",
+      key: "local:owned-following-mix",
+      origin: "local",
+      requestedBy: {
+        username: "viewerone",
+        displayName: "ViewerOne"
+      },
+      queuedForAutoDj: true,
+      alreadyQueued: false,
+      duplicateType: null,
+      autoDjPlacement: "following_transition"
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewerone",
+    "display-name": "ViewerOne"
+  }, "!sr owned following mix");
+
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "Queued for the AutoDJ mix after next: Artist - Owned Following Mix (requested by ViewerOne)"
+  }]);
 });
 
 test("closed requests block viewer song requests but moderators can reopen them", async () => {
@@ -1019,6 +1142,143 @@ test("skip command advances with the same next-track path as the dashboard", asy
       message: "VipOne skipped the current song."
     }
   ]);
+});
+
+test("skip command brings the next remote AutoDJ mix forward when the request player is idle", async () => {
+  const calls = [];
+  const harness = createBotHarness({
+    currentTrack: null,
+    skipToNextTrackImpl: async () => null,
+    autoDjController: {
+      getRemoteCurrentTrack() {
+        return {
+          id: "local-current",
+          provider: "local",
+          url: "",
+          title: "Local Artist — Current",
+          origin: "local"
+        };
+      },
+      async mixNext(options) {
+        calls.push(options);
+        return {
+          id: "local-current",
+          title: "Local Artist — Current",
+          autoDjMixQueued: true
+        };
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "vipone",
+    "display-name": "VipOne",
+    badges: { vip: "1" }
+  }, "!skip");
+
+  assert.deepEqual(calls, [{ triggeredBy: "vipone", leadSeconds: 5 }]);
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "VipOne is mixing at the next good AutoDJ exit."
+  }]);
+});
+
+test("skip command brings the next standalone AutoDJ mix forward instead of hard-skipping", async () => {
+  const calls = [];
+  const harness = createBotHarness({
+    currentTrack: {
+      id: "local-current",
+      provider: "local",
+      origin: "local",
+      title: "Current local track"
+    },
+    skipToNextTrackImpl: async () => {
+      calls.push("hard-skip");
+      return null;
+    },
+    autoDjController: {
+      async mixNext(options) {
+        calls.push(options);
+        return {
+          id: "local-current",
+          title: "Current local track",
+          autoDjMixQueued: true
+        };
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "vipone",
+    "display-name": "VipOne",
+    badges: { vip: "1" }
+  }, "!skip");
+
+  assert.deepEqual(calls, [{ triggeredBy: "vipone", leadSeconds: 5 }]);
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "VipOne is mixing at the next good AutoDJ exit."
+  }]);
+});
+
+test("skip command reports an in-flight AutoDJ advance instead of claiming silence", async () => {
+  const calls = [];
+  const harness = createBotHarness({
+    currentTrack: null,
+    playbackAdvancePending: true,
+    skipToNextTrackImpl: async (triggeredBy) => {
+      calls.push(`skipToNextTrack:${triggeredBy}`);
+      return null;
+    },
+    autoDjController: {
+      async mixNext(options) {
+        calls.push(options);
+        return null;
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "ahorn",
+    "display-name": "Ahorn",
+    badges: { broadcaster: "1" }
+  }, "!skip");
+
+  assert.deepEqual(calls, [
+    "skipToNextTrack:ahorn",
+    { triggeredBy: "ahorn", leadSeconds: 5 }
+  ]);
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "Ahorn is already advancing AutoDJ to the next track."
+  }]);
+});
+
+test("current-song command reports the remote AutoDJ track with a plain chat separator and no empty URL", async () => {
+  const harness = createBotHarness({
+    currentTrack: null,
+    autoDjController: {
+      getRemoteCurrentTrack() {
+        return {
+          id: "local-current",
+          provider: "local",
+          url: "",
+          title: "Local Artist — Current",
+          origin: "local"
+        };
+      }
+    }
+  });
+
+  await harness.bot.handleCommand("#testchannel", {
+    username: "viewer",
+    "display-name": "Viewer"
+  }, "!currentsong");
+
+  assert.deepEqual(harness.sentMessages, [{
+    channel: "#testchannel",
+    message: "Current song: Local Artist - Current"
+  }]);
 });
 
 test("disabled search requests return a direct-link guidance error", async () => {

@@ -50,6 +50,8 @@ let requestPolicyDraft = null;
 let requestPolicyAutosaveTimer = null;
 let isRequestPolicyAutosaveSaving = false;
 let hasPendingRequestPolicyAutosave = false;
+let autoDjStatus = null;
+let autoDjStatusTimer = null;
 function el(id) {
   return document.getElementById(id);
 }
@@ -116,6 +118,7 @@ function renderDashboard() {
       <nav class="atlas-tabs" aria-label="Dashboard sections">
         <button class="tab-button" type="button" data-tab="overview">Overview</button>
         <button class="tab-button" type="button" data-tab="playback">Playback</button>
+        <button class="tab-button" type="button" data-tab="autodj">AutoDJ</button>
         <button class="tab-button" type="button" data-tab="queue">Queue</button>
         <button class="tab-button" type="button" data-tab="requests">Requests</button>
         <button class="tab-button" type="button" data-tab="settings">Settings</button>
@@ -301,6 +304,63 @@ function renderDashboard() {
             </div>
             <div id="admin-event-list" class="history-list"></div>
           </section>
+        </div>
+      </section>
+
+      <section id="tab-autodj" class="atlas-view" hidden>
+        <div class="stack-layout">
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Standalone service</p>
+                <h2>AutoDJ controller</h2>
+              </div>
+              <div class="status-strip status-strip--compact">
+                <span id="autodj-connection-pill" class="status-pill status-pill--idle">Unconfigured</span>
+                <span id="autodj-activation-pill" class="status-pill status-pill--idle">Disabled</span>
+              </div>
+            </div>
+            <p class="panel-note">AutoDJ owns local music, analysis, selection, transitions, mixing, and browser output. This app sends authenticated control requests only.</p>
+            <div class="form-grid">
+              <label class="field field--full">
+                <span class="field__label">AutoDJ service URL</span>
+                <input id="autodj-service-url" class="control-input" type="url" placeholder="http://127.0.0.1:3100" autocomplete="off" />
+              </label>
+              <label class="field field--full">
+                <span class="field__label">Browser output URL (optional override)</span>
+                <input id="autodj-browser-output-url" class="control-input" type="url" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field__label">Bearer token</span>
+                <input id="autodj-service-token" class="control-input" type="password" autocomplete="off" />
+              </label>
+              <label class="field field--narrow">
+                <span class="field__label">Lease duration (seconds)</span>
+                <input id="autodj-lease-seconds" class="control-input" type="number" min="15" max="300" step="1" />
+              </label>
+            </div>
+            <div class="button-row button-row--wrap">
+              <button id="autodj-discover" class="secondary-button" type="button">Find AutoDJ</button>
+              <button id="autodj-refresh" class="ghost-button" type="button">Refresh status</button>
+              <button id="autodj-activation" class="primary-button" type="button">Enable AutoDJ</button>
+              <button id="autodj-mix-next" class="secondary-button" type="button">Mix Next</button>
+              <a id="autodj-output-link" class="ghost-button" href="/autodj-output" target="_blank" rel="noopener noreferrer">Open browser output</a>
+            </div>
+            <p id="autodj-feedback" class="feedback" role="status" aria-live="polite"></p>
+            <div id="autodj-pairing-requests" class="history-list"></div>
+          </section>
+          <div class="atlas-grid atlas-grid--overview">
+            <section class="panel card-panel">
+              <div class="panel__header"><div><p class="panel__eyebrow">Live state</p><h2>Now playing</h2></div></div>
+              <p id="autodj-current-track" class="playback-card__title">No AutoDJ state received.</p>
+              <p id="autodj-last-seen" class="playback-card__meta">Last seen: never</p>
+              <p id="autodj-takeover" class="panel-note">Viewer-request takeover inactive.</p>
+            </section>
+            <section class="panel card-panel">
+              <div class="panel__header"><div><p class="panel__eyebrow">Upcoming</p><h2>AutoDJ queue</h2></div></div>
+              <div id="autodj-upcoming" class="history-list"><p class="empty-state">No upcoming tracks reported.</p></div>
+            </section>
+          </div>
         </div>
       </section>
 
@@ -1267,6 +1327,13 @@ function collectSettingsPayload() {
   const twitchOauthToken = el("twitchOauthToken")?.value.trim() || "";
   const twitchClientSecret = el("twitchClientSecret")?.value.trim() || "";
   const obsWebSocketPassword = el("obs-websocket-password")?.value.trim() || "";
+  const autoDjServiceToken = el("autodj-service-token")?.value.trim() || "";
+  payload.autoDjServiceUrl = el("autodj-service-url")?.value.trim() || "";
+  payload.autoDjBrowserOutputUrl = el("autodj-browser-output-url")?.value.trim() || "";
+  payload.autoDjServiceLeaseSeconds = Number.parseInt(
+    el("autodj-lease-seconds")?.value || "90",
+    10
+  ) || 90;
   if (twitchOauthToken) {
     payload.twitchOauthToken = twitchOauthToken;
   }
@@ -1275,6 +1342,9 @@ function collectSettingsPayload() {
   }
   if (obsWebSocketPassword) {
     payload.obsWebSocketPassword = obsWebSocketPassword;
+  }
+  if (autoDjServiceToken) {
+    payload.autoDjServiceToken = autoDjServiceToken;
   }
   return payload;
 }
@@ -1295,6 +1365,149 @@ async function fetchJson(url, options = {}) {
     throw new Error(message);
   }
   return response.json();
+}
+function renderAutoDjStatus() {
+  const status = autoDjStatus;
+  const connection = status?.connection ?? {};
+  const activation = status?.activation ?? {};
+  const connectionPill = el("autodj-connection-pill");
+  const activationPill = el("autodj-activation-pill");
+  const responding = connection.responding === true;
+  const recentlySeen = connection.state === "recently-seen";
+  if (connectionPill) {
+    connectionPill.className = responding ? "status-pill status-pill--ok" : recentlySeen ? "status-pill status-pill--warn" : "status-pill status-pill--error";
+    connectionPill.textContent = responding ? "Connected" : recentlySeen ? "Recently seen" : status?.configured ? "Unavailable" : "Unconfigured";
+  }
+  if (activationPill) {
+    activationPill.className = activation.synchronized ? activation.effective ? "status-pill status-pill--ok" : "status-pill status-pill--idle" : "status-pill status-pill--warn";
+    activationPill.textContent = activation.synchronized ? activation.effective ? "Enabled" : "Disabled" : activation.desired ? "Enable pending" : "Disable pending";
+  }
+  const activationButton = el("autodj-activation");
+  if (activationButton instanceof HTMLButtonElement) {
+    activationButton.textContent = activation.desired ? "Disable AutoDJ" : "Enable AutoDJ";
+  }
+  const mixNextButton = el("autodj-mix-next");
+  if (mixNextButton instanceof HTMLButtonElement) {
+    mixNextButton.disabled = !responding || !activation.desired || !activation.synchronized || status?.takeover?.active;
+  }
+  setText("autodj-current-track", status?.currentTrack?.title || "No AutoDJ state received.");
+  setText("autodj-last-seen", `Last seen: ${connection.lastSeenAt ? new Date(connection.lastSeenAt).toLocaleString() : "never"}`);
+  setText(
+    "autodj-takeover",
+    status?.takeover?.active ? `Viewer-request takeover active${status.takeover.expiresAt ? ` until ${new Date(status.takeover.expiresAt).toLocaleTimeString()}` : ""}.` : "Viewer-request takeover inactive."
+  );
+  const upcoming = el("autodj-upcoming");
+  if (upcoming) {
+    upcoming.innerHTML = "";
+    const tracks = Array.isArray(status?.upcomingTracks) ? status.upcomingTracks : [];
+    if (tracks.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "No upcoming tracks reported.";
+      upcoming.appendChild(empty);
+    } else {
+      for (const track of tracks) {
+        const item = document.createElement("article");
+        item.className = "history-item";
+        const title = document.createElement("strong");
+        title.textContent = track.title || track.name || "Untitled track";
+        item.appendChild(title);
+        upcoming.appendChild(item);
+      }
+    }
+  }
+  setText("autodj-feedback", status?.error || "");
+}
+async function loadAutoDjStatus() {
+  autoDjStatus = await fetchJson("/api/autodj-service/status");
+  renderAutoDjStatus();
+  await loadAutoDjPairingRequests();
+  return autoDjStatus;
+}
+async function loadAutoDjPairingRequests() {
+  const payload = await fetchJson("/api/lan-pairing/requests");
+  const container = el("autodj-pairing-requests");
+  if (!container) return;
+  container.innerHTML = "";
+  for (const request of Array.isArray(payload?.requests) ? payload.requests : []) {
+    const item = document.createElement("article");
+    item.className = "history-item";
+    const label = document.createElement("strong");
+    label.textContent = `${request.displayName || "AutoDJ"} wants to pair`;
+    const details = document.createElement("span");
+    details.textContent = request.hostname || request.address || "Local network";
+    const actions = document.createElement("div");
+    actions.className = "button-row";
+    for (const decision of ["accepted", "declined"]) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = decision === "accepted" ? "primary-button" : "ghost-button";
+      button.textContent = decision === "accepted" ? "Accept" : "Decline";
+      button.dataset.autodjPairingDecision = decision;
+      button.dataset.autodjPairingRequestId = request.requestId;
+      actions.appendChild(button);
+    }
+    item.append(label, details, actions);
+    container.appendChild(item);
+  }
+}
+async function answerAutoDjPairing(requestId, decision) {
+  try {
+    await fetchJson(`/api/lan-pairing/requests/${encodeURIComponent(requestId)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision })
+    });
+    await loadAutoDjPairingRequests();
+  } catch (error) {
+    setText("autodj-feedback", error?.message || "Could not answer the pairing request.");
+  }
+}
+async function setAutoDjActivation() {
+  const desired = !(autoDjStatus?.activation?.desired === true);
+  setText("autodj-feedback", desired ? "Enabling AutoDJ..." : "Disabling AutoDJ...");
+  try {
+    settingsPayload = await persistSettings(collectSettingsPayload());
+    applySettingsPayload();
+    autoDjStatus = await fetchJson("/api/autodj-service/activation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: desired })
+    });
+    renderAutoDjStatus();
+  } catch (error) {
+    setText("autodj-feedback", error?.message || "AutoDJ activation failed.");
+    await loadAutoDjStatus().catch(() => {
+    });
+  }
+}
+async function mixNextAutoDj() {
+  try {
+    await fetchJson("/api/autodj-service/mix-next", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ leadSeconds: 5 })
+    });
+    await loadAutoDjStatus();
+  } catch (error) {
+    setText("autodj-feedback", error?.message || "Mix Next failed.");
+  }
+}
+async function discoverAutoDj() {
+  setText("autodj-feedback", "Searching the local network for AutoDJ...");
+  try {
+    const result = await fetchJson("/api/lan-discovery/autodj", { method: "POST" });
+    const peer = Array.isArray(result?.peers) ? result.peers[0] : null;
+    if (!peer) {
+      setText("autodj-feedback", "No standalone AutoDJ app answered the discovery request.");
+      return;
+    }
+    const serviceUrl = peer.serviceUrl || peer.url || (peer.address && peer.servicePort ? `http://${peer.address}:${peer.servicePort}` : "");
+    if (serviceUrl) setValue("autodj-service-url", serviceUrl);
+    setText("autodj-feedback", `Found ${peer.displayName || "AutoDJ"}. Save settings to pair this controller.`);
+  } catch (error) {
+    setText("autodj-feedback", error?.message || "AutoDJ discovery failed.");
+  }
 }
 async function loadSettings() {
   settingsPayload = await fetchJson("/api/settings");
@@ -1336,6 +1549,13 @@ function applySettingsPayload() {
   }
   setValue("youtubeApiKey", settingsPayload.settings.youtubeApiKey || "");
   setValue("port", settingsPayload.settings.port || 3e3);
+  setValue("autodj-service-url", settingsPayload.settings.autoDjServiceUrl || "");
+  setValue("autodj-browser-output-url", settingsPayload.settings.autoDjBrowserOutputUrl || "");
+  setValue("autodj-service-token", "");
+  setValue("autodj-lease-seconds", settingsPayload.settings.autoDjServiceLeaseSeconds ?? 90);
+  if (el("autodj-service-token") instanceof HTMLInputElement) {
+    el("autodj-service-token").placeholder = settingsPayload.settings.hasAutoDjServiceToken ? "Saved token hidden" : "";
+  }
   renderCategorySelect("chat-category-select", chatSuppressedCategories);
   renderCategorySelect("playback-category-select", playbackSuppressedCategories);
   renderChatCommandRows(settingsPayload.settings.chatCommands || {});
@@ -3158,6 +3378,17 @@ root.addEventListener("click", (event) => {
     if (activeTab === "library") {
       void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
     }
+    if (activeTab === "autodj") {
+      void loadAutoDjStatus().catch((error) => setText("autodj-feedback", error?.message || "Could not load AutoDJ status."));
+    }
+    return;
+  }
+  const pairingButton = event.target.closest("[data-autodj-pairing-decision]");
+  if (pairingButton) {
+    void answerAutoDjPairing(
+      pairingButton.getAttribute("data-autodj-pairing-request-id") || "",
+      pairingButton.getAttribute("data-autodj-pairing-decision") || "declined"
+    );
     return;
   }
   const reviewActionButton = event.target.closest("[data-playlist-review-action]");
@@ -3236,6 +3467,14 @@ root.addEventListener("click", (event) => {
   }
   if (event.target.id === "save-button") {
     void saveSettings();
+  } else if (event.target.id === "autodj-refresh") {
+    void loadAutoDjStatus().catch((error) => setText("autodj-feedback", error?.message || "Could not load AutoDJ status."));
+  } else if (event.target.id === "autodj-discover") {
+    void discoverAutoDj();
+  } else if (event.target.id === "autodj-activation") {
+    void setAutoDjActivation();
+  } else if (event.target.id === "autodj-mix-next") {
+    void mixNextAutoDj();
   } else if (event.target.id === "check-for-updates-button") {
     void checkForUpdates();
   } else if (event.target.id === "open-appdata-button") {
@@ -3516,6 +3755,12 @@ window.setInterval(() => {
   void loadPlaybackState().catch(() => {
   });
 }, 3e3);
+autoDjStatusTimer = window.setInterval(() => {
+  if (activeTab === "autodj") {
+    void loadAutoDjStatus().catch(() => {
+    });
+  }
+}, 3e3);
 window.setInterval(() => {
   if (!isSavingSettings && !isHydratingForm && settingsPayload) {
     void fetchJson("/api/runtime-status").then((payload) => {
@@ -3544,6 +3789,6 @@ window.addEventListener("message", (event) => {
     }
   }
 });
-void Promise.all([loadSettings(), loadPlaybackState(), loadPlaylist()]).catch((error) => {
+void Promise.all([loadSettings(), loadPlaybackState(), loadPlaylist(), loadAutoDjStatus()]).catch((error) => {
   setFeedback(error?.message || "Could not load dashboard data.", "error");
 });

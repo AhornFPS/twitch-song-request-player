@@ -4,7 +4,7 @@
   "private": true,
   "main": "build/electron/main.cjs",
   "type": "module",
-  "description": "OBS browser-source player for Twitch-driven YouTube and SoundCloud song requests.",
+  "description": "Twitch song request player and standalone AutoDJ controller for YouTube, Suno, SoundCloud, and OBS.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.node.json && tsc -p tsconfig.web.json",
     "build:bundle-config": "tsx scripts/write-bundled-config.ts",
@@ -28,7 +28,7 @@
     "release:major": "tsx scripts/release.ts major"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22.5"
   },
   "dependencies": {
     "csv-parse": "^5.5.6",
@@ -52,7 +52,7 @@
   },
   "build": {
     "appId": "com.horngaming.twitch-song-request-player",
-    "productName": "TwitchSongRequestPlayer",
+    "productName": "HornGaming Music Control Center",
     "directories": {
       "output": "dist"
     },
@@ -81,7 +81,7 @@
       ]
     },
     "nsis": {
-      "artifactName": "TwitchSongRequestPlayer-Setup-${version}.${ext}",
+      "artifactName": "HornGaming-Music-Control-Center-Setup-${version}.${ext}",
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
@@ -93,7 +93,7 @@
       "repo": "twitch-song-request-player"
     },
     "portable": {
-      "artifactName": "TwitchSongRequestPlayer-Portable.exe"
+      "artifactName": "HornGaming-Music-Control-Center.exe"
     }
   }
 }

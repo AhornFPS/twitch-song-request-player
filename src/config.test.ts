@@ -54,6 +54,29 @@ test("saved theme, dashboard layout, and port stay active when no env override i
   assert.equal(settings.dashboardLayout, "atlas");
 });
 
+test("legacy AutoDJ enabled state migrates only with a valid external service URL", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-autodj-"));
+  t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
+  const configStore = createConfigStore({ runtimeDir });
+
+  await fs.writeFile(path.join(runtimeDir, "settings.json"), `${JSON.stringify({
+    localMusicAutoDjEnabled: true,
+    autoDjEngineMode: "internal"
+  })}\n`);
+  const internalOnly = await configStore.loadEffectiveSettings();
+  assert.equal(internalOnly.autoDjEnabled, false);
+  assert.equal(Object.hasOwn(internalOnly, "autoDjEngineMode"), false);
+  assert.equal(Object.hasOwn(internalOnly, "localMusicAutoDjEnabled"), false);
+
+  await fs.writeFile(path.join(runtimeDir, "settings.json"), `${JSON.stringify({
+    localMusicAutoDjEnabled: true,
+    autoDjServiceUrl: "http://127.0.0.1:3100/"
+  })}\n`);
+  const external = await configStore.loadEffectiveSettings();
+  assert.equal(external.autoDjEnabled, true);
+  assert.equal(external.autoDjServiceUrl, "http://127.0.0.1:3100");
+});
+
 test("saved GUI player state is preserved across reloads", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 

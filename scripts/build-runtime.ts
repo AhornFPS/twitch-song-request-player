@@ -10,11 +10,17 @@ async function getTypeScriptFiles(relativeDir) {
   const directory = path.join(rootDir, relativeDir);
   const entries = await fs.readdir(directory, { withFileTypes: true });
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts"))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts"))
     .map((entry) => path.join(relativeDir, entry.name));
 }
 
+async function cleanGeneratedServerRuntime() {
+  const buildSrcDir = path.join(rootDir, "build", "src");
+  await fs.rm(buildSrcDir, { recursive: true, force: true });
+}
+
 async function main() {
+  await cleanGeneratedServerRuntime();
   const srcFiles = await getTypeScriptFiles("src");
 
   await build({
@@ -57,6 +63,7 @@ async function main() {
     platform: "browser",
     bundle: false
   });
+
 }
 
 main().catch((error) => {

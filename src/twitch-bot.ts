@@ -218,6 +218,10 @@ function getSoundCloudSourceCandidates(track) {
   return candidates;
 }
 
+function formatChatTrackTitle(track) {
+  return String(track?.title ?? "").replace(/\s*[\u2013\u2014]\s*/gu, " - ");
+}
+
 function formatPlaybackFailureReason({ reason = "", message = "" } = {}) {
   const normalizedReason = typeof reason === "string" ? reason.trim().toLowerCase() : "";
   const normalizedMessage = typeof message === "string" ? message.trim() : "";
@@ -285,6 +289,7 @@ export class TwitchBot {
   constructor({
     config,
     playerController,
+    autoDjController = null,
     client = null,
     channelInfo = null,
     chatApi = null,
@@ -294,6 +299,7 @@ export class TwitchBot {
   }) {
     this.config = config;
     this.playerController = playerController;
+    this.autoDjController = autoDjController;
     this.songRequestResolver = songRequestResolver;
     this.youtubePlaylistResolver = youtubePlaylistResolver;
     this.updateSettings = updateSettings;
@@ -366,6 +372,12 @@ export class TwitchBot {
 
   getCommandPermission(actionId) {
     return this.getChatCommandConfig()?.[actionId]?.permission ?? "everyone";
+  }
+
+  getCurrentTrackForChat() {
+    return this.playerController.getCurrentTrack()
+      ?? this.autoDjController?.getRemoteCurrentTrack?.()
+      ?? null;
   }
 
   buildRequestAuditRequester(tags) {
@@ -722,39 +734,58 @@ export class TwitchBot {
       });
 
       if (queueTrack.duplicateType === "playing") {
-        await this.reply(channel, `Song ${queueTrack.title} is already playing`);
+        await this.reply(channel, `Song ${formatChatTrackTitle(queueTrack)} is already playing`);
         return;
       }
 
       if (queueTrack.duplicateType === "history") {
-        await this.reply(channel, `Song ${queueTrack.title} was played recently`);
+        await this.reply(channel, `Song ${formatChatTrackTitle(queueTrack)} was played recently`);
         return;
       }
 
       if (queueTrack.alreadyQueued) {
-        await this.reply(channel, `Song ${queueTrack.title} already in the queue`);
+        await this.reply(channel, `Song ${formatChatTrackTitle(queueTrack)} already in the queue`);
+        return;
+      }
+
+      if (queueTrack.queuedForAutoDj) {
+        const placement = queueTrack.autoDjPlacement === "following_transition"
+          ? "the AutoDJ mix after next"
+          : "the next AutoDJ mix";
+        await this.reply(
+          channel,
+          `Queued for ${placement}: ${formatChatTrackTitle(queueTrack)} (requested by ${queueTrack.requestedBy.displayName || queueTrack.requestedBy.username})`
+        );
+        return;
+      }
+
+      if (queueTrack.autoDjPreparationPending) {
+        await this.reply(
+          channel,
+          `Queued for AutoDJ preparation: ${formatChatTrackTitle(queueTrack)} (Suno download and analysis running; requested by ${queueTrack.requestedBy.displayName || queueTrack.requestedBy.username})`
+        );
         return;
       }
 
       await this.reply(
         channel,
-        `Queued: ${queueTrack.title} (requested by ${queueTrack.requestedBy.displayName || queueTrack.requestedBy.username})`
+        `Queued: ${formatChatTrackTitle(queueTrack)} (requested by ${queueTrack.requestedBy.displayName || queueTrack.requestedBy.username})`
       );
       return;
     }
 
     if (actionId === "queue_status") {
       const queueSummary = this.playerController.getQueueSummary(3);
-      const currentTrack = this.playerController.getCurrentTrack();
+      const currentTrack = this.getCurrentTrackForChat();
 
       if (!currentTrack && queueSummary.length === 0) {
         await this.reply(channel, "The request queue is empty right now.");
         return;
       }
 
-      const nowPlayingText = currentTrack ? `Now playing: ${currentTrack.title}. ` : "";
+      const nowPlayingText = currentTrack ? `Now playing: ${formatChatTrackTitle(currentTrack)}. ` : "";
       const queueText = queueSummary.length > 0
-        ? `Up next: ${queueSummary.map((track, index) => `${index + 1}. ${track.title}`).join(" | ")}`
+        ? `Up next: ${queueSummary.map((track, index) => `${index + 1}. ${formatChatTrackTitle(track)}`).join(" | ")}`
         : "No queued requests after the current song.";
       await this.reply(channel, `${nowPlayingText}${queueText}`);
       return;
@@ -768,7 +799,7 @@ export class TwitchBot {
         return;
       }
 
-      await this.reply(channel, `${position.track.title} is #${position.position} in the queue.`);
+      await this.reply(channel, `${formatChatTrackTitle(position.track)} is #${position.position} in the queue.`);
       return;
     }
 
@@ -780,15 +811,36 @@ export class TwitchBot {
         return;
       }
 
-      await this.reply(channel, `Removed your queued request: ${removedTrack.title}`);
+      await this.reply(channel, `Removed your queued request: ${formatChatTrackTitle(removedTrack)}`);
       return;
     }
 
     if (actionId === "skip_current") {
-      const skippedTrack = await this.playerController.skipToNextTrack(tags.username ?? "unknown");
+      const triggeredBy = tags.username ?? "unknown";
+      const currentTrack = this.playerController.getCurrentTrack();
+      const shouldMixLocalTrack = Boolean(
+        this.autoDjController?.mixNext &&
+        (currentTrack?.provider === "local" || currentTrack?.origin === "local")
+      );
+      const skippedTrack = shouldMixLocalTrack
+        ? await this.autoDjController.mixNext({ triggeredBy, leadSeconds: 5 })
+        : await this.playerController.skipToNextTrack(triggeredBy)
+          ?? await this.autoDjController?.mixNext?.({ triggeredBy, leadSeconds: 5 });
 
       if (!skippedTrack) {
+        if (this.playerController.isPlaybackAdvancePending?.()) {
+          await this.reply(
+            channel,
+            `${tags["display-name"] ?? tags.username} is already advancing AutoDJ to the next track.`
+          );
+          return;
+        }
         await this.reply(channel, "No song is currently playing.");
+        return;
+      }
+
+      if (skippedTrack.autoDjMixQueued) {
+        await this.reply(channel, `${tags["display-name"] ?? tags.username} is mixing at the next good AutoDJ exit.`);
         return;
       }
 
@@ -801,6 +853,11 @@ export class TwitchBot {
 
       if (!deletedTrack) {
         await this.reply(channel, "No song is currently playing.");
+        return;
+      }
+
+      if (deletedTrack.unsupported) {
+        await this.reply(channel, "Standalone AutoDJ tracks are read-only here. Use skip; the AutoDJ library was not changed.");
         return;
       }
 
@@ -817,12 +874,17 @@ export class TwitchBot {
         return;
       }
 
-      if (result.alreadySaved) {
-        await this.reply(channel, `Already saved: ${result.track.title}`);
+      if (result.unsupported) {
+        await this.reply(channel, "Local fallback tracks are not added to the saved online playlist.");
         return;
       }
 
-      await this.reply(channel, `Saved: ${result.track.title}`);
+      if (result.alreadySaved) {
+        await this.reply(channel, `Already saved: ${formatChatTrackTitle(result.track)}`);
+        return;
+      }
+
+      await this.reply(channel, `Saved: ${formatChatTrackTitle(result.track)}`);
       return;
     }
 
@@ -862,7 +924,7 @@ export class TwitchBot {
     }
 
     if (actionId === "current_song") {
-      const track = this.playerController.getCurrentTrack();
+      const track = this.getCurrentTrackForChat();
 
       if (!track) {
         await this.reply(channel, "No song is currently playing.");
@@ -991,7 +1053,7 @@ export class TwitchBot {
 
     await this.reply(
       `#${this.config.twitch.channel}`,
-      `Skipped ${track.title}${requesterText}: ${failureReason}`
+      `Skipped ${formatChatTrackTitle(track)}${requesterText}: ${failureReason}`
     );
   }
 
@@ -999,6 +1061,7 @@ export class TwitchBot {
     const requester = track.requestedBy?.displayName || track.requestedBy?.username;
     const requesterText = requester ? `, requested by ${requester}` : "";
 
-    return `Current song: ${track.title} ${track.url}${requesterText}`;
+    const urlText = track.url ? ` ${track.url}` : "";
+    return `Current song: ${formatChatTrackTitle(track)}${urlText}${requesterText}`;
   }
 }

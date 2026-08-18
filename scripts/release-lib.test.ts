@@ -169,6 +169,6 @@ test("package.json pins the NSIS artifact name to the updater-compatible setup f
 
   assert.equal(
     packageJson.build?.nsis?.artifactName,
-    "TwitchSongRequestPlayer-Setup-${version}.${ext}"
+    "HornGaming-Music-Control-Center-Setup-${version}.${ext}"
   );
 });

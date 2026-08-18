@@ -168,7 +168,7 @@ async function ensureArtifacts(version, skipBuild) {
 
   const artifactPaths = await readReleaseArtifacts(
     path.join(rootDir, "dist"),
-    "TwitchSongRequestPlayer-Portable.exe"
+    "HornGaming-Music-Control-Center.exe"
   );
   for (const artifactPath of artifactPaths) {
     await fs.access(artifactPath);

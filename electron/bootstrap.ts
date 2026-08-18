@@ -7,6 +7,7 @@ import { EventEmitter } from "node:events";
 import { createConfigStore } from "../src/config.js";
 import { startAppServer } from "../src/app-server.js";
 import { acquireSingleInstanceLock } from "../src/electron-single-instance.js";
+import { shouldEnableDesktopUpdates } from "../src/electron-update-runtime.js";
 import { resolveAppRootFromModuleDir } from "../src/runtime-paths.js";
 
 const require = createRequire(import.meta.url);
@@ -127,6 +128,7 @@ export async function bootstrapDesktopApp(electron) {
   let mainWindow = null;
   let appServer = null;
   let isShuttingDown = false;
+  let settingsFlushBeforeCloseComplete = false;
 
   if (!acquireSingleInstanceLock(app, () => mainWindow)) {
     return;
@@ -209,7 +211,12 @@ export async function bootstrapDesktopApp(electron) {
       }
     });
 
-    const updateService = app.isPackaged ? await createUpdateService(app.getVersion()) : null;
+    const updateService = shouldEnableDesktopUpdates({
+      isPackaged: app.isPackaged,
+      portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR
+    })
+      ? await createUpdateService(app.getVersion())
+      : null;
 
     appServer = await startAppServer({
       noBrowser: true,
@@ -238,7 +245,7 @@ export async function bootstrapDesktopApp(electron) {
       minHeight: 760,
       autoHideMenuBar: true,
       backgroundColor: "#08111b",
-      title: "Twitch Song Request Player",
+      title: "HornGaming Music Control Center",
       webPreferences: {
         contextIsolation: true,
         sandbox: true
@@ -254,6 +261,23 @@ export async function bootstrapDesktopApp(electron) {
 
     mainWindow.on("closed", () => {
       mainWindow = null;
+    });
+
+    mainWindow.on("close", (event) => {
+      if (isShuttingDown || settingsFlushBeforeCloseComplete || !mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+
+      event.preventDefault();
+      void mainWindow.webContents
+        .executeJavaScript("window.__flushSettingsBeforeClose?.()", true)
+        .catch(() => {})
+        .finally(() => {
+          settingsFlushBeforeCloseComplete = true;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.close();
+          }
+        });
     });
 
     await mainWindow.loadURL(server.urls.dashboardUrl);
