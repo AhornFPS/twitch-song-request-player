@@ -51,6 +51,12 @@ const saveBadge = document.getElementById("save-badge");
 const playerCard = document.getElementById("player-card");
 const artworkImage = document.getElementById("artwork-image");
 const artworkFallback = document.getElementById("artwork-fallback");
+const nextDeck = document.getElementById("next-deck");
+const nextTitle = document.getElementById("next-title");
+const nextMeta = document.getElementById("next-meta");
+const nextProviderBadge = document.getElementById("next-provider-badge");
+const nextArtworkImage = document.getElementById("next-artwork-image");
+const nextArtworkFallback = document.getElementById("next-artwork-fallback");
 const currentTimeText = document.getElementById("current-time");
 const durationTimeText = document.getElementById("duration-time");
 const progressFill = document.getElementById("progress-fill");
@@ -87,8 +93,11 @@ let youtubeEndedTrackId = "";
 let youtubeStartupRecoveryTrackId = "";
 let failedArtworkUrl = "";
 let artworkRequestId = 0;
+let failedNextArtworkUrl = "";
+let nextArtworkRequestId = 0;
 let youtubeStartupHardResetAttempts = 0;
 let displayedTrackId = null;
+let displayedAutoDjTrack = false;
 let trackExitTimer = null;
 let trackEnterTimer = null;
 let titleMarqueeFrame = null;
@@ -107,7 +116,11 @@ const soundCloudRecoveryDelayMs = 650;
 const maxSoundCloudRecoveryAttempts = 1;
 
 function applyOverlayTheme(themeId) {
-  document.documentElement.dataset.theme = themeId || "aurora";
+  // The former kiosk preset was a single oversized player. Keep the saved
+  // option compatible while routing it to the new two-deck broadcast desk.
+  document.documentElement.dataset.theme = themeId === "kiosk"
+    ? "aurora"
+    : themeId || "aurora";
 }
 
 function reportOverlaySize() {
@@ -1192,6 +1205,10 @@ function getYouTubeThumbnail(videoId) {
 }
 
 function getProviderLabel(provider) {
+  if (provider === "autodj") {
+    return "AutoDJ";
+  }
+
   if (provider === "youtube") {
     return "YouTube";
   }
@@ -1208,6 +1225,10 @@ function getProviderLabel(provider) {
 }
 
 function getProviderFallbackText(provider) {
+  if (provider === "autodj") {
+    return "AD";
+  }
+
   if (provider === "youtube") {
     return "YT";
   }
@@ -1251,6 +1272,44 @@ function setArtwork(url, fallbackText = "SR") {
     } else {
       artworkImage.src = url;
     }
+  }
+}
+
+function setNextArtwork(url, fallbackText = "B") {
+  if (!nextArtworkImage || !nextArtworkFallback) {
+    return;
+  }
+
+  const requestId = ++nextArtworkRequestId;
+  const showFallback = () => {
+    nextArtworkImage.removeAttribute?.("src");
+    nextArtworkImage.classList.remove("is-visible");
+    nextArtworkFallback.classList.remove("is-hidden");
+    nextArtworkFallback.textContent = fallbackText;
+  };
+
+  showFallback();
+  if (!url || url === failedNextArtworkUrl) {
+    return;
+  }
+
+  nextArtworkImage.onerror = () => {
+    if (requestId !== nextArtworkRequestId || nextArtworkImage.getAttribute?.("src") !== url) return;
+    failedNextArtworkUrl = url;
+    showFallback();
+  };
+  nextArtworkImage.onload = () => {
+    if (requestId !== nextArtworkRequestId || nextArtworkImage.getAttribute?.("src") !== url) return;
+    if (failedNextArtworkUrl === url) {
+      failedNextArtworkUrl = "";
+    }
+    nextArtworkImage.classList.add("is-visible");
+    nextArtworkFallback.classList.add("is-hidden");
+  };
+  if (typeof nextArtworkImage.setAttribute === "function") {
+    nextArtworkImage.setAttribute("src", url);
+  } else {
+    nextArtworkImage.src = url;
   }
 }
 
@@ -1311,6 +1370,12 @@ function describeTrackMeta(track) {
     return socketConnected
       ? "Queue is empty. Fallback playlist will play automatically."
       : "Connecting to the player service...";
+  }
+
+  if (track.overlaySource === "autodj") {
+    return track.artist
+      ? `${track.artist} • Standalone AutoDJ`
+      : "Playing from standalone AutoDJ";
   }
 
   if (isExternalPlaybackTrack(track)) {
@@ -1393,6 +1458,60 @@ function getOverlayQueueTrackIdentity(track) {
   return title ? `title:${provider}:${title}` : "";
 }
 
+function toAutoDjOverlayTrack(track, playback = {}) {
+  if (!track || typeof track !== "object") {
+    return null;
+  }
+
+  const id = typeof track.id === "string" && track.id ? track.id : track.key || track.title || "current";
+  return {
+    ...track,
+    id: `autodj:${id}`,
+    provider: "autodj",
+    origin: "local",
+    overlaySource: "autodj",
+    elapsedSeconds: Number.isFinite(playback.currentTimeSeconds)
+      ? Math.max(0, playback.currentTimeSeconds)
+      : 0,
+    durationSeconds: Number.isFinite(playback.durationSeconds) && playback.durationSeconds > 0
+      ? playback.durationSeconds
+      : track.durationSeconds,
+    playbackRate: Number.isFinite(playback.playbackRate) && playback.playbackRate > 0
+      ? playback.playbackRate
+      : 1,
+    isPaused: playback.status === "paused"
+  };
+}
+
+function buildOverlayPresentationState(state) {
+  if (state?.currentTrack) {
+    return state;
+  }
+
+  const controller = state?.autoDjController;
+  if (
+    !controller?.connection?.responding ||
+    controller?.activation?.effective !== true ||
+    controller?.takeover?.active === true ||
+    !controller?.currentTrack
+  ) {
+    return state;
+  }
+
+  const playback = controller.playback ?? {};
+  return {
+    ...state,
+    currentTrack: toAutoDjOverlayTrack(controller.currentTrack, playback),
+    queue: Array.isArray(controller.upcomingTracks)
+      ? controller.upcomingTracks
+          .map((track) => toAutoDjOverlayTrack(track, {}))
+          .filter(Boolean)
+      : [],
+    playbackStatus: playback.status || "playing",
+    autoDjPresentation: true
+  };
+}
+
 function buildOverlayUpNextQueue(state = latestPlayerState) {
   const normalQueue = Array.isArray(state?.queue) ? state.queue : [];
   const stateCurrentTrack = state?.currentTrack ?? null;
@@ -1432,15 +1551,37 @@ function getOverlayQueueMeta(track) {
   return "playlist";
 }
 
+function renderNextDeck(track) {
+  if (!nextDeck || !nextTitle || !nextMeta || !nextProviderBadge) {
+    return;
+  }
+
+  nextDeck.classList.toggle?.("is-empty", !track);
+  nextTitle.textContent = track?.title || "Queue clear";
+  nextMeta.textContent = track
+    ? describeTrackMeta(track)
+    : "Waiting for the next request";
+  nextProviderBadge.textContent = track
+    ? getProviderLabel(track.provider)
+    : "Standby";
+  setNextArtwork(
+    resolveArtwork(track),
+    track ? getProviderFallbackText(track.provider) : "B"
+  );
+}
+
 function refreshOverlayQueue(state = latestPlayerState) {
   const queue = buildOverlayUpNextQueue(state);
   queueCount.textContent = `${queue.length} queued`;
-  renderQueue(queue);
+  renderNextDeck(queue[0] ?? null);
+  renderQueue(queue.slice(1));
   return queue;
 }
 
 function applyStateToUi(state) {
   const currentTrack = state.currentTrack;
+  const isAutoDjTrack = currentTrack?.overlaySource === "autodj";
+  const wasAutoDjTrack = displayedAutoDjTrack;
   const displayText = getDisplayedTrackText(currentTrack);
 
   const titleText = displayText.title;
@@ -1462,12 +1603,14 @@ function applyStateToUi(state) {
   providerBadge.textContent = currentTrack
     ? getProviderLabel(currentTrack.provider)
     : "Idle";
-  saveBadge.textContent = currentTrack
+  saveBadge.textContent = isAutoDjTrack
+    ? "Live"
+    : currentTrack
     ? currentTrack.isSaved
       ? "Saved"
       : "Unsaved"
     : "Unsaved";
-  saveBadge.className = currentTrack?.isSaved
+  saveBadge.className = isAutoDjTrack || currentTrack?.isSaved
     ? "save-badge save-badge--saved"
     : "save-badge save-badge--idle";
   setArtwork(
@@ -1478,7 +1621,17 @@ function applyStateToUi(state) {
   );
 
   refreshOverlayQueue(state);
+  if (isAutoDjTrack) {
+    const trackChanged = displayedTrackId !== currentTrack.id;
+    syncServerTimelineFromTrackState(currentTrack);
+    updateTimeline(currentTrack.elapsedSeconds, currentTrack.durationSeconds, {
+      allowPositionRegression: trackChanged
+    });
+  } else if (wasAutoDjTrack && !currentTrack) {
+    resetTimeline();
+  }
   displayedTrackId = currentTrack?.id ?? null;
+  displayedAutoDjTrack = isAutoDjTrack;
 }
 
 function stopTrackTransitionTimers() {
@@ -1557,12 +1710,14 @@ function updateState(state) {
 
   latestPlayerState = state;
   const currentTrack = state.currentTrack;
-  const queue = buildOverlayUpNextQueue(state);
+  const presentationState = buildOverlayPresentationState(state);
+  const presentedTrack = presentationState.currentTrack;
+  const queue = buildOverlayUpNextQueue(presentationState);
   notifyUnifiedOverlayParent(state);
   desiredPausedState = Boolean(currentTrack?.isPaused);
   const stateSignature = JSON.stringify({
-    currentTrackId: currentTrack?.id ?? null,
-    playbackMode: currentTrack?.playbackMode ?? "",
+    currentTrackId: presentedTrack?.id ?? null,
+    playbackMode: presentedTrack?.playbackMode ?? "",
     queueLength: queue.length,
     isPaused: Boolean(currentTrack?.isPaused)
   });
@@ -1570,13 +1725,13 @@ function updateState(state) {
   if (stateSignature !== lastLoggedStateSignature) {
     lastLoggedStateSignature = stateSignature;
     sendClientLog("info", "State received", {
-      currentTrack: currentTrack
+      currentTrack: presentedTrack
         ? {
-            id: currentTrack.id,
-            title: currentTrack.title,
-            provider: currentTrack.provider,
-            origin: currentTrack.origin,
-            isSaved: currentTrack.isSaved
+            id: presentedTrack.id,
+            title: presentedTrack.title,
+            provider: presentedTrack.provider,
+            origin: presentedTrack.origin,
+            isSaved: presentedTrack.isSaved
           }
         : null,
       queueLength: queue.length
@@ -1603,12 +1758,12 @@ function updateState(state) {
     applyStartupTimeoutSetting(state.playerStartupTimeoutSeconds);
   }
 
-  if (displayedTrackId !== null && currentTrack?.id !== displayedTrackId) {
-    animateUiToState(state);
+  if (displayedTrackId !== null && presentedTrack?.id !== displayedTrackId) {
+    animateUiToState(presentationState);
   } else {
     stopTrackTransitionTimers();
     playerCard.classList.remove("is-track-exiting", "is-track-entering");
-    applyStateToUi(state);
+    applyStateToUi(presentationState);
   }
 
   if (currentTrack) {

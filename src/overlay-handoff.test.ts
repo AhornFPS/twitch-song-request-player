@@ -434,6 +434,59 @@ test("external playback state displays track timing without loading the embedded
   assert.equal(context.document.getElementById("progress-fill").style.width, "37.5%");
 });
 
+test("compact overlay presents standalone AutoDJ metadata without loading its audio", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+  vm.runInContext("loadTrack = () => { throw new Error('AutoDJ display metadata must not load audio'); };", context);
+
+  context.__state = {
+    currentTrack: null,
+    playbackStatus: "idle",
+    queue: [],
+    autoDjController: {
+      connection: { responding: true },
+      activation: { effective: true },
+      takeover: { active: false },
+      playback: {
+        status: "playing",
+        currentTimeSeconds: 42,
+        durationSeconds: 180,
+        playbackRate: 1
+      },
+      currentTrack: {
+        id: "remote-current",
+        title: "Remote AutoDJ Track",
+        artist: "Remote Artist",
+        durationSeconds: 180
+      },
+      upcomingTracks: [{
+        id: "remote-next",
+        title: "Remote Next Track",
+        artist: "Next Artist",
+        durationSeconds: 210
+      }]
+    }
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Remote AutoDJ Track");
+  assert.equal(context.document.getElementById("current-meta").textContent, "Remote Artist • Standalone AutoDJ");
+  assert.equal(context.document.getElementById("provider-badge").textContent, "AutoDJ");
+  assert.equal(context.document.getElementById("save-badge").textContent, "Live");
+  assert.equal(context.document.getElementById("next-title").textContent, "Remote Next Track");
+  assert.equal(context.document.getElementById("current-time").textContent, "0:42");
+  assert.equal(context.document.getElementById("duration-time").textContent, "3:00");
+  assert.equal(vm.runInContext("currentTrackId", context), null);
+  assert.equal(vm.runInContext("activeTrack", context), null);
+});
+
 test("embedded playback uses server timing when local player timing stalls", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
@@ -728,7 +781,7 @@ test("consecutive soundcloud playback reloads the outer player page once", () =>
   assert.equal(sessionStorageData.has("consecutive-soundcloud-reload-track"), false);
 });
 
-test("overlay queue treats track titles and requesters as text", () => {
+test("overlay prepares the first queued request on deck B and treats its copy as text", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
   const { context } = createOverlayTestContext();
@@ -764,13 +817,55 @@ test("overlay queue treats track titles and requesters as text", () => {
   vm.runInContext("updateState(__state);", context);
 
   const queueList = context.document.getElementById("queue-list");
-  assert.equal(queueList.children.length, 1);
-  assert.equal(queueList.children[0].innerHTML, "");
-  assert.equal(queueList.children[0].children.length, 2);
-  assert.equal(queueList.children[0].children[0].textContent, '<img src=x onerror="window.__xssTitle=1">');
-  assert.equal(queueList.children[0].children[1].textContent, '<svg onload="window.__xssRequester=1">');
+  assert.equal(context.document.getElementById("next-title").textContent, '<img src=x onerror="window.__xssTitle=1">');
+  assert.equal(
+    context.document.getElementById("next-meta").textContent,
+    'Requested by <svg onload="window.__xssRequester=1">'
+  );
+  assert.equal(context.document.getElementById("next-provider-badge").textContent, "YouTube");
+  assert.equal(queueList.children.length, 0);
   assert.equal(context.window.__xssTitle, undefined);
   assert.equal(context.window.__xssRequester, undefined);
+});
+
+test("overlay keeps requests after deck B in the later queue rail", () => {
+  const appPath = path.resolve("public/app.js");
+  const source = fs.readFileSync(appPath, "utf8");
+  const { context } = createOverlayTestContext();
+
+  vm.createContext(context);
+  vm.runInContext(source, context, {
+    filename: appPath
+  });
+
+  context.__state = {
+    currentTrack: null,
+    queue: [
+      {
+        id: "deck-b",
+        provider: "suno",
+        title: "Prepared on Deck B",
+        origin: "queue",
+        requestedBy: { displayName: "FirstViewer" }
+      },
+      {
+        id: "later-1",
+        provider: "soundcloud",
+        title: "Later Request",
+        origin: "queue",
+        requestedBy: { displayName: "SecondViewer" }
+      }
+    ]
+  };
+
+  vm.runInContext("updateState(__state);", context);
+
+  assert.equal(context.document.getElementById("queue-count").textContent, "2 queued");
+  assert.equal(context.document.getElementById("next-title").textContent, "Prepared on Deck B");
+  const queueList = context.document.getElementById("queue-list");
+  assert.equal(queueList.children.length, 1);
+  assert.equal(queueList.children[0].children[0].textContent, "Later Request");
+  assert.equal(queueList.children[0].children[1].textContent, "SecondViewer");
 });
 
 test("soundcloud widget errors retry the canonical resource once before skipping", () => {

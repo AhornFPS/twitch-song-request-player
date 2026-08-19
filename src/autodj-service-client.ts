@@ -262,6 +262,7 @@ export class AutoDjServiceClient {
       if (!result?.ok) {
         return null;
       }
+      await this.waitForCommandApplication(result, { requirePlaybackActive: true });
       return {
         ...(result.track ?? this.getRemoteCurrentTrack() ?? {}),
         autoDjMixQueued: true,
@@ -338,6 +339,61 @@ export class AutoDjServiceClient {
     }
   }
 
+  async getRequestHandoffReadiness({ leadSeconds = 3 } = {}) {
+    if (!this.serviceUrl) {
+      return { ready: false, error: "AutoDJ is not configured." };
+    }
+    try {
+      const payload = await this.requestWithRetries("GET", `${AUTODJ_API_PREFIX}/state`, undefined, {
+        retryDelaysMs: [250]
+      });
+      this.markSuccess(payload);
+      const state = payload?.state && typeof payload.state === "object" ? payload.state : payload;
+      const autoDj = state?.autoDj && typeof state.autoDj === "object" ? state.autoDj : {};
+      if (state?.takeover || this.lastStatus.takeoverActive) {
+        return { ready: true };
+      }
+      if (autoDj.playbackStatus !== "playing" || !autoDj.currentTrack) {
+        return { ready: true };
+      }
+      if (autoDj.transitionLive === true) {
+        return {
+          ready: false,
+          retryAfterMs: 1_000,
+          error: "Waiting for the active AutoDJ transition to finish."
+        };
+      }
+      const safeLeadSeconds = Math.max(1, Math.min(8, Number(leadSeconds) || 3));
+      const publishedHandoff = typeof autoDj.naturalHandoffInSeconds === "number"
+        ? autoDj.naturalHandoffInSeconds
+        : Number.NaN;
+      const playbackRate = Number.isFinite(autoDj.playbackRate) && autoDj.playbackRate > 0
+        ? autoDj.playbackRate
+        : 1;
+      const fallbackRemaining = Number.isFinite(autoDj.durationSeconds) && Number.isFinite(autoDj.currentTimeSeconds)
+        ? Math.max(0, (autoDj.durationSeconds - autoDj.currentTimeSeconds) / playbackRate)
+        : null;
+      const handoffInSeconds = Number.isFinite(publishedHandoff)
+        ? Math.max(0, publishedHandoff)
+        : fallbackRemaining;
+      if (handoffInSeconds !== null && handoffInSeconds > safeLeadSeconds) {
+        return {
+          ready: false,
+          retryAfterMs: Math.max(500, Math.min(15_000, (handoffInSeconds - safeLeadSeconds) * 1_000)),
+          error: `Waiting ${Math.ceil(handoffInSeconds)} seconds for AutoDJ's natural handoff.`
+        };
+      }
+      return { ready: true };
+    } catch (error) {
+      this.markFailure(error);
+      return {
+        ready: false,
+        retryAfterMs: 3_000,
+        error: error?.message ?? "AutoDJ state is temporarily unavailable."
+      };
+    }
+  }
+
   async release(reason = "request_finished") {
     if (!this.serviceUrl) {
       return null;
@@ -346,10 +402,13 @@ export class AutoDjServiceClient {
     const body = this.commandBody({ reason });
     try {
       const result = await this.requestWithRetries("POST", `${AUTODJ_API_PREFIX}/handoff/request-finished`, body);
-      await this.waitForCommandApplication(result, { requireLeaseReleased: true });
+      this.markSuccess(result);
+      await this.waitForCommandApplication(result, {
+        requireLeaseReleased: true,
+        requirePlaybackActive: this.lastStatus.activation?.effective === true
+      });
       this.activeTrack = null;
       this.lastStatus.takeoverActive = false;
-      this.markSuccess(result);
       this.logInfo("Released AutoDJ request takeover", { reason, leaseId: this.leaseId });
       this.leaseId = crypto.randomUUID();
       return result;
@@ -483,7 +542,8 @@ export class AutoDjServiceClient {
   async waitForCommandApplication(command, {
     requireLeaseId = "",
     requireLeaseReleased = false,
-    requireActivation = null
+    requireActivation = null,
+    requirePlaybackActive = false
   } = {}) {
     const sequence = Number(command?.sequence);
     if (!Number.isInteger(sequence)) {
@@ -515,6 +575,13 @@ export class AutoDjServiceClient {
         }
         if (typeof requireActivation === "boolean" && activation?.effective !== requireActivation) {
           throw new Error("AutoDJ applied the activation command but did not confirm the requested state.");
+        }
+        if (requirePlaybackActive && resolvedState?.autoDj?.playbackStatus !== "playing") {
+          await new Promise((resolve) => {
+            const timer = this.setTimeoutFn(resolve, 200);
+            timer?.unref?.();
+          });
+          continue;
         }
         return resolvedState;
       }

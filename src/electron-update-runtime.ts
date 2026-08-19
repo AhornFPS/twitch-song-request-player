@@ -1,9 +1,11 @@
 export function shouldEnableDesktopUpdates({
   isPackaged,
-  portableExecutableDir
+  portableExecutableDir,
+  updateConfigPresent
 }: {
   isPackaged: boolean;
   portableExecutableDir?: string | null;
+  updateConfigPresent: boolean;
 }) {
-  return isPackaged && !String(portableExecutableDir ?? "").trim();
+  return isPackaged && !String(portableExecutableDir ?? "").trim() && updateConfigPresent;
 }

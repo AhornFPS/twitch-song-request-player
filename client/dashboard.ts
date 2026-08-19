@@ -931,7 +931,7 @@ function setRequestsFeedback(message, tone = "") {
 }
 
 function applyTabState() {
-  ["overview", "playback", "queue", "requests", "settings", "library"].forEach((tabId) => {
+  ["overview", "playback", "autodj", "queue", "requests", "settings", "library"].forEach((tabId) => {
     const button = root.querySelector(`[data-tab="${tabId}"]`);
     const view = el(`tab-${tabId}`);
     const isActive = activeTab === tabId;

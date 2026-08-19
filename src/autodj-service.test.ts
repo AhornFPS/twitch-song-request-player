@@ -93,6 +93,40 @@ test("request-player diagnostics surface authenticated probe failures", async (t
   assert.equal(status.lastError, "invalid token");
 });
 
+test("normal requests wait for AutoDJ's published natural handoff window", async (t) => {
+  let state = {
+    autoDj: {
+      playbackStatus: "playing",
+      currentTrack: { id: "local-current", title: "Current" },
+      currentTimeSeconds: 30,
+      durationSeconds: 240,
+      playbackRate: 1,
+      naturalHandoffInSeconds: 18,
+      transitionLive: false
+    }
+  };
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://127.0.0.1:3100",
+    fetchImpl: async () => new Response(JSON.stringify(state), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  });
+  t.after(() => client.close());
+
+  const waiting = await client.getRequestHandoffReadiness({ leadSeconds: 3 });
+  assert.equal(waiting.ready, false);
+  assert.equal(waiting.retryAfterMs, 15_000);
+
+  state = { ...state, autoDj: { ...state.autoDj, naturalHandoffInSeconds: 2.5 } };
+  assert.deepEqual(await client.getRequestHandoffReadiness({ leadSeconds: 3 }), { ready: true });
+
+  state = { ...state, autoDj: { ...state.autoDj, transitionLive: true } };
+  const transitioning = await client.getRequestHandoffReadiness({ leadSeconds: 3 });
+  assert.equal(transitioning.ready, false);
+  assert.equal(transitioning.retryAfterMs, 1_000);
+});
+
 test("request-player client sends resolved metadata to the owned-request endpoint", async (t) => {
   const calls = [];
   const client = new AutoDjServiceClient({
@@ -146,6 +180,7 @@ test("request-player client monitors remote AutoDJ tracks and forwards mix-next"
         return new Response(JSON.stringify({
           accepted: true,
           ok: true,
+          sequence: 12,
           track: { id: "local-b", provider: "local", title: "Track B", url: "", origin: "local" },
           transition: { transitionId: "transition-b" }
         }), { status: 200, headers: { "content-type": "application/json" } });
@@ -154,7 +189,9 @@ test("request-player client monitors remote AutoDJ tracks and forwards mix-next"
       const id = stateCall < 3 ? "local-a" : "local-b";
       return new Response(JSON.stringify({
         apiVersion: AUTODJ_API_VERSION,
+        application: { lastAppliedSequence: 12, lastApplyOutcome: "applied" },
         autoDj: {
+          playbackStatus: "playing",
           currentTrack: { id, provider: "local", title: id === "local-a" ? "Track A" : "Track B", url: "", origin: "local" }
         }
       }), { status: 200, headers: { "content-type": "application/json" } });
@@ -175,6 +212,41 @@ test("request-player client monitors remote AutoDJ tracks and forwards mix-next"
   assert.equal(client.getRemoteCurrentTrack().id, "local-b");
   assert.equal(mixed.autoDjMixQueued, true);
   assert.equal(mixed.transition.transitionId, "transition-b");
+});
+
+test("request takeover release waits until AutoDJ confirms audible playback", async (t) => {
+  let stateCalls = 0;
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://127.0.0.1:3100",
+    token: "shared-secret",
+    fetchImpl: async (url) => {
+      if (String(url).endsWith("/handoff/request-finished")) {
+        return new Response(JSON.stringify({
+          accepted: true,
+          sequence: 21,
+          state: { activation: { effective: true } }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      stateCalls += 1;
+      return new Response(JSON.stringify({
+        application: { lastAppliedSequence: 21, lastApplyOutcome: "applied" },
+        activation: { effective: true },
+        takeover: null,
+        autoDj: { playbackStatus: stateCalls < 2 ? "paused" : "playing" }
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+    setTimeoutFn: (callback) => {
+      callback();
+      return { unref() {} };
+    }
+  });
+  t.after(() => client.close());
+
+  await client.release("skipped_request");
+
+  assert.equal(stateCalls, 2);
+  assert.equal(client.getStatus().takeoverActive, false);
+  assert.equal(client.getStatus().state.autoDj.playbackStatus, "playing");
 });
 
 test("request-player client applies Center authority and learns the standalone browser output", async (t) => {

@@ -219,7 +219,12 @@ function getSoundCloudSourceCandidates(track) {
 }
 
 function formatChatTrackTitle(track) {
-  return String(track?.title ?? "").replace(/\s*[\u2013\u2014]\s*/gu, " - ");
+  const title = String(track?.title ?? "").replace(/\s*[\u2013\u2014]\s*/gu, " - ").trim();
+  const artist = String(track?.artist ?? "").replace(/\s*[\u2013\u2014]\s*/gu, " - ").trim();
+  if (!artist || title.toLocaleLowerCase().includes(artist.toLocaleLowerCase())) {
+    return title;
+  }
+  return title ? `${artist} - ${title}` : artist;
 }
 
 function formatPlaybackFailureReason({ reason = "", message = "" } = {}) {

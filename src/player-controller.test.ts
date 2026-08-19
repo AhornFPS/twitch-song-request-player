@@ -2392,6 +2392,85 @@ test("online player load is held when the AutoDJ takeover is not acknowledged", 
   assert.equal(timers[0].delay, 5_000);
 });
 
+test("a normal request waits for AutoDJ's natural handoff before takeover and player load", async () => {
+  const timers = [];
+  let readinessChecks = 0;
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({ matched: false }),
+    beforeTrackStart: async () => ++readinessChecks === 1
+      ? { ready: false, retryAfterMs: 1_200, error: "Waiting for AutoDJ's natural handoff." }
+      : { ready: true },
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/natural-handoff",
+    title: "Natural Handoff Request",
+    key: "youtube:natural-handoff",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+  assert.equal(controller.getPublicState().queue.length, 1);
+  assert.equal(readinessChecks, 1);
+
+  const deferred = timers.find((timer) => timer.delay === 1_200);
+  assert.ok(deferred);
+  deferred.callback();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(readinessChecks, 2);
+  assert.equal(controller.getPublicState().queue.length, 0);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), true);
+});
+
+test("a request indexed during the AutoDJ wait is routed locally before takeover", async () => {
+  const timers = [];
+  let ownershipChecks = 0;
+  let takeoverChecks = 0;
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({
+      matched: ++ownershipChecks === 3,
+      queued: ownershipChecks === 3,
+      track: ownershipChecks === 3 ? { provider: "local", title: "Indexed During Wait" } : null
+    }),
+    beforeTrackStart: async () => {
+      takeoverChecks += 1;
+      return { ready: false, retryAfterMs: 1_000, error: "Waiting for AutoDJ." };
+    },
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.addRequest({
+    provider: "soundcloud",
+    url: "https://soundcloud.com/example/indexed-during-wait",
+    title: "Indexed During Wait",
+    key: "soundcloud:indexed-during-wait",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+  assert.equal(takeoverChecks, 1);
+  assert.equal(controller.getPublicState().queue.length, 1);
+
+  timers.find((timer) => timer.delay === 1_000).callback();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(ownershipChecks, 3);
+  assert.equal(takeoverChecks, 1);
+  assert.equal(controller.getPublicState().queue.length, 0);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+});
+
 test("a final owned-request check can move a newly indexed track to AutoDJ before playback", async () => {
   let checks = 0;
   let takeoverCalls = 0;

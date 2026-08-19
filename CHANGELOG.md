@@ -4,6 +4,17 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Keep `!skip` from leaving music silent by retrying final viewer-request takeover release, waiting for standalone AutoDJ to confirm audible playback after release or Mix Next, and retrying controller authority synchronization while AutoDJ starts.
+- Keep normal viewer requests queued while the active AutoDJ song approaches its natural handoff, continuing local ownership checks and acquiring playback takeover only in the final handoff window.
+- Show the currently playing standalone AutoDJ track and upcoming queue in the compact OBS overlay whenever no viewer request owns playback, without treating it as a request or loading its audio in Music Control Center.
+- Announce confirmed standalone AutoDJ track changes through the existing Twitch chat bot without startup, reconnect, or viewer-request takeover duplicates.
+- Stop unpacked stream-PC builds from showing a missing `app-update.yml` error at startup; release update checks remain enabled in installed builds that include update metadata.
+- Restore the standalone AutoDJ controller screen when its tab is selected; its pairing, activation, status refresh, Mix Next, browser-output, live-state, and queue controls are visible again.
+
+- Redesign the unified OBS music surface around a true two-deck broadcast view: current audio stays on Deck A, the next viewer request is prepared on Deck B, and standalone AutoDJ uses its outgoing/incoming broadcast layout.
+
+- Restore automatic OBS output after the external-only refactor: the single music source now loads standalone AutoDJ and viewer-request overlays together, prioritizes active requests, and returns to AutoDJ without manual source changes.
+
 - Refocus Music Control Center as an external-only AutoDJ controller: preserve Twitch and online request playback, route owned requests through standalone AutoDJ, require acknowledged takeover leases before player loads, and remove the embedded analyzer, decks, mixer, transition engine, routes, assets, and packaging resources.
 
 - Keep the normal OBS music source on the classic compact player for both Center and standalone AutoDJ playback, while leaving the large AutoDJ performance output as an explicit scene-only option.

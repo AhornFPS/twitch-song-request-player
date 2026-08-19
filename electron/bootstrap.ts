@@ -213,7 +213,8 @@ export async function bootstrapDesktopApp(electron) {
 
     const updateService = shouldEnableDesktopUpdates({
       isPackaged: app.isPackaged,
-      portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR
+      portableExecutableDir: process.env.PORTABLE_EXECUTABLE_DIR,
+      updateConfigPresent: fs.existsSync(path.join(process.resourcesPath, "app-update.yml"))
     })
       ? await createUpdateService(app.getVersion())
       : null;

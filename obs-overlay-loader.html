@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>HornGaming Music Control Center OBS Loader</title>
+    <title>HornGaming Unified Music OBS Loader</title>
     <style>
       html, body {
         width: 100%;
@@ -14,16 +14,20 @@
         background: transparent;
       }
 
-      body {
-        color: transparent;
-        font: 12px/1.4 Arial, sans-serif;
-      }
-
-      #overlay-frame {
+      .overlay-frame {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         border: 0;
         background: transparent;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+      }
+
+      .overlay-frame.is-visible {
+        opacity: 1;
       }
 
       #loader-status {
@@ -33,73 +37,101 @@
       }
     </style>
   </head>
-  <body>
-    <div id="loader-status" aria-live="polite">Waiting for the local player service.</div>
-    <iframe id="overlay-frame" title="HornGaming Music Control Center OBS Overlay" allow="autoplay"></iframe>
+  <body data-active-role="none">
+    <div id="loader-status" aria-live="polite">Waiting for the local music services.</div>
+    <iframe id="autodj-frame" class="overlay-frame" title="Standalone AutoDJ OBS Output" allow="autoplay"></iframe>
+    <iframe id="request-frame" class="overlay-frame" title="Viewer Request OBS Overlay" allow="autoplay"></iframe>
     <script>
-      const overlayBaseUrl = "http://127.0.0.1:3000/overlay?obsLoader=1";
+      const overlaySources = {"request":"http://127.0.0.1:3000/overlay?obsLoader=1&unifiedOverlay=1","autodj":"http://127.0.0.1:3000/autodj-output?obsLoader=1&unifiedOverlay=1"};
       const appVersion = "2.10.17";
       const retryIntervalMs = 2000;
-      const overlayFrame = document.getElementById("overlay-frame");
+      const frames = {
+        autodj: document.getElementById("autodj-frame"),
+        request: document.getElementById("request-frame")
+      };
+      const ready = { autodj: false, request: false };
+      const active = { autodj: false, request: false };
+      const retryTimers = { autodj: null, request: null };
       const loaderStatus = document.getElementById("loader-status");
-      let retryTimer = null;
-      let overlayReady = false;
+      let activeRole = "none";
 
-      function buildOverlayUrl() {
-        const separator = overlayBaseUrl.includes("?") ? "&" : "?";
-        return overlayBaseUrl + separator + "loaderAttempt=" + Date.now().toString(36);
+      function roleForSource(source) {
+        if (source === frames.request?.contentWindow) return "request";
+        if (source === frames.autodj?.contentWindow) return "autodj";
+        return "";
       }
 
-      function setLoaderStatus(message) {
-        if (loaderStatus) {
-          loaderStatus.textContent = message;
-        }
+      function buildOverlayUrl(role) {
+        const baseUrl = overlaySources[role];
+        const separator = baseUrl.includes("?") ? "&" : "?";
+        return baseUrl + separator + "unifiedRole=" + encodeURIComponent(role) +
+          "&loaderAttempt=" + Date.now().toString(36);
       }
 
-      function loadOverlay() {
-        if (!overlayFrame || overlayReady) {
-          return;
-        }
-
-        overlayFrame.src = buildOverlayUrl();
-        setLoaderStatus("Retrying the local player service.");
+      function loadOverlay(role) {
+        if (!frames[role] || ready[role]) return;
+        frames[role].src = buildOverlayUrl(role);
       }
 
-      function scheduleRetry() {
-        if (retryTimer || overlayReady) {
-          return;
-        }
-
-        retryTimer = window.setInterval(loadOverlay, retryIntervalMs);
+      function stopRetry(role) {
+        if (!retryTimers[role]) return;
+        window.clearInterval(retryTimers[role]);
+        retryTimers[role] = null;
       }
 
-      function stopRetry() {
-        if (!retryTimer) {
-          return;
-        }
+      function scheduleRetry(role) {
+        if (retryTimers[role] || ready[role]) return;
+        retryTimers[role] = window.setInterval(() => loadOverlay(role), retryIntervalMs);
+      }
 
-        window.clearInterval(retryTimer);
-        retryTimer = null;
+      function showRole(role) {
+        if (activeRole === role) return;
+        activeRole = role;
+        document.body.dataset.activeRole = role;
+        for (const [frameRole, frame] of Object.entries(frames)) {
+          frame?.classList.toggle("is-visible", frameRole === role);
+        }
+        console.info("Unified music OBS loader switched", { role });
+      }
+
+      function applyActiveSurface() {
+        // A viewer request owns the shared OBS surface for the duration of its
+        // acknowledged AutoDJ takeover. Otherwise the standalone mixer owns it.
+        if (active.request) {
+          showRole("request");
+        } else if (active.autodj) {
+          showRole("autodj");
+        } else {
+          showRole("none");
+        }
       }
 
       window.addEventListener("message", (event) => {
-        if (event.data?.type !== "tsrp:overlay-ready") {
+        const role = roleForSource(event.source);
+        if (!role) return;
+        if (event.data?.type === "tsrp:overlay-ready") {
+          ready[role] = true;
+          stopRetry(role);
+          if (loaderStatus) loaderStatus.textContent = role + " overlay connected.";
           return;
         }
-
-        overlayReady = true;
-        stopRetry();
-        setLoaderStatus("Local player service connected.");
+        if (event.data?.type !== "tsrp:overlay-state") return;
+        active[role] = Boolean(event.data.currentTrack);
+        applyActiveSurface();
       });
 
-      window.addEventListener("beforeunload", stopRetry);
+      window.addEventListener("beforeunload", () => {
+        stopRetry("autodj");
+        stopRetry("request");
+      });
 
-      setLoaderStatus("Waiting for the local player service.");
-      loadOverlay();
-      scheduleRetry();
-      console.info("HornGaming Music Control Center OBS loader ready", {
+      loadOverlay("autodj");
+      loadOverlay("request");
+      scheduleRetry("autodj");
+      scheduleRetry("request");
+      console.info("HornGaming unified music OBS loader ready", {
         appVersion,
-        overlayBaseUrl
+        overlaySources
       });
     </script>
   </body>

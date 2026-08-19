@@ -273,9 +273,11 @@ function buildObsOverlayLoaderPath(runtimeDir) {
   return path.join(runtimeDir, "obs-overlay-loader.html");
 }
 
-function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
-  const overlayBaseUrl = `${overlayUrl}${overlayUrl.includes("?") ? "&" : "?"}obsLoader=1`;
-  const serializedOverlayBaseUrl = JSON.stringify(overlayBaseUrl);
+function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) {
+  const serializedSources = JSON.stringify({
+    request: `${overlayUrl}${overlayUrl.includes("?") ? "&" : "?"}obsLoader=1&unifiedOverlay=1`,
+    autodj: `${autoDjOutputUrl}${autoDjOutputUrl.includes("?") ? "&" : "?"}obsLoader=1&unifiedOverlay=1`
+  });
   const serializedAppVersion = JSON.stringify(appVersion);
 
   return `<!doctype html>
@@ -283,7 +285,7 @@ function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Twitch Song Request Player OBS Loader</title>
+    <title>HornGaming Unified Music OBS Loader</title>
     <style>
       html, body {
         width: 100%;
@@ -294,16 +296,20 @@ function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
         background: transparent;
       }
 
-      body {
-        color: transparent;
-        font: 12px/1.4 Arial, sans-serif;
-      }
-
-      #overlay-frame {
+      .overlay-frame {
+        position: absolute;
+        inset: 0;
         width: 100%;
         height: 100%;
         border: 0;
         background: transparent;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 180ms ease;
+      }
+
+      .overlay-frame.is-visible {
+        opacity: 1;
       }
 
       #loader-status {
@@ -313,73 +319,101 @@ function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
       }
     </style>
   </head>
-  <body>
-    <div id="loader-status" aria-live="polite">Waiting for the local player service.</div>
-    <iframe id="overlay-frame" title="Twitch Song Request Player OBS Overlay" allow="autoplay"></iframe>
+  <body data-active-role="none">
+    <div id="loader-status" aria-live="polite">Waiting for the local music services.</div>
+    <iframe id="autodj-frame" class="overlay-frame" title="Standalone AutoDJ OBS Output" allow="autoplay"></iframe>
+    <iframe id="request-frame" class="overlay-frame" title="Viewer Request OBS Overlay" allow="autoplay"></iframe>
     <script>
-      const overlayBaseUrl = ${serializedOverlayBaseUrl};
+      const overlaySources = ${serializedSources};
       const appVersion = ${serializedAppVersion};
       const retryIntervalMs = 2000;
-      const overlayFrame = document.getElementById("overlay-frame");
+      const frames = {
+        autodj: document.getElementById("autodj-frame"),
+        request: document.getElementById("request-frame")
+      };
+      const ready = { autodj: false, request: false };
+      const active = { autodj: false, request: false };
+      const retryTimers = { autodj: null, request: null };
       const loaderStatus = document.getElementById("loader-status");
-      let retryTimer = null;
-      let overlayReady = false;
+      let activeRole = "none";
 
-      function buildOverlayUrl() {
-        const separator = overlayBaseUrl.includes("?") ? "&" : "?";
-        return overlayBaseUrl + separator + "loaderAttempt=" + Date.now().toString(36);
+      function roleForSource(source) {
+        if (source === frames.request?.contentWindow) return "request";
+        if (source === frames.autodj?.contentWindow) return "autodj";
+        return "";
       }
 
-      function setLoaderStatus(message) {
-        if (loaderStatus) {
-          loaderStatus.textContent = message;
-        }
+      function buildOverlayUrl(role) {
+        const baseUrl = overlaySources[role];
+        const separator = baseUrl.includes("?") ? "&" : "?";
+        return baseUrl + separator + "unifiedRole=" + encodeURIComponent(role) +
+          "&loaderAttempt=" + Date.now().toString(36);
       }
 
-      function loadOverlay() {
-        if (!overlayFrame || overlayReady) {
-          return;
-        }
-
-        overlayFrame.src = buildOverlayUrl();
-        setLoaderStatus("Retrying the local player service.");
+      function loadOverlay(role) {
+        if (!frames[role] || ready[role]) return;
+        frames[role].src = buildOverlayUrl(role);
       }
 
-      function scheduleRetry() {
-        if (retryTimer || overlayReady) {
-          return;
-        }
-
-        retryTimer = window.setInterval(loadOverlay, retryIntervalMs);
+      function stopRetry(role) {
+        if (!retryTimers[role]) return;
+        window.clearInterval(retryTimers[role]);
+        retryTimers[role] = null;
       }
 
-      function stopRetry() {
-        if (!retryTimer) {
-          return;
-        }
+      function scheduleRetry(role) {
+        if (retryTimers[role] || ready[role]) return;
+        retryTimers[role] = window.setInterval(() => loadOverlay(role), retryIntervalMs);
+      }
 
-        window.clearInterval(retryTimer);
-        retryTimer = null;
+      function showRole(role) {
+        if (activeRole === role) return;
+        activeRole = role;
+        document.body.dataset.activeRole = role;
+        for (const [frameRole, frame] of Object.entries(frames)) {
+          frame?.classList.toggle("is-visible", frameRole === role);
+        }
+        console.info("Unified music OBS loader switched", { role });
+      }
+
+      function applyActiveSurface() {
+        // A viewer request owns the shared OBS surface for the duration of its
+        // acknowledged AutoDJ takeover. Otherwise the standalone mixer owns it.
+        if (active.request) {
+          showRole("request");
+        } else if (active.autodj) {
+          showRole("autodj");
+        } else {
+          showRole("none");
+        }
       }
 
       window.addEventListener("message", (event) => {
-        if (event.data?.type !== "tsrp:overlay-ready") {
+        const role = roleForSource(event.source);
+        if (!role) return;
+        if (event.data?.type === "tsrp:overlay-ready") {
+          ready[role] = true;
+          stopRetry(role);
+          if (loaderStatus) loaderStatus.textContent = role + " overlay connected.";
           return;
         }
-
-        overlayReady = true;
-        stopRetry();
-        setLoaderStatus("Local player service connected.");
+        if (event.data?.type !== "tsrp:overlay-state") return;
+        active[role] = Boolean(event.data.currentTrack);
+        applyActiveSurface();
       });
 
-      window.addEventListener("beforeunload", stopRetry);
+      window.addEventListener("beforeunload", () => {
+        stopRetry("autodj");
+        stopRetry("request");
+      });
 
-      setLoaderStatus("Waiting for the local player service.");
-      loadOverlay();
-      scheduleRetry();
-      console.info("Twitch Song Request Player OBS loader ready", {
+      loadOverlay("autodj");
+      loadOverlay("request");
+      scheduleRetry("autodj");
+      scheduleRetry("request");
+      console.info("HornGaming unified music OBS loader ready", {
         appVersion,
-        overlayBaseUrl
+        overlaySources
       });
     </script>
   </body>
@@ -387,10 +421,11 @@ function buildObsOverlayLoaderHtml({ overlayUrl, appVersion }) {
 `;
 }
 
-async function writeObsOverlayLoaderFile({ runtimeDir, overlayUrl, appVersion }) {
+async function writeObsOverlayLoaderFile({ runtimeDir, overlayUrl, autoDjOutputUrl, appVersion }) {
   const overlayLoaderFilePath = buildObsOverlayLoaderPath(runtimeDir);
   const overlayLoaderHtml = buildObsOverlayLoaderHtml({
     overlayUrl,
+    autoDjOutputUrl,
     appVersion
   });
   await fs.writeFile(overlayLoaderFilePath, overlayLoaderHtml, "utf8");
@@ -569,6 +604,7 @@ export async function startAppServer({
   updateService = null,
   desktopIntegration = null,
   autoDjServiceClientFactory = (options) => new AutoDjServiceClient(options),
+  twitchBotServiceFactory = (options) => new TwitchBotService(options),
   discoverAutoDjEnginesFactory = discoverAutoDjEngines,
   lanDiscoveryResponderFactory = startLanDiscoveryResponder
 } = {}) {
@@ -688,6 +724,29 @@ export async function startAppServer({
   autoDjServiceClient = createAutoDjServiceClient(currentSettings);
   autoDjAuthoritySynchronized = !autoDjServiceClient;
 
+  async function releaseAutoDjTakeover(reason) {
+    let lastError = null;
+    for (const delayMs of [0, 500, 1_500]) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, delayMs);
+          timer?.unref?.();
+        });
+      }
+      try {
+        return await autoDjServiceClient?.release?.(reason);
+      } catch (error) {
+        lastError = error;
+        logWarn("AutoDJ takeover release did not restore playback; retrying", {
+          reason,
+          delayMs,
+          message: error?.message ?? String(error)
+        });
+      }
+    }
+    throw lastError ?? new Error("AutoDJ takeover could not be released.");
+  }
+
   function getAutoDjControllerStatus() {
     const service = autoDjServiceClient?.getStatus?.() ?? {
       configured: false,
@@ -746,6 +805,23 @@ export async function startAppServer({
           ? remoteAutoDj.upcomingTracks.slice(0, 10)
           : [],
       queueSummary: remoteAutoDj.queueSummary ?? null,
+      playback: {
+        status: remoteAutoDj.playbackStatus ?? "",
+        currentTimeSeconds: Number.isFinite(remoteAutoDj.currentTimeSeconds)
+          ? remoteAutoDj.currentTimeSeconds
+          : null,
+        durationSeconds: Number.isFinite(remoteAutoDj.durationSeconds)
+          ? remoteAutoDj.durationSeconds
+          : null,
+        playbackRate: Number.isFinite(remoteAutoDj.playbackRate) && remoteAutoDj.playbackRate > 0
+          ? remoteAutoDj.playbackRate
+          : 1,
+        transitioning: remoteAutoDj.transitioning === true,
+        naturalHandoffInSeconds: Number.isFinite(remoteAutoDj.naturalHandoffInSeconds)
+          ? Math.max(0, remoteAutoDj.naturalHandoffInSeconds)
+          : null,
+        transitionLive: remoteAutoDj.transitionLive === true
+      },
       browserOutputUrl: autoDjServiceClient?.getBrowserOutputUrl?.() || currentSettings.autoDjBrowserOutputUrl || "",
       error: service.lastError || application.lastApplyError || ""
     };
@@ -775,6 +851,29 @@ export async function startAppServer({
       autoDjAuthoritySynchronized = false;
       throw error;
     }
+  }
+
+  async function synchronizeAutoDjActivationAtStartup(enabled) {
+    let lastError = null;
+    for (const delayMs of [0, 1_000, 3_000]) {
+      if (delayMs > 0) {
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, delayMs);
+          timer?.unref?.();
+        });
+      }
+      try {
+        return await synchronizeAutoDjActivation(enabled);
+      } catch (error) {
+        lastError = error;
+        logWarn("AutoDJ startup authority is not ready; retrying", {
+          desiredAutoDjEnabled: enabled === true,
+          delayMs,
+          message: error?.message ?? String(error)
+        });
+      }
+    }
+    throw lastError ?? new Error("AutoDJ startup authority could not be synchronized.");
   }
 
   let playerController;
@@ -845,9 +944,15 @@ export async function startAppServer({
       }
       if (track.origin !== "queue") {
         if (autoDjServiceClient.getStatus().takeoverActive) {
-          await autoDjServiceClient.release("request_queue_empty");
+          await releaseAutoDjTakeover("request_queue_empty");
         }
         return { ready: false, error: "Standalone AutoDJ owns idle playback." };
+      }
+      if (!autoDjServiceClient.getStatus().takeoverActive) {
+        const handoff = await autoDjServiceClient.getRequestHandoffReadiness();
+        if (!handoff.ready) {
+          return handoff;
+        }
       }
       await autoDjServiceClient.acquire(track);
       return { ready: true };
@@ -862,7 +967,7 @@ export async function startAppServer({
   playerController.onTrackFinish(async () => {
     const status = autoDjServiceClient?.getStatus?.();
     if (status?.takeoverActive && playerController.getPublicState().queue.length === 0) {
-      await autoDjServiceClient.release("final_request_finished");
+      await releaseAutoDjTakeover("final_request_finished");
     }
   });
   const remoteAutoDjController = {
@@ -881,7 +986,7 @@ export async function startAppServer({
       return autoDjServiceClient.mixNext({ triggeredBy, leadSeconds });
     }
   };
-  const twitchBotService = new TwitchBotService({
+  const twitchBotService = twitchBotServiceFactory({
     playerController,
     autoDjController: remoteAutoDjController,
     persistSettings: async (partialSettings) => {
@@ -893,6 +998,43 @@ export async function startAppServer({
       return nextSettings;
     }
   });
+  let removeAutoDjTrackAnnouncementListener = null;
+
+  function bindAutoDjTrackAnnouncements(client) {
+    removeAutoDjTrackAnnouncementListener?.();
+    removeAutoDjTrackAnnouncementListener = null;
+    if (!client?.onRemoteTrackStart) {
+      return;
+    }
+
+    removeAutoDjTrackAnnouncementListener = client.onRemoteTrackStart(async (track) => {
+      if (client !== autoDjServiceClient || !track?.id || !track?.title) {
+        return;
+      }
+
+      const status = getAutoDjControllerStatus();
+      if (
+        !status.connection.responding ||
+        !status.activation.desired ||
+        status.activation.effective !== true ||
+        !status.activation.synchronized ||
+        status.takeover.active ||
+        playerController.getCurrentTrack()
+      ) {
+        return;
+      }
+
+      const trackUrl = String(track.url ?? "").trim();
+      await twitchBotService.announceNowPlaying({
+        ...track,
+        provider: track.provider || "local",
+        origin: track.origin || "local",
+        url: /^https?:\/\//i.test(trackUrl) ? trackUrl : ""
+      });
+    });
+  }
+
+  bindAutoDjTrackAnnouncements(autoDjServiceClient);
 
   if (updateService) {
     updateService.on("status-changed", (status) => {
@@ -972,7 +1114,7 @@ export async function startAppServer({
       }
 
       response.json({
-        ...playerController.getPublicState(),
+        ...playerController.getBroadcastState(),
         theme: currentSettings.theme,
         overlayBuildToken,
         overlayScalePercent: currentSettings.overlayScalePercent,
@@ -1714,6 +1856,7 @@ export async function startAppServer({
       if (autoDjConnectionChanged) {
         await autoDjServiceClient?.close?.();
         autoDjServiceClient = createAutoDjServiceClient(nextSettings);
+        bindAutoDjTrackAnnouncements(autoDjServiceClient);
         autoDjAuthoritySynchronized = !autoDjServiceClient;
         if (autoDjServiceClient) {
           try {
@@ -1922,7 +2065,7 @@ export async function startAppServer({
     try {
       const result = await playerController.stopPlayback("dashboard");
       if (autoDjServiceClient?.getStatus?.().takeoverActive) {
-        await autoDjServiceClient.release("request_cancelled");
+        await releaseAutoDjTakeover("request_cancelled");
       }
       response.json({
         result,
@@ -1994,7 +2137,7 @@ export async function startAppServer({
     }
   });
 
-  app.get("/autodj-output", async (_request, response) => {
+  app.get("/autodj-output", async (request, response) => {
     if (!autoDjServiceClient) {
       response.status(503).type("text/plain").send(
         "Standalone AutoDJ is not configured. Pair it from the Music Control Center dashboard."
@@ -2011,7 +2154,14 @@ export async function startAppServer({
       );
       return;
     }
-    response.redirect(302, browserOutputUrl);
+    const targetUrl = new URL(browserOutputUrl);
+    for (const key of ["style", "unifiedOverlay", "obsLoader", "unifiedRole", "loaderAttempt"]) {
+      const value = request.query?.[key];
+      if (typeof value === "string" && value) {
+        targetUrl.searchParams.set(key, value);
+      }
+    }
+    response.redirect(302, targetUrl.toString());
   });
 
   app.use(express.static(runtimeConfig.publicDir));
@@ -2050,9 +2200,12 @@ export async function startAppServer({
 
   const urls = buildRuntimeUrls(activePort);
   try {
+    const configuredAutoDjOutputUrl =
+      autoDjServiceClient?.getBrowserOutputUrl?.() || currentSettings.autoDjBrowserOutputUrl || "";
     overlayLoaderFilePath = await writeObsOverlayLoaderFile({
       runtimeDir: runtimeConfig.runtimeDir,
       overlayUrl: urls.overlayUrl,
+      autoDjOutputUrl: configuredAutoDjOutputUrl || new URL("/autodj-output", urls.dashboardUrl).toString(),
       appVersion
     });
   } catch (error) {
@@ -2072,7 +2225,7 @@ export async function startAppServer({
     try {
       if (autoDjServiceClient) {
         try {
-          await synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true);
+          await synchronizeAutoDjActivationAtStartup(currentSettings.autoDjEnabled === true);
         } catch (error) {
           logWarn("Startup playback remains held until AutoDJ authority can be synchronized", {
             desiredAutoDjEnabled: currentSettings.autoDjEnabled === true,
@@ -2109,6 +2262,8 @@ export async function startAppServer({
     },
     async close() {
       obsYoutubeFallback.shutdown();
+      removeAutoDjTrackAnnouncementListener?.();
+      removeAutoDjTrackAnnouncementListener = null;
       for (const entry of pendingLanPairings.values()) {
         clearTimeout(entry.timeoutHandle);
         entry.respond("declined");

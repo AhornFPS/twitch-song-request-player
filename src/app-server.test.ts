@@ -227,9 +227,17 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   );
 
   const overlayLoaderHtml = await fs.readFile(overlayLoaderFilePath, "utf8");
-  assert.match(overlayLoaderHtml, /Twitch Song Request Player OBS Loader/);
+  assert.match(overlayLoaderHtml, /HornGaming Unified Music OBS Loader/);
   assert.equal(overlayLoaderHtml.includes(appServer.urls.overlayUrl), true);
+  assert.equal(
+    overlayLoaderHtml.includes(new URL("/autodj-output", appServer.urls.dashboardUrl).toString()),
+    true
+  );
+  assert.match(overlayLoaderHtml, /id="autodj-frame"/);
+  assert.match(overlayLoaderHtml, /id="request-frame"/);
+  assert.match(overlayLoaderHtml, /if \(active\.request\)/);
   assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
+  assert.match(overlayLoaderHtml, /tsrp:overlay-state/);
 });
 
 test("settings API stays loopback-local and does not expose stored secrets", async (t) => {

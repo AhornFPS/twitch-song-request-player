@@ -1155,7 +1155,8 @@ test("skip command brings the next remote AutoDJ mix forward when the request pl
           id: "local-current",
           provider: "local",
           url: "",
-          title: "Local Artist — Current",
+          title: "Current",
+          artist: "Local Artist",
           origin: "local"
         };
       },

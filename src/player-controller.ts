@@ -175,6 +175,7 @@ export class PlayerController {
     this.routeOwnedRequest = typeof routeOwnedRequest === "function" ? routeOwnedRequest : null;
     this.beforeTrackStart = typeof beforeTrackStart === "function" ? beforeTrackStart : null;
     this.ownedRequestRetryTimers = new Map();
+    this.deferredPlaybackTimer = null;
     this.externalPlayback = externalPlayback;
     this.decorateBroadcastState = typeof decorateBroadcastState === "function"
       ? decorateBroadcastState
@@ -2034,6 +2035,18 @@ export class PlayerController {
         try {
           const readiness = await this.beforeTrackStart(nextTrack);
           if (readiness === false || readiness?.ready === false) {
+            const retryAfterMs = Number(readiness?.retryAfterMs);
+            if (Number.isFinite(retryAfterMs) && retryAfterMs > 0 && !this.deferredPlaybackTimer) {
+              this.deferredPlaybackTimer = this.setTimeoutFn(() => {
+                this.deferredPlaybackTimer = null;
+                void this.ensurePlayback().catch((error) => {
+                  logWarn("Could not retry deferred request playback", {
+                    message: error?.message ?? String(error)
+                  });
+                });
+              }, Math.max(250, Math.min(60_000, retryAfterMs)));
+              this.deferredPlaybackTimer?.unref?.();
+            }
             throw new Error(readiness?.error || "AutoDJ takeover was not acknowledged.");
           }
         } catch (error) {
