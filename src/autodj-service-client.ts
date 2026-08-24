@@ -7,6 +7,33 @@ import {
   normalizeAutoDjServiceUrl
 } from "./autodj-service-contract.js";
 
+function isAutoDjEditorialTitleDecoration(value) {
+  const normalized = String(value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+  const describesMedia = /\b(?:audio|video|videoclip|visualizer|lyrics?|lyric video)\b/.test(normalized);
+  const isOfficialMedia = /\bofficial\b/.test(normalized) && describesMedia;
+  const isRightsFree = /\b(?:copyright|royalty) free\b/.test(normalized)
+    || /\bno copyright\b/.test(normalized);
+  return isOfficialMedia || isRightsFree;
+}
+
+export function cleanAutoDjOwnedRequestTitle(value) {
+  const original = String(value ?? "").trim();
+  if (!original) {
+    return "";
+  }
+  const cleaned = original
+    .replace(/\s*(?:\(([^()]*)\)|\[([^\[\]]*)\])/g, (match, parenthesized, bracketed) => (
+      isAutoDjEditorialTitleDecoration(parenthesized ?? bracketed) ? " " : match
+    ))
+    .replace(/\s+/g, " ")
+    .replace(/\s*[-–—|:]\s*$/, "")
+    .trim();
+  return cleaned || original;
+}
+
 export class AutoDjServiceClient {
   constructor({
     serviceUrl,
@@ -111,16 +138,16 @@ export class AutoDjServiceClient {
         id: String(track.id ?? ""),
         provider: String(track.provider ?? ""),
         url: String(track.url ?? ""),
-        title: String(track.title ?? ""),
+        title: cleanAutoDjOwnedRequestTitle(track.title),
         artist: String(track.artist ?? ""),
-        trackTitle: String(track.trackTitle ?? ""),
+        trackTitle: cleanAutoDjOwnedRequestTitle(track.trackTitle),
         key: String(track.key ?? ""),
         durationSeconds: Number.isFinite(track.durationSeconds) ? track.durationSeconds : null,
         sourceName: String(track.sourceName ?? ""),
         sourceUrl: String(track.sourceUrl ?? ""),
         requestedFromProvider: String(track.requestedFromProvider ?? ""),
         requestedFromUrl: String(track.requestedFromUrl ?? ""),
-        requestedFromTitle: String(track.requestedFromTitle ?? ""),
+        requestedFromTitle: cleanAutoDjOwnedRequestTitle(track.requestedFromTitle),
         requestedFromName: String(track.requestedFromName ?? ""),
         requestedFromKey: String(track.requestedFromKey ?? ""),
         requestedBy: track.requestedBy && typeof track.requestedBy === "object"

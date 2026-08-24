@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Match owned AutoDJ requests against the real artist/title by removing bracketed YouTube video and copyright-free promotions from API metadata while preserving remix and version labels.
+- Keep confirmed standalone AutoDJ track changes announcing in Twitch chat when AutoDJ is visibly active after a lost controller synchronization acknowledgement.
 - Keep `!skip` from leaving music silent by retrying final viewer-request takeover release, waiting for standalone AutoDJ to confirm audible playback after release or Mix Next, and retrying controller authority synchronization while AutoDJ starts.
 - Keep normal viewer requests queued while the active AutoDJ song approaches its natural handoff, continuing local ownership checks and acquiring playback takeover only in the final handoff window.
 - Show the currently playing standalone AutoDJ track and upcoming queue in the compact OBS overlay whenever no viewer request owns playback, without treating it as a request or loading its audio in Music Control Center.

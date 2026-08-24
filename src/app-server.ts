@@ -1017,7 +1017,6 @@ export async function startAppServer({
         !status.connection.responding ||
         !status.activation.desired ||
         status.activation.effective !== true ||
-        !status.activation.synchronized ||
         status.takeover.active ||
         playerController.getCurrentTrack()
       ) {

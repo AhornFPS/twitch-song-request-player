@@ -1,7 +1,7 @@
 // @ts-nocheck
 import assert from "node:assert/strict";
 import test from "node:test";
-import { AutoDjServiceClient } from "./autodj-service-client.js";
+import { AutoDjServiceClient, cleanAutoDjOwnedRequestTitle } from "./autodj-service-client.js";
 import {
   AUTODJ_API_VERSION,
   normalizeAutoDjLeaseSeconds,
@@ -166,6 +166,37 @@ test("request-player client sends resolved metadata to the owned-request endpoin
   assert.equal(calls[0].options.headers.authorization, "Bearer shared-secret");
   assert.equal(calls[0].body.track.key, "youtube:owned");
   assert.equal(calls[0].body.track.requestedBy.username, "viewer");
+});
+
+test("owned-request metadata removes video promotions without removing mix versions", async (t) => {
+  const calls = [];
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://127.0.0.1:3100",
+    token: "shared-secret",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return new Response(JSON.stringify({ matched: false, queued: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+  t.after(() => client.close());
+  const displayTitle = "JNW - To The Ground (Official Hardstyle Videoclip) [Copyright Free Music]";
+
+  await client.queueOwnedRequest({
+    provider: "youtube",
+    title: displayTitle,
+    artist: "JNW",
+    trackTitle: "To The Ground (Official Hardstyle Videoclip) [Copyright Free Music]",
+    requestedFromTitle: "To The Ground (Extended Mix) [Copyright Free Music]"
+  });
+
+  assert.equal(calls[0].body.track.title, "JNW - To The Ground");
+  assert.equal(calls[0].body.track.trackTitle, "To The Ground");
+  assert.equal(calls[0].body.track.requestedFromTitle, "To The Ground (Extended Mix)");
+  assert.equal(displayTitle, "JNW - To The Ground (Official Hardstyle Videoclip) [Copyright Free Music]");
+  assert.equal(cleanAutoDjOwnedRequestTitle("Track (Official Remix)"), "Track (Official Remix)");
 });
 
 test("request-player client monitors remote AutoDJ tracks and forwards mix-next", async (t) => {

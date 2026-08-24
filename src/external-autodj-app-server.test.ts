@@ -167,6 +167,7 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
   const originalCwd = process.cwd();
   let appServer = null;
   let activationEffective = true;
+  let activationSyncFailure = false;
   let takeoverActive = false;
   let activationAppliedResolve;
   const activationApplied = new Promise((resolve) => {
@@ -195,6 +196,9 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
     async setActivation(enabled) {
       activationEffective = enabled;
       activationAppliedResolve();
+      if (activationSyncFailure) {
+        throw new Error("activation acknowledgement was lost");
+      }
       return { sequence: 1 };
     },
     onRemoteTrackStart(listener) {
@@ -264,14 +268,27 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
   assert.equal(announcedTracks[0].artist, "Local Artist");
   assert.equal(announcedTracks[0].url, "");
 
+  activationSyncFailure = true;
+  const staleSynchronizationResponse = await fetch(new URL(
+    "/api/autodj-service/activation",
+    appServer.urls.dashboardUrl
+  ), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled: true })
+  });
+  assert.equal(staleSynchronizationResponse.status, 503);
+  await client.emitRemoteTrack({ id: "local-2", title: "Confirmed After Lost Acknowledgement" });
+  assert.equal(announcedTracks.length, 2);
+
   takeoverActive = true;
-  await client.emitRemoteTrack({ id: "local-2", title: "Request Takeover Track" });
-  assert.equal(announcedTracks.length, 1);
+  await client.emitRemoteTrack({ id: "local-3", title: "Request Takeover Track" });
+  assert.equal(announcedTracks.length, 2);
 
   takeoverActive = false;
   activationEffective = false;
-  await client.emitRemoteTrack({ id: "local-3", title: "Inactive Track" });
-  assert.equal(announcedTracks.length, 1);
+  await client.emitRemoteTrack({ id: "local-4", title: "Inactive Track" });
+  assert.equal(announcedTracks.length, 2);
 
   await appServer.close();
   appServer = null;
