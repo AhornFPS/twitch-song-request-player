@@ -241,7 +241,9 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.match(overlayLoaderHtml, /id="request-frame"/);
   assert.match(overlayLoaderHtml, /if \(active\.request\)/);
   assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
+  assert.match(overlayLoaderHtml, /tsrp:autodj-overlay-ready/);
   assert.match(overlayLoaderHtml, /tsrp:overlay-state/);
+  assert.match(overlayLoaderHtml, /ready\[role\] = true;\s+stopRetry\(role\);/);
 });
 
 test("settings API stays loopback-local and does not expose stored secrets", async (t) => {

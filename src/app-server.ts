@@ -400,13 +400,18 @@ function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) 
       window.addEventListener("message", (event) => {
         const role = roleForSource(event.source);
         if (!role) return;
-        if (event.data?.type === "tsrp:overlay-ready") {
+        if (
+          event.data?.type === "tsrp:overlay-ready" ||
+          event.data?.type === "tsrp:autodj-overlay-ready"
+        ) {
           ready[role] = true;
           stopRetry(role);
           if (loaderStatus) loaderStatus.textContent = role + " overlay connected.";
           return;
         }
         if (event.data?.type !== "tsrp:overlay-state") return;
+        ready[role] = true;
+        stopRetry(role);
         active[role] = Boolean(event.data.currentTrack);
         applyActiveSurface();
       });
