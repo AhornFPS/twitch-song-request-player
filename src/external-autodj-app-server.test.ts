@@ -97,7 +97,10 @@ test("external-only server keeps an unavailable AutoDJ request queued and expose
     await fetch(new URL("/api/settings", appServer.urls.dashboardUrl))
   ).json();
   const loaderHtml = await fs.readFile(settingsAtStartup.runtime.overlayLoaderFilePath, "utf8");
-  assert.match(loaderHtml, /http:\/\/127\.0\.0\.1:18463\/output/);
+  assert.match(
+    loaderHtml,
+    /http:\/\/127\.0\.0\.1:18463\/output\?style=broadcast&obsLoader=1&unifiedOverlay=1/
+  );
   assert.match(loaderHtml, /unifiedOverlay=1/);
 
   const activationResponse = await fetch(new URL("/api/autodj-service/activation", appServer.urls.dashboardUrl), {

@@ -233,6 +233,10 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
     overlayLoaderHtml.includes(new URL("/autodj-output", appServer.urls.dashboardUrl).toString()),
     true
   );
+  assert.match(
+    overlayLoaderHtml,
+    /autodj-output\?style=broadcast&obsLoader=1&unifiedOverlay=1/
+  );
   assert.match(overlayLoaderHtml, /id="autodj-frame"/);
   assert.match(overlayLoaderHtml, /id="request-frame"/);
   assert.match(overlayLoaderHtml, /if \(active\.request\)/);

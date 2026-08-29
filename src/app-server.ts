@@ -274,9 +274,18 @@ function buildObsOverlayLoaderPath(runtimeDir) {
 }
 
 function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) {
+  const requestSource = new URL(overlayUrl);
+  requestSource.searchParams.set("obsLoader", "1");
+  requestSource.searchParams.set("unifiedOverlay", "1");
+
+  const autoDjSource = new URL(autoDjOutputUrl);
+  autoDjSource.searchParams.set("style", "broadcast");
+  autoDjSource.searchParams.set("obsLoader", "1");
+  autoDjSource.searchParams.set("unifiedOverlay", "1");
+
   const serializedSources = JSON.stringify({
-    request: `${overlayUrl}${overlayUrl.includes("?") ? "&" : "?"}obsLoader=1&unifiedOverlay=1`,
-    autodj: `${autoDjOutputUrl}${autoDjOutputUrl.includes("?") ? "&" : "?"}obsLoader=1&unifiedOverlay=1`
+    request: requestSource.toString(),
+    autodj: autoDjSource.toString()
   });
   const serializedAppVersion = JSON.stringify(appVersion);
 
