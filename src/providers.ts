@@ -504,6 +504,62 @@ function extractSerializedJsonString(html, key) {
   return "";
 }
 
+function extractSerializedJsonArray(html, key) {
+  if (typeof html !== "string" || !html || !key) {
+    return [];
+  }
+
+  const patterns = [
+    new RegExp(`"${escapeRegex(key)}":(\\[(?:\\\\.|[^\\]])*\\])`, "i"),
+    new RegExp(`\\\\"${escapeRegex(key)}\\\\":(\\[(?:\\\\.|[^\\]])*\\])`, "i")
+  ];
+
+  for (const pattern of patterns) {
+    const match = html.match(pattern);
+    if (!match?.[1]) {
+      continue;
+    }
+
+    try {
+      const serialized = match[1].includes("\\")
+        ? JSON.parse(`"${match[1]}"`)
+        : match[1];
+      const parsed = JSON.parse(serialized);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      continue;
+    }
+  }
+
+  return [];
+}
+
+function isUsableSunoAudioUrl(value) {
+  if (typeof value !== "string" || !value.trim()) {
+    return false;
+  }
+
+  try {
+    const url = new URL(value.trim());
+    return /^https?:$/i.test(url.protocol) && !/\/(?:forbidden|unauthorized)(?:$|[/?#])/i.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
+function extractSunoAudioUrl(html) {
+  const primaryAudioUrl = extractSerializedJsonString(html, "audio_url");
+  if (isUsableSunoAudioUrl(primaryAudioUrl)) {
+    return primaryAudioUrl.trim();
+  }
+
+  const mediaUrl = extractSerializedJsonArray(html, "media_urls")
+    .map((entry) => entry?.url)
+    .find((value) => isUsableSunoAudioUrl(value));
+
+  return typeof mediaUrl === "string" ? mediaUrl.trim() : "";
+}
+
 function buildExternalRequestSearchQuery(track) {
   const parts = [
     typeof track?.sourceName === "string" ? track.sourceName.trim() : "",
@@ -1231,7 +1287,7 @@ async function resolveSunoTrackFromUrl(rawUrl) {
     `Suno song ${extractSunoTrackId(canonicalUrl) || ""}`.trim()
   );
   const parsedDescription = parseSunoDescription(extractMetaTagContent(html, "description"), title);
-  const audioUrl = extractSerializedJsonString(html, "audio_url");
+  const audioUrl = extractSunoAudioUrl(html);
 
   if (!audioUrl) {
     throw new Error("This Suno song did not expose a playable audio stream.");

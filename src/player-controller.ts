@@ -175,6 +175,9 @@ export class PlayerController {
     this.routeOwnedRequest = typeof routeOwnedRequest === "function" ? routeOwnedRequest : null;
     this.beforeTrackStart = typeof beforeTrackStart === "function" ? beforeTrackStart : null;
     this.ownedRequestRetryTimers = new Map();
+    this.ownedRequestFirstLookupAt = new WeakMap();
+    this.ownedRequestChecks = new WeakMap();
+    this.pendingRequestStartCancellation = null;
     this.deferredPlaybackTimer = null;
     this.externalPlayback = externalPlayback;
     this.decorateBroadcastState = typeof decorateBroadcastState === "function"
@@ -798,9 +801,8 @@ export class PlayerController {
 
   async prepareBrowserPlayback() {
     if (
-      !this.currentTrack ||
       !this.externalPlayback?.needsSourceClear?.() ||
-      this.isExternalPlaybackActiveForTrack(this.currentTrack)
+      this.externalPlayback.isPlayingTrack?.(this.currentTrack)
     ) {
       return true;
     }
@@ -897,7 +899,20 @@ export class PlayerController {
     if (!this.routeOwnedRequest || !["youtube", "suno", "soundcloud"].includes(track?.provider)) {
       return null;
     }
-    return this.routeOwnedRequest(track);
+    // The lookup also queues native audio: share concurrent checks for this exact
+    // request object, but never cache a negative result across later imports.
+    let pending = this.ownedRequestChecks.get(track);
+    if (!pending) {
+      pending = Promise.resolve().then(() => this.routeOwnedRequest(track));
+      this.ownedRequestChecks.set(track, pending);
+    }
+    try {
+      return await pending;
+    } finally {
+      if (this.ownedRequestChecks.get(track) === pending) {
+        this.ownedRequestChecks.delete(track);
+      }
+    }
   }
 
   scheduleOwnedRequestRecheck(track, attempt = 0) {
@@ -1093,6 +1108,7 @@ export class PlayerController {
     };
 
     this.queue.push(queueTrack);
+    this.ownedRequestFirstLookupAt.set(queueTrack, Date.now());
     const requesterUsername = track.requestedBy?.username?.trim().toLowerCase();
     if (!bypassRequestLimits && requesterUsername) {
       this.requestTimestampsByUser.set(requesterUsername, Date.now());
@@ -1858,6 +1874,7 @@ export class PlayerController {
       return;
     }
 
+    this.clearPlaybackConfirmationTimer();
     this.currentTrack.playbackConfirmed = true;
     this.currentTrackElapsedSeconds = this.clampElapsedSeconds(
       this.currentTrack,
@@ -1989,6 +2006,13 @@ export class PlayerController {
     this.isAdvancing = true;
 
     try {
+      // A failed release remains a fence, not an invitation to acquire another
+      // lease or discard a request. Retry only when playback is explicitly
+      // driven again; do not create a self-sustaining release/reacquire loop.
+      if (this.pendingRequestStartCancellation) {
+        await this.pendingRequestStartCancellation();
+        this.pendingRequestStartCancellation = null;
+      }
       let nextTrack = null;
       let source = "playlist";
 
@@ -1998,17 +2022,40 @@ export class PlayerController {
         try {
           routed = await this.checkOwnedRequest(queuedTrack);
         } catch (error) {
+          routed = { unavailable: true };
           logWarn("Final AutoDJ ownership check is temporarily unavailable", {
             track: formatTrack(queuedTrack),
             message: error?.message ?? String(error)
           });
         }
-        if (routed?.matched === true && this.queue[0]?.id === queuedTrack.id) {
-          this.queue.shift();
+        if (routed?.matched === true) {
+          const ownedIndex = this.queue.indexOf(queuedTrack);
+          if (ownedIndex >= 0) this.queue.splice(ownedIndex, 1);
           this.clearOwnedRequestRecheck(queuedTrack.id);
           await this.persistRuntimeState();
           this.broadcastState();
           continue;
+        }
+        // A missing result is not a negative ownership result. Also allow a
+        // bounded local-import window before acquiring an external audio lease;
+        // the current AutoDJ program remains untouched during these retries.
+        const firstLookupAt = this.ownedRequestFirstLookupAt.get(queuedTrack) ?? Date.now();
+        this.ownedRequestFirstLookupAt.set(queuedTrack, firstLookupAt);
+        const graceMs = Math.max(0, Math.min(45_000, Number(routed?.localImportGraceMs) || 0));
+        const remainingGraceMs = graceMs - (Date.now() - firstLookupAt);
+        if (routed?.unavailable === true || remainingGraceMs > 0) {
+          if (!this.deferredPlaybackTimer) {
+            this.deferredPlaybackTimer = this.setTimeoutFn(() => {
+              this.deferredPlaybackTimer = null;
+              void this.ensurePlayback().catch((error) => {
+                logWarn("Could not retry AutoDJ request ownership", {
+                  message: error?.message ?? String(error)
+                });
+              });
+            }, routed?.unavailable === true ? 3_000 : Math.max(250, Math.min(3_000, remainingGraceMs)));
+            this.deferredPlaybackTimer?.unref?.();
+          }
+          return;
         }
         nextTrack = queuedTrack;
         source = "queue";
@@ -2035,21 +2082,86 @@ export class PlayerController {
         try {
           const readiness = await this.beforeTrackStart(nextTrack);
           if (readiness === false || readiness?.ready === false) {
-            const retryAfterMs = Number(readiness?.retryAfterMs);
-            if (Number.isFinite(retryAfterMs) && retryAfterMs > 0 && !this.deferredPlaybackTimer) {
-              this.deferredPlaybackTimer = this.setTimeoutFn(() => {
-                this.deferredPlaybackTimer = null;
-                void this.ensurePlayback().catch((error) => {
-                  logWarn("Could not retry deferred request playback", {
-                    message: error?.message ?? String(error)
-                  });
-                });
-              }, Math.max(250, Math.min(60_000, retryAfterMs)));
-              this.deferredPlaybackTimer?.unref?.();
+            const error = new Error(readiness?.error || "AutoDJ takeover was not acknowledged.");
+            error.retryAfterMs = readiness?.retryAfterMs;
+            throw error;
+          }
+          if (source === "queue" && typeof readiness?.cancel === "function") {
+            // Acquiring the external lease awaits native acknowledgement. An
+            // import or an in-flight recheck can win during that await. Recheck
+            // ownership before committing any external playback, and release
+            // the exact provisional lease if native playback now owns it.
+            let finalOwnership = null;
+            if (this.queue.includes(nextTrack)) {
+              try {
+                finalOwnership = await this.checkOwnedRequest(nextTrack);
+              } catch {
+                finalOwnership = { unavailable: true };
+              }
             }
-            throw new Error(readiness?.error || "AutoDJ takeover was not acknowledged.");
+            const selectionChanged = !this.queue.includes(nextTrack);
+            const nativeOwned = finalOwnership?.matched === true;
+            const uncertain = !selectionChanged && !nativeOwned &&
+              (finalOwnership?.matched !== false || finalOwnership?.unavailable === true);
+            if (selectionChanged || nativeOwned || uncertain) {
+              // Failure here is not permission to start external audio. Keep
+              // the original cancellation visible; the normal deferred path
+              // must not consume or replay a natively accepted request.
+              this.pendingRequestStartCancellation = readiness.cancel;
+              try {
+                await readiness.cancel();
+                this.pendingRequestStartCancellation = null;
+              } catch (error) {
+                logWarn("Provisional request release failed; external playback remains fenced", {
+                  track: formatTrack(nextTrack),
+                  message: error?.message ?? String(error)
+                });
+                this.broadcastState();
+                return;
+              }
+              if (nativeOwned) {
+                const ownedIndex = this.queue.indexOf(nextTrack);
+                if (ownedIndex >= 0) {
+                  this.queue.splice(ownedIndex, 1);
+                  await this.recordRequestOutcome({
+                    source: "autodj_owned_final_admission",
+                    outcome: "accepted",
+                    reason: "autodj_owned_late_match",
+                    requestedBy: nextTrack.requestedBy,
+                    track: nextTrack,
+                    details: { match: finalOwnership.match ?? null }
+                  });
+                }
+                this.clearOwnedRequestRecheck(nextTrack.id);
+                await this.persistRuntimeState();
+              }
+              this.broadcastState();
+              if (uncertain || this.queue.length > 0) {
+                const error = new Error(uncertain
+                  ? "Final AutoDJ ownership is not yet known."
+                  : "Request ownership changed before external playback.");
+                error.retryAfterMs = 3_000;
+                throw error;
+              }
+              return;
+            }
           }
         } catch (error) {
+          const requestedRetryAfterMs = Number(error?.retryAfterMs);
+          const retryAfterMs = Number.isFinite(requestedRetryAfterMs) && requestedRetryAfterMs > 0
+            ? requestedRetryAfterMs
+            : 3_000;
+          if (!this.deferredPlaybackTimer) {
+            this.deferredPlaybackTimer = this.setTimeoutFn(() => {
+              this.deferredPlaybackTimer = null;
+              void this.ensurePlayback().catch((retryError) => {
+                logWarn("Could not retry deferred request playback", {
+                  message: retryError?.message ?? String(retryError)
+                });
+              });
+            }, Math.max(250, Math.min(60_000, retryAfterMs)));
+            this.deferredPlaybackTimer?.unref?.();
+          }
           logWarn("Holding online playback until AutoDJ takeover is acknowledged", {
             track: formatTrack(nextTrack),
             message: error?.message ?? String(error)
@@ -2117,6 +2229,7 @@ export class PlayerController {
     await this.clearExternalPlaybackSource({
       reason: "embedded_playback_start"
     });
+    this.schedulePlaybackConfirmationTimer(this.currentTrack);
     this.broadcastState();
     this.io.emit("player:load", {
       track: this.serializeTrack(this.currentTrack)
@@ -2136,6 +2249,13 @@ export class PlayerController {
       return false;
     }
 
+    // Embedded clients can deliver delayed errors after OBS has taken over.
+    // Reissuing startTrack would rewind the audible browser source and renew
+    // its finish timer, allowing a request to repeat indefinitely.
+    if (this.currentTrack.playbackConfirmed &&
+      this.externalPlayback.isPlayingTrack?.(this.currentTrack)) return true;
+
+    const startingTrack = this.currentTrack;
     try {
       this.io.emit("player:stop", {
         reason: "obs_youtube_fallback",
@@ -2144,6 +2264,8 @@ export class PlayerController {
       const externalPlaybackResult = await this.externalPlayback.startTrack(this.currentTrack, {
         reason
       });
+      if (this.currentTrack !== startingTrack) return true;
+      if (externalPlaybackResult?.cancelled) return true;
       if (externalPlaybackResult?.unavailable) {
         const failedTrackId = this.currentTrack.id;
         const failureReason = externalPlaybackResult.reason || "external_playback_unavailable";

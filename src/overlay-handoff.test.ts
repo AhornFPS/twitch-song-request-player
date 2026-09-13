@@ -351,6 +351,18 @@ test("overlay marquee keyframes stay continuous through the loop point", () => {
   assert.doesNotMatch(marqueeKeyframes, /10%|90%/);
 });
 
+test("overlay themes keep secondary text above the stream readability floor", () => {
+  const stylesPath = path.resolve("public/styles.css");
+  const styles = fs.readFileSync(stylesPath, "utf8");
+
+  assert.match(styles, /--overlay-font-micro:\s*0\.64rem;/);
+  assert.match(styles, /--overlay-font-small:\s*0\.7rem;/);
+  assert.match(styles, /--overlay-font-caption:\s*0\.74rem;/);
+  assert.match(styles, /#player-card \.provider-badge,[\s\S]*#player-card \.queue-title \{\s*font-size: var\(--overlay-font-small\);/);
+  assert.match(styles, /#player-card \.queue-meta,[\s\S]*#player-card::before \{\s*font-size: var\(--overlay-font-micro\);/);
+  assert.match(styles, /#player-card \.station-id small,[\s\S]*#player-card \.incoming-player__readiness \{\s*font-size: var\(--overlay-font-micro\);/);
+});
+
 test("unchanged overlay state does not reschedule the title marquee", () => {
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
@@ -438,6 +450,13 @@ test("compact overlay presents standalone AutoDJ metadata without loading its au
   const appPath = path.resolve("public/app.js");
   const source = fs.readFileSync(appPath, "utf8");
   const { context } = createOverlayTestContext();
+  const parentMessages = [];
+  context.window.location.search = "?unifiedOverlay=1";
+  context.window.parent = {
+    postMessage(message) {
+      parentMessages.push(JSON.parse(JSON.stringify(message)));
+    }
+  };
 
   vm.createContext(context);
   vm.runInContext(source, context, {
@@ -470,21 +489,39 @@ test("compact overlay presents standalone AutoDJ metadata without loading its au
         title: "Remote Next Track",
         artist: "Next Artist",
         durationSeconds: 210
+      }, {
+        id: "remote-later",
+        title: "Remote Later Track",
+        artist: "Later Artist",
+        durationSeconds: 240
       }]
     }
   };
 
   vm.runInContext("updateState(__state);", context);
 
-  assert.equal(context.document.getElementById("current-title-text").textContent, "Remote AutoDJ Track");
-  assert.equal(context.document.getElementById("current-meta").textContent, "Remote Artist • Standalone AutoDJ");
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Remote Artist - Remote AutoDJ Track");
+  assert.equal(context.document.getElementById("current-meta").textContent, "Standalone AutoDJ");
   assert.equal(context.document.getElementById("provider-badge").textContent, "AutoDJ");
   assert.equal(context.document.getElementById("save-badge").textContent, "Live");
-  assert.equal(context.document.getElementById("next-title").textContent, "Remote Next Track");
+  assert.equal(context.document.getElementById("next-title").textContent, "Next Artist - Remote Next Track");
+  assert.equal(context.document.getElementById("queue-list").children[0].children[0].textContent, "Later Artist - Remote Later Track");
   assert.equal(context.document.getElementById("current-time").textContent, "0:42");
   assert.equal(context.document.getElementById("duration-time").textContent, "3:00");
   assert.equal(vm.runInContext("currentTrackId", context), null);
   assert.equal(vm.runInContext("activeTrack", context), null);
+  assert.deepEqual(
+    parentMessages.findLast((message) => message.type === "tsrp:overlay-state")?.currentTrack,
+    {
+      id: "autodj:remote-current",
+      provider: "autodj",
+      origin: "local"
+    }
+  );
+
+  context.__state.autoDjController.currentTrack.title = "Remote Artist - Remote AutoDJ Track";
+  vm.runInContext("updateState(__state);", context);
+  assert.equal(context.document.getElementById("current-title-text").textContent, "Remote Artist - Remote AutoDJ Track");
 });
 
 test("embedded playback uses server timing when local player timing stalls", () => {

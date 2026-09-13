@@ -24,6 +24,15 @@ async function availablePort() {
   });
 }
 
+async function waitFor(predicate, { timeoutMs = 2000, intervalMs = 10 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  assert.fail("Timed out waiting for the expected state.");
+}
+
 test("external-only server keeps an unavailable AutoDJ request queued and exposes no engine routes", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-external-autodj-"));
   const originalCwd = process.cwd();
@@ -99,7 +108,7 @@ test("external-only server keeps an unavailable AutoDJ request queued and expose
   const loaderHtml = await fs.readFile(settingsAtStartup.runtime.overlayLoaderFilePath, "utf8");
   assert.match(
     loaderHtml,
-    /http:\/\/127\.0\.0\.1:18463\/output\?style=broadcast&obsLoader=1&unifiedOverlay=1/
+    /http:\/\/127\.0\.0\.1:18463\/output\?style=extended&obsLoader=1&unifiedOverlay=1/
   );
   assert.match(loaderHtml, /unifiedOverlay=1/);
 
@@ -172,6 +181,7 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
   let activationEffective = true;
   let activationSyncFailure = false;
   let takeoverActive = false;
+  let remoteCurrentTrack = null;
   let activationAppliedResolve;
   const activationApplied = new Promise((resolve) => {
     activationAppliedResolve = resolve;
@@ -190,7 +200,7 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
           activation: { effective: activationEffective },
           application: { lastAppliedSequence: 1, lastApplyOutcome: "applied" },
           takeover: takeoverActive ? { leaseId: "viewer-request" } : null,
-          autoDj: { currentTrack: null, queue: [] }
+          autoDj: { currentTrack: remoteCurrentTrack, queue: [] }
         },
         lastError: ""
       };
@@ -209,11 +219,20 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
       return () => remoteTrackListeners.delete(listener);
     },
     async emitRemoteTrack(track) {
+      remoteCurrentTrack = track;
       await Promise.all(Array.from(remoteTrackListeners, (listener) => listener(track)));
     },
-    async startTrackMonitor() {},
+    async startTrackMonitor() {
+      remoteCurrentTrack = {
+        id: "startup-local",
+        title: "Already Playing At Startup",
+        artist: "Startup Artist",
+        provider: "local",
+        origin: "local"
+      };
+    },
     async close() {},
-    getRemoteCurrentTrack() { return null; },
+    getRemoteCurrentTrack() { return remoteCurrentTrack; },
     getBrowserOutputUrl() { return "http://127.0.0.1:18463/output"; }
   };
   const twitchBotService = {
@@ -257,6 +276,9 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
     twitchBotServiceFactory: () => twitchBotService
   });
   await activationApplied;
+  await waitFor(() => announcedTracks.length === 1);
+  assert.equal(announcedTracks[0].id, "startup-local");
+  assert.equal(announcedTracks[0].title, "Already Playing At Startup");
 
   await client.emitRemoteTrack({
     id: "local-1",
@@ -266,10 +288,10 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
     origin: "local",
     url: "C:\\Music\\First Track.mp3"
   });
-  assert.equal(announcedTracks.length, 1);
-  assert.equal(announcedTracks[0].title, "First Track");
-  assert.equal(announcedTracks[0].artist, "Local Artist");
-  assert.equal(announcedTracks[0].url, "");
+  assert.equal(announcedTracks.length, 2);
+  assert.equal(announcedTracks[1].title, "First Track");
+  assert.equal(announcedTracks[1].artist, "Local Artist");
+  assert.equal(announcedTracks[1].url, "");
 
   activationSyncFailure = true;
   const staleSynchronizationResponse = await fetch(new URL(
@@ -282,16 +304,16 @@ test("confirmed standalone AutoDJ track changes are announced in Twitch chat onl
   });
   assert.equal(staleSynchronizationResponse.status, 503);
   await client.emitRemoteTrack({ id: "local-2", title: "Confirmed After Lost Acknowledgement" });
-  assert.equal(announcedTracks.length, 2);
+  assert.equal(announcedTracks.length, 3);
 
   takeoverActive = true;
   await client.emitRemoteTrack({ id: "local-3", title: "Request Takeover Track" });
-  assert.equal(announcedTracks.length, 2);
+  assert.equal(announcedTracks.length, 3);
 
   takeoverActive = false;
   activationEffective = false;
   await client.emitRemoteTrack({ id: "local-4", title: "Inactive Track" });
-  assert.equal(announcedTracks.length, 2);
+  assert.equal(announcedTracks.length, 3);
 
   await appServer.close();
   appServer = null;

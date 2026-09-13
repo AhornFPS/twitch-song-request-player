@@ -279,7 +279,7 @@ function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) 
   requestSource.searchParams.set("unifiedOverlay", "1");
 
   const autoDjSource = new URL(autoDjOutputUrl);
-  autoDjSource.searchParams.set("style", "broadcast");
+  autoDjSource.searchParams.set("style", "extended");
   autoDjSource.searchParams.set("obsLoader", "1");
   autoDjSource.searchParams.set("unifiedOverlay", "1");
 
@@ -386,8 +386,8 @@ function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) 
       }
 
       function applyActiveSurface() {
-        // A viewer request owns the shared OBS surface for the duration of its
-        // acknowledged AutoDJ takeover. Otherwise the standalone mixer owns it.
+        // Viewer requests temporarily own the unified surface. Standalone
+        // AutoDJ remains on its extended surface outside request takeover.
         if (active.request) {
           showRole("request");
         } else if (active.autodj) {
@@ -407,12 +407,16 @@ function buildObsOverlayLoaderHtml({ overlayUrl, autoDjOutputUrl, appVersion }) 
           ready[role] = true;
           stopRetry(role);
           if (loaderStatus) loaderStatus.textContent = role + " overlay connected.";
+          applyActiveSurface();
           return;
         }
         if (event.data?.type !== "tsrp:overlay-state") return;
         ready[role] = true;
         stopRetry(role);
-        active[role] = Boolean(event.data.currentTrack);
+        active[role] = Boolean(
+          event.data.currentTrack &&
+          (role !== "request" || event.data.currentTrack.provider !== "autodj")
+        );
         applyActiveSurface();
       });
 
@@ -629,6 +633,7 @@ export async function startAppServer({
   let usingFallbackPort = false;
   let overlayLoaderFilePath = buildObsOverlayLoaderPath(runtimeConfig.runtimeDir);
   let autoDjAuthoritySynchronized = false;
+  let autoDjAuthoritySynchronization = null;
   let lanDiscoveryResponder = null;
   const pendingLanPairings = new Map();
 
@@ -842,28 +847,61 @@ export async function startAppServer({
   }
 
   async function synchronizeAutoDjActivation(enabled, { persist = false } = {}) {
+    const desiredEnabled = enabled === true;
     if (persist) {
       currentSettings = await configStore.saveSettings({
         ...currentSettings,
-        autoDjEnabled: enabled === true
+        autoDjEnabled: desiredEnabled
       });
     }
     if (!autoDjServiceClient) {
-      autoDjAuthoritySynchronized = enabled !== true;
-      if (enabled) throw new Error("Pair or configure the standalone AutoDJ app first.");
+      autoDjAuthoritySynchronized = !desiredEnabled;
+      if (desiredEnabled) throw new Error("Pair or configure the standalone AutoDJ app first.");
       return getAutoDjControllerStatus();
     }
+
+    if (autoDjAuthoritySynchronization) {
+      if (
+        autoDjAuthoritySynchronization.client === autoDjServiceClient &&
+        autoDjAuthoritySynchronization.enabled === desiredEnabled
+      ) {
+        return await autoDjAuthoritySynchronization.promise;
+      }
+      try {
+        await autoDjAuthoritySynchronization.promise;
+      } catch {
+      }
+    }
+
+    const synchronizationClient = autoDjServiceClient;
     autoDjAuthoritySynchronized = false;
-    try {
-      await autoDjServiceClient.probe();
-      await autoDjServiceClient.setActivation(enabled, {
+    const synchronizationPromise = (async () => {
+      await synchronizationClient.probe();
+      await synchronizationClient.setActivation(desiredEnabled, {
         reason: "music_control_center_authority"
       });
+      if (synchronizationClient !== autoDjServiceClient) {
+        throw new Error("AutoDJ connection changed while authority was synchronizing.");
+      }
       autoDjAuthoritySynchronized = true;
       return getAutoDjControllerStatus();
+    })();
+    autoDjAuthoritySynchronization = {
+      client: synchronizationClient,
+      enabled: desiredEnabled,
+      promise: synchronizationPromise
+    };
+    try {
+      return await synchronizationPromise;
     } catch (error) {
-      autoDjAuthoritySynchronized = false;
+      if (synchronizationClient === autoDjServiceClient) {
+        autoDjAuthoritySynchronized = false;
+      }
       throw error;
+    } finally {
+      if (autoDjAuthoritySynchronization?.promise === synchronizationPromise) {
+        autoDjAuthoritySynchronization = null;
+      }
     }
   }
 
@@ -941,7 +979,8 @@ export async function startAppServer({
       if (!currentSettings.autoDjEnabled || !autoDjServiceClient) {
         return { matched: false, queued: false, track: null };
       }
-      return autoDjServiceClient.queueOwnedRequest(track);
+      const result = await autoDjServiceClient.queueOwnedRequest(track);
+      return { ...result, localImportGraceMs: 45_000 };
     },
     beforeTrackStart: async (track) => {
       if (!autoDjServiceClient) {
@@ -951,7 +990,15 @@ export async function startAppServer({
         return { ready: true };
       }
       if (!autoDjAuthoritySynchronized) {
-        return { ready: false, error: "AutoDJ authority is not synchronized." };
+        try {
+          await synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true);
+        } catch (error) {
+          return {
+            ready: false,
+            retryAfterMs: 3_000,
+            error: error?.message ?? "AutoDJ authority is not synchronized."
+          };
+        }
       }
       if (!currentSettings.autoDjEnabled) {
         return { ready: true };
@@ -968,8 +1015,20 @@ export async function startAppServer({
           return handoff;
         }
       }
-      await autoDjServiceClient.acquire(track);
-      return { ready: true };
+      const acquiredClient = autoDjServiceClient;
+      const acquiredLeaseId = acquiredClient.leaseId;
+      await acquiredClient.acquire(track);
+      return {
+        ready: true,
+        cancel: async () => {
+          if (autoDjServiceClient !== acquiredClient ||
+              acquiredClient.leaseId !== acquiredLeaseId ||
+              acquiredClient.getStatus().activeTrack?.id !== String(track.id ?? "")) {
+            throw new Error("Provisional request takeover ownership changed before cancellation.");
+          }
+          await releaseAutoDjTakeover("request_owned_before_external_start");
+        }
+      };
     },
     externalPlayback: obsYoutubeFallback,
     decorateBroadcastState: (state) => ({
@@ -1013,38 +1072,95 @@ export async function startAppServer({
     }
   });
   let removeAutoDjTrackAnnouncementListener = null;
+  let removeAutoDjRemoteStateListener = null;
+  let observedAutoDjEngineEpoch = "";
+  let lastAnnouncedAutoDjTrackId = "";
+
+  async function announceAutoDjTrack(track) {
+    const trackId = String(track?.id ?? "");
+    if (!trackId || !track?.title || trackId === lastAnnouncedAutoDjTrackId) {
+      return false;
+    }
+
+    const status = getAutoDjControllerStatus();
+    if (
+      !status.connection.responding ||
+      !status.activation.desired ||
+      status.activation.effective !== true ||
+      status.takeover.active ||
+      playerController.getCurrentTrack()
+    ) {
+      return false;
+    }
+
+    const trackUrl = String(track.url ?? "").trim();
+    const announced = await twitchBotService.announceNowPlaying({
+      ...track,
+      provider: track.provider || "local",
+      origin: track.origin || "local",
+      url: /^https?:\/\//i.test(trackUrl) ? trackUrl : ""
+    });
+    if (announced !== false) {
+      lastAnnouncedAutoDjTrackId = trackId;
+      return true;
+    }
+    return false;
+  }
 
   function bindAutoDjTrackAnnouncements(client) {
     removeAutoDjTrackAnnouncementListener?.();
     removeAutoDjTrackAnnouncementListener = null;
+    removeAutoDjRemoteStateListener?.();
+    removeAutoDjRemoteStateListener = null;
+    observedAutoDjEngineEpoch = "";
     if (!client?.onRemoteTrackStart) {
       return;
     }
 
     removeAutoDjTrackAnnouncementListener = client.onRemoteTrackStart(async (track) => {
-      if (client !== autoDjServiceClient || !track?.id || !track?.title) {
+      if (client !== autoDjServiceClient) {
         return;
       }
-
-      const status = getAutoDjControllerStatus();
-      if (
-        !status.connection.responding ||
-        !status.activation.desired ||
-        status.activation.effective !== true ||
-        status.takeover.active ||
-        playerController.getCurrentTrack()
-      ) {
-        return;
-      }
-
-      const trackUrl = String(track.url ?? "").trim();
-      await twitchBotService.announceNowPlaying({
-        ...track,
-        provider: track.provider || "local",
-        origin: track.origin || "local",
-        url: /^https?:\/\//i.test(trackUrl) ? trackUrl : ""
-      });
+      await announceAutoDjTrack(track);
     });
+
+    if (client.onRemoteState) {
+      removeAutoDjRemoteStateListener = client.onRemoteState((service) => {
+        if (client !== autoDjServiceClient) {
+          return;
+        }
+        const engineEpoch = String(service?.engineEpoch ?? "");
+        if (!engineEpoch) {
+          return;
+        }
+        if (!observedAutoDjEngineEpoch) {
+          observedAutoDjEngineEpoch = engineEpoch;
+          return;
+        }
+        if (engineEpoch === observedAutoDjEngineEpoch) {
+          return;
+        }
+
+        const previousEngineEpoch = observedAutoDjEngineEpoch;
+        observedAutoDjEngineEpoch = engineEpoch;
+        autoDjAuthoritySynchronized = false;
+        void synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true)
+          .then(async () => {
+            logInfo("Resynchronized AutoDJ authority after engine restart", {
+              previousEngineEpoch,
+              engineEpoch
+            });
+            await playerController.ensurePlayback();
+          })
+          .catch((error) => {
+            logWarn("AutoDJ engine restarted but authority resynchronization is not ready", {
+              previousEngineEpoch,
+              engineEpoch,
+              message: error?.message ?? String(error)
+            });
+          });
+      });
+    }
   }
 
   bindAutoDjTrackAnnouncements(autoDjServiceClient);
@@ -2234,8 +2350,11 @@ export async function startAppServer({
     openBrowser(urls.dashboardUrl);
   }
 
-  void (async () => {
+  const startupPromise = (async () => {
     try {
+      await obsYoutubeFallback.clearSource({
+        reason: "app_startup"
+      });
       if (autoDjServiceClient) {
         try {
           await synchronizeAutoDjActivationAtStartup(currentSettings.autoDjEnabled === true);
@@ -2248,6 +2367,13 @@ export async function startAppServer({
         await autoDjServiceClient.startTrackMonitor();
       }
       await twitchBotService.applySettings(currentSettings);
+      try {
+        await announceAutoDjTrack(autoDjServiceClient?.getRemoteCurrentTrack?.());
+      } catch (error) {
+        logWarn("Could not announce the active AutoDJ track after Twitch connected", {
+          message: error?.message ?? String(error)
+        });
+      }
       await playerController.ensurePlayback();
     } catch (error) {
       logError("Deferred startup tasks failed", {
@@ -2274,9 +2400,12 @@ export async function startAppServer({
       return playerController.skipToNextTrack(triggeredBy);
     },
     async close() {
+      await startupPromise;
       obsYoutubeFallback.shutdown();
       removeAutoDjTrackAnnouncementListener?.();
       removeAutoDjTrackAnnouncementListener = null;
+      removeAutoDjRemoteStateListener?.();
+      removeAutoDjRemoteStateListener = null;
       for (const entry of pendingLanPairings.values()) {
         clearTimeout(entry.timeoutHandle);
         entry.respond("declined");

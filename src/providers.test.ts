@@ -1648,6 +1648,43 @@ test("suno song links do not require YouTube API access to become playable reque
   assert.equal(track.durationSeconds, 201);
 });
 
+test("suno song links fall back to media_urls when audio_url is forbidden", async (t) => {
+  const originalFetch = global.fetch;
+
+  global.fetch = async (url) => {
+    const requestedUrl = new URL(url);
+
+    if (requestedUrl.origin === "https://suno.com") {
+      return {
+        ok: true,
+        url: requestedUrl.toString(),
+        async text() {
+          return [
+            "<html><head>",
+            '<link rel="canonical" href="https://suno.com/song/suno-forbidden" />',
+            '<meta property="og:title" content="Planetside Battle Hymm" />',
+            '<meta property="og:image" content="https://cdn2.suno.ai/planetside.jpeg" />',
+            '</head><body>',
+            '<script>self.__next_f.push([1,"3f:[{\\"clip\\":{\\"audio_url\\":\\"https://studio-api.prod.suno.com/api/forbidden\\",\\"media_urls\\":[{\\"url\\":\\"https://d2lwuy8qc234o3.cloudfront.net/1/clip/suno-forbidden.m4a\\",\\"content_type\\":\\"m4a-opus\\",\\"delivery\\":\\"progressive\\"}]}}]"])</script>',
+            "</body></html>"
+          ].join("");
+        }
+      };
+    }
+
+    throw new Error(`unexpected fetch ${requestedUrl.toString()}`);
+  };
+
+  t.after(() => {
+    global.fetch = originalFetch;
+  });
+
+  const track = await resolveSongRequest("https://suno.com/song/suno-forbidden", "");
+
+  assert.equal(track.provider, "suno");
+  assert.equal(track.audioUrl, "https://d2lwuy8qc234o3.cloudfront.net/1/clip/suno-forbidden.m4a");
+});
+
 test("spotify links require YouTube API access to become playable requests", async (t) => {
   const originalFetch = global.fetch;
 

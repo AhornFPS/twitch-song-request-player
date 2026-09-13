@@ -1,5 +1,29 @@
 // @ts-nocheck
 import fs from "node:fs/promises";
+import path from "node:path";
+
+function emptyAuditState() {
+  return {
+    events: [],
+    requesterStats: {}
+  };
+}
+
+function isRecoverableReadError(error) {
+  return error?.code === "ENOENT" || error instanceof SyntaxError;
+}
+
+async function writeFileAtomically(filePath, contents) {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  const temporaryPath = `${filePath}.${process.pid}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+
+  try {
+    await fs.writeFile(temporaryPath, contents, "utf8");
+    await fs.rename(temporaryPath, filePath);
+  } finally {
+    await fs.rm(temporaryPath, { force: true }).catch(() => {});
+  }
+}
 
 function normalizeRequester(value) {
   if (!value || typeof value !== "object") {
@@ -138,36 +162,55 @@ function normalizeRequesterStatEntry(entry) {
 export class RequestAuditStore {
   constructor(filePath, { eventLimit = 1000 } = {}) {
     this.filePath = filePath;
+    this.backupPath = `${filePath}.backup`;
     this.eventLimit = eventLimit;
+    this.saveQueue = Promise.resolve();
+  }
+
+  async loadFile(filePath) {
+    const raw = await fs.readFile(filePath, "utf8");
+    const parsed = JSON.parse(raw);
+    const requesterStats = parsed.requesterStats && typeof parsed.requesterStats === "object"
+      ? Object.fromEntries(
+          Object.entries(parsed.requesterStats)
+            .map(([key, value]) => [key, normalizeRequesterStatEntry(value)])
+            .filter(([, value]) => Boolean(value))
+        )
+      : {};
+
+    return {
+      events: Array.isArray(parsed.events)
+        ? parsed.events.map((event) => normalizeRequestEvent(event)).filter(Boolean).slice(0, this.eventLimit)
+        : [],
+      requesterStats
+    };
   }
 
   async load() {
     try {
-      const raw = await fs.readFile(this.filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      const requesterStats = parsed.requesterStats && typeof parsed.requesterStats === "object"
-        ? Object.fromEntries(
-            Object.entries(parsed.requesterStats)
-              .map(([key, value]) => [key, normalizeRequesterStatEntry(value)])
-              .filter(([, value]) => Boolean(value))
-          )
-        : {};
-
-      return {
-        events: Array.isArray(parsed.events)
-          ? parsed.events.map((event) => normalizeRequestEvent(event)).filter(Boolean).slice(0, this.eventLimit)
-          : [],
-        requesterStats
-      };
+      return await this.loadFile(this.filePath);
     } catch (error) {
-      if (error?.code === "ENOENT") {
-        return {
-          events: [],
-          requesterStats: {}
-        };
+      if (!isRecoverableReadError(error)) {
+        throw error;
       }
 
-      throw error;
+      if (error instanceof SyntaxError) {
+        console.warn(`Request audit JSON is incomplete; trying ${this.backupPath}.`);
+      }
+    }
+
+    try {
+      return await this.loadFile(this.backupPath);
+    } catch (error) {
+      if (!isRecoverableReadError(error)) {
+        throw error;
+      }
+
+      if (error instanceof SyntaxError) {
+        console.warn(`Request audit backup JSON is incomplete; starting with empty audit history.`);
+      }
+
+      return emptyAuditState();
     }
   }
 
@@ -185,6 +228,12 @@ export class RequestAuditStore {
         : {}
     };
 
-    await fs.writeFile(this.filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+    const serialized = `${JSON.stringify(payload, null, 2)}\n`;
+    const saveOperation = this.saveQueue.then(async () => {
+      await writeFileAtomically(this.backupPath, serialized);
+      await writeFileAtomically(this.filePath, serialized);
+    });
+    this.saveQueue = saveOperation.catch(() => {});
+    return saveOperation;
   }
 }

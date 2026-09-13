@@ -27,6 +27,80 @@ function createFakeObsClient(calls) {
   };
 }
 
+test("duplicate fallback starts share one URL load and keep the original finish timer", async () => {
+  const calls = [];
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({obsYoutubeFallbackEnabled:true,obsYoutubeFallbackSourceName:"YouTube Fallback"}),
+    createClient: () => ({...createFakeObsClient(calls), async connect(){await gate;}})
+  });
+  const track={id:"same-request",provider:"youtube",url:"https://youtu.be/duplicate",durationSeconds:180};
+  const first=fallback.startTrack(track);
+  const second=fallback.startTrack(track);
+  release();
+  await Promise.all([first,second]);
+  const timer=fallback.finishTimer;
+  await fallback.startTrack(track);
+  assert.equal(calls.filter(c=>c.requestType === "SetInputSettings").length,1);
+  assert.equal(fallback.finishTimer,timer);
+  fallback.shutdown();
+});
+
+test("skipping during fallback metadata lookup cannot resurrect the old request", async (t) => {
+  const calls=[];
+  let release;
+  const metadata=new Promise(resolve=>{release=resolve;});
+  const fallback=new ObsYoutubeFallback({
+    getSettings:()=>({obsYoutubeFallbackEnabled:true,obsYoutubeFallbackSourceName:"YouTube Fallback"}),
+    createClient:()=>createFakeObsClient(calls),
+    resolveTrackMetadata:()=>metadata
+  });
+  const track={id:"skipped-request",provider:"youtube",url:"https://youtu.be/old-request"};
+  t.after(()=>fallback.shutdown());
+  const start=fallback.startTrack(track);
+  await fallback.stopTrack(track);
+  release({durationSeconds:3600});
+  await start;
+  assert.equal(fallback.activeTrackId,"");
+  assert.equal(calls.filter(c=>c.requestType==="SetInputSettings"&&c.requestPayload.inputSettings.url!=="about:blank").length,0);
+  fallback.shutdown();
+});
+
+test("skip during an in-flight OBS write clears it before the replacement starts", async (t) => {
+  const urls=[];
+  let releaseWrite;
+  let signalWrite;
+  const started=new Promise(resolve=>{signalWrite=resolve;});
+  const gate=new Promise(resolve=>{releaseWrite=resolve;});
+  const fallback=new ObsYoutubeFallback({
+    getSettings:()=>({obsYoutubeFallbackEnabled:true,obsYoutubeFallbackSourceName:"YouTube Fallback"}),
+    createClient:()=>({async connect(){},async disconnect(){},async call(_type,payload){
+      const url=payload.inputSettings.url;
+      if(url.includes('old-video')){signalWrite();await gate;}
+      urls.push(url);
+    }})
+  });
+  t.after(()=>fallback.shutdown());
+  fallback.sourceClearNeeded=false;
+  const old={id:"old",provider:"youtube",url:"https://youtu.be/old-video",durationSeconds:180};
+  const next={id:"next",provider:"youtube",url:"https://youtu.be/new-video",durationSeconds:180};
+  const oldStart=fallback.startTrack(old);
+  await started;
+  const stop=fallback.stopTrack(old);
+  const nextStart=fallback.startTrack(next);
+  releaseWrite();
+  assert.deepEqual(await oldStart,{cancelled:true});
+  await Promise.all([stop,nextStart]);
+  assert.equal(urls.length,3);
+  assert.match(urls[0],/old-video/);
+  assert.equal(urls[1],"about:blank");
+  assert.match(urls[2],/new-video/);
+  assert.equal(fallback.activeTrackId,"next");
+  await fallback.stopTrack(old);
+  assert.equal(fallback.activeTrackId,"next","late old stop cannot clear the replacement");
+});
+
 test("OBS YouTube fallback opens login page and starts blocked tracks on the configured source", async () => {
   const calls = [];
   const endedEvents = [];
@@ -50,6 +124,13 @@ test("OBS YouTube fallback opens login page and starts blocked tracks on the con
     fallback.shouldHandlePlayerError(
       { provider: "youtube" },
       { reason: "youtube_150" }
+    ),
+    true
+  );
+  assert.equal(
+    fallback.shouldHandlePlayerError(
+      { provider: "youtube" },
+      { reason: "playback_confirmation_timeout" }
     ),
     true
   );
@@ -256,6 +337,51 @@ test("OBS YouTube fallback keeps stale-source cleanup pending until OBS accepts 
 
   shouldFail = false;
   assert.equal(await fallback.clearSource({ reason: "obs_browser_source_connected" }), true);
+  assert.equal(fallback.needsSourceClear(), false);
+  assert.equal(calls.at(-1)?.requestPayload.inputSettings.url, "about:blank");
+});
+
+test("OBS YouTube fallback retries a failed release after its in-memory owner is gone", async () => {
+  let connectAttempt = 0;
+  let retryCallback = null;
+  const calls = [];
+  const fallback = new ObsYoutubeFallback({
+    getSettings: () => ({
+      obsYoutubeFallbackEnabled: true,
+      obsWebSocketUrl: "127.0.0.1:4455",
+      obsWebSocketPassword: "secret",
+      obsYoutubeFallbackSourceName: "YouTube Fallback"
+    }),
+    createClient: () => ({
+      async connect() {
+        connectAttempt += 1;
+        if (connectAttempt === 1) {
+          throw new Error("OBS briefly unavailable");
+        }
+      },
+      async call(requestType, requestPayload) {
+        calls.push({ requestType, requestPayload });
+      },
+      async disconnect() {
+      }
+    }),
+    setTimeoutFn(callback) {
+      retryCallback = callback;
+      return { unref() {} };
+    },
+    clearTimeoutFn() {
+      retryCallback = null;
+    }
+  });
+
+  assert.equal(await fallback.stopTrack({ id: "finished-fallback" }), false);
+  assert.equal(fallback.isPlayingTrack({ id: "finished-fallback" }), false);
+  assert.equal(fallback.needsSourceClear(), true);
+  assert.equal(typeof retryCallback, "function");
+
+  retryCallback();
+  await new Promise((resolve) => setImmediate(resolve));
+
   assert.equal(fallback.needsSourceClear(), false);
   assert.equal(calls.at(-1)?.requestPayload.inputSettings.url, "about:blank");
 });

@@ -7,7 +7,8 @@ const blankUrl = "about:blank";
 const endedReason = "obs_youtube_fallback_timer";
 const blockedEmbedReasons = new Set([
   "youtube_101",
-  "youtube_150"
+  "youtube_150",
+  "playback_confirmation_timeout"
 ]);
 
 function trimString(value) {
@@ -99,7 +100,10 @@ export class ObsYoutubeFallback {
     onTrackEnded = async () => {},
     createClient = () => new OBSWebSocket(),
     resolveTrackMetadata = null,
-    playbackBufferSeconds = 1
+    playbackBufferSeconds = 1,
+    setTimeoutFn = setTimeout,
+    clearTimeoutFn = clearTimeout,
+    sourceClearRetryDelaysMs = [1_000, 3_000, 10_000, 30_000]
   } = {}) {
     this.getSettings = typeof getSettings === "function" ? getSettings : () => ({});
     this.onTrackEnded = onTrackEnded;
@@ -108,12 +112,19 @@ export class ObsYoutubeFallback {
       ? resolveTrackMetadata
       : null;
     this.playbackBufferSeconds = playbackBufferSeconds;
+    this.setTimeoutFn = setTimeoutFn;
+    this.clearTimeoutFn = clearTimeoutFn;
+    this.sourceClearRetryDelaysMs = sourceClearRetryDelaysMs;
     this.activeTrackId = "";
+    this.playbackGeneration = 0;
+    this.desiredTrackId = "";
     this.finishTimer = null;
     // OBS persists Browser Source settings between launches. Assume the source
     // may still contain an autoplay URL until we have successfully blanked it.
     this.sourceClearNeeded = true;
     this.sourceClearPromise = null;
+    this.sourceClearRetryTimer = null;
+    this.sourceClearRetryAttempt = 0;
   }
 
   getConfig() {
@@ -163,7 +174,21 @@ export class ObsYoutubeFallback {
     };
   }
 
-  async setSourceUrl(url) {
+  async setSourceUrl(url, { generation = null } = {}) {
+    const previous = this.sourceWritePromise ?? Promise.resolve();
+    const write = previous.catch(() => {}).then(() => {
+      if (generation !== null && generation !== this.playbackGeneration) return;
+      return this.writeSourceUrl(url);
+    });
+    this.sourceWritePromise = write;
+    try {
+      return await write;
+    } finally {
+      if (this.sourceWritePromise === write) this.sourceWritePromise = null;
+    }
+  }
+
+  async writeSourceUrl(url) {
     const config = this.getConfig();
 
     if (!config.enabled) {
@@ -197,6 +222,35 @@ export class ObsYoutubeFallback {
 
     clearTimeout(this.finishTimer);
     this.finishTimer = null;
+  }
+
+  clearSourceClearRetryTimer() {
+    if (!this.sourceClearRetryTimer) {
+      return;
+    }
+
+    this.clearTimeoutFn(this.sourceClearRetryTimer);
+    this.sourceClearRetryTimer = null;
+  }
+
+  scheduleSourceClearRetry({ reason = "", track = null } = {}) {
+    if (this.sourceClearRetryTimer || !this.needsSourceClear()) {
+      return;
+    }
+
+    const retryDelays = Array.isArray(this.sourceClearRetryDelaysMs) && this.sourceClearRetryDelaysMs.length > 0
+      ? this.sourceClearRetryDelaysMs
+      : [30_000];
+    const retryDelayMs = retryDelays[Math.min(this.sourceClearRetryAttempt, retryDelays.length - 1)];
+    this.sourceClearRetryAttempt += 1;
+    this.sourceClearRetryTimer = this.setTimeoutFn(() => {
+      this.sourceClearRetryTimer = null;
+      void this.clearSource({
+        reason: reason ? `${reason}_retry` : "source_clear_retry",
+        track
+      });
+    }, retryDelayMs);
+    this.sourceClearRetryTimer?.unref?.();
   }
 
   scheduleFinish(track) {
@@ -265,9 +319,40 @@ export class ObsYoutubeFallback {
   }
 
   async startTrack(track, { reason = "" } = {}) {
+    if (this.isPlayingTrack(track)) {
+      return { durationSeconds: normalizeTrackDurationSeconds(track) };
+    }
+    if (this.startingTrackId === track?.id && this.startingTrackPromise &&
+      this.startingGeneration === this.playbackGeneration) {
+      return this.startingTrackPromise;
+    }
+    const generation = ++this.playbackGeneration;
+    this.desiredTrackId = track?.id ?? "";
+    this.startingGeneration = generation;
+    const promise = this.startTrackOnce(track, { reason, generation });
+    this.startingTrackId = track?.id;
+    this.startingTrackPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.startingTrackPromise === promise) {
+        this.startingTrackPromise = null;
+        this.startingTrackId = "";
+      }
+    }
+  }
+
+  async startTrackOnce(track, { reason = "", generation } = {}) {
+    this.clearSourceClearRetryTimer();
+    if (this.sourceClearPromise) {
+      await this.sourceClearPromise;
+    }
+    if (generation !== this.playbackGeneration) return { cancelled: true };
+
     try {
       await this.refreshMissingTrackDuration(track);
     } catch (error) {
+      if (generation !== this.playbackGeneration) return { cancelled: true };
       await this.clearSource({
         reason: "youtube_video_unavailable",
         track
@@ -280,8 +365,13 @@ export class ObsYoutubeFallback {
       };
     }
 
+    if (generation !== this.playbackGeneration) return { cancelled: true };
     const playbackUrl = buildPlaybackUrl(track);
-    await this.setSourceUrl(playbackUrl);
+    // A source write already in flight cannot be cancelled at OBS. A stop must
+    // queue a clear behind it even before the new track has become active.
+    this.sourceClearNeeded = true;
+    await this.setSourceUrl(playbackUrl, { generation });
+    if (generation !== this.playbackGeneration) return { cancelled: true };
     this.activeTrackId = track.id;
     this.sourceClearNeeded = true;
     this.scheduleFinish(track);
@@ -298,11 +388,13 @@ export class ObsYoutubeFallback {
   }
 
   async stopTrack(track, { clearSource = true } = {}) {
-    if (!this.activeTrackId) {
+    if (this.desiredTrackId && track?.id && track.id !== this.desiredTrackId) {
       return;
     }
 
-    if (track?.id && track.id !== this.activeTrackId) {
+    ++this.playbackGeneration;
+    this.desiredTrackId = "";
+    if (!this.activeTrackId && !this.needsSourceClear()) {
       return;
     }
 
@@ -313,13 +405,15 @@ export class ObsYoutubeFallback {
       return;
     }
 
-    await this.clearSource({
+    return await this.clearSource({
       reason: "track_stop",
       track
     });
   }
 
   async clearSource({ reason = "", track = null } = {}) {
+    ++this.playbackGeneration;
+    this.desiredTrackId = "";
     this.clearFinishTimer();
     this.activeTrackId = "";
 
@@ -331,10 +425,13 @@ export class ObsYoutubeFallback {
       return this.sourceClearPromise;
     }
 
+    this.clearSourceClearRetryTimer();
+
     this.sourceClearPromise = (async () => {
       try {
         await this.setSourceUrl(blankUrl);
         this.sourceClearNeeded = false;
+        this.sourceClearRetryAttempt = 0;
         logInfo("Cleared OBS YouTube fallback source", {
           track: formatTrack(track),
           reason
@@ -347,6 +444,7 @@ export class ObsYoutubeFallback {
           reason,
           message: error?.message ?? String(error)
         });
+        this.scheduleSourceClearRetry({ reason, track });
         return false;
       } finally {
         this.sourceClearPromise = null;
@@ -357,6 +455,9 @@ export class ObsYoutubeFallback {
   }
 
   async openLoginPage() {
+    ++this.playbackGeneration;
+    this.desiredTrackId = "";
+    this.clearSourceClearRetryTimer();
     this.clearFinishTimer();
     this.activeTrackId = "";
     await this.setSourceUrl(youtubeLoginUrl);
@@ -370,6 +471,9 @@ export class ObsYoutubeFallback {
   }
 
   shutdown() {
+    ++this.playbackGeneration;
+    this.desiredTrackId = "";
+    this.clearSourceClearRetryTimer();
     this.clearFinishTimer();
     this.activeTrackId = "";
   }

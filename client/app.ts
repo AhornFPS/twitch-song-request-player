@@ -1394,11 +1394,34 @@ function describeTrackMeta(track) {
   return `Requested by ${requester}`;
 }
 
+function getOverlayTrackTitle(track) {
+  const title = typeof track?.title === "string" ? track.title.trim() : "";
+  const artist = typeof track?.artist === "string" ? track.artist.trim() : "";
+
+  if (track?.overlaySource !== "autodj" || !artist || !title) {
+    return title;
+  }
+
+  const separatedTrack = splitArtistAndTitle(title);
+  if (separatedTrack?.artist.localeCompare(artist, undefined, { sensitivity: "base" }) === 0) {
+    return title;
+  }
+
+  return `${artist} - ${title}`;
+}
+
 function getDisplayedTrackText(track) {
   if (!track) {
     return {
       title: "Waiting for a track",
       meta: describeTrackMeta(track)
+    };
+  }
+
+  if (track.overlaySource === "autodj") {
+    return {
+      title: getOverlayTrackTitle(track),
+      meta: "Standalone AutoDJ"
     };
   }
 
@@ -1557,7 +1580,7 @@ function renderNextDeck(track) {
   }
 
   nextDeck.classList.toggle?.("is-empty", !track);
-  nextTitle.textContent = track?.title || "Queue clear";
+  nextTitle.textContent = track ? getOverlayTrackTitle(track) : "Queue clear";
   nextMeta.textContent = track
     ? describeTrackMeta(track)
     : "Waiting for the next request";
@@ -1713,7 +1736,7 @@ function updateState(state) {
   const presentationState = buildOverlayPresentationState(state);
   const presentedTrack = presentationState.currentTrack;
   const queue = buildOverlayUpNextQueue(presentationState);
-  notifyUnifiedOverlayParent(state);
+  notifyUnifiedOverlayParent(presentationState);
   desiredPausedState = Boolean(currentTrack?.isPaused);
   const stateSignature = JSON.stringify({
     currentTrackId: presentedTrack?.id ?? null,
@@ -1795,7 +1818,7 @@ function renderQueue(queue) {
   const queueSignature = JSON.stringify(
     visibleQueue.map((track) => ({
       identity: getOverlayQueueTrackIdentity(track),
-      title: track.title,
+      title: getOverlayTrackTitle(track),
       requester: getOverlayQueueMeta(track),
       isSaved: Boolean(track.isSaved)
     }))
@@ -1815,7 +1838,7 @@ function renderQueue(queue) {
     const requester = getOverlayQueueMeta(track);
     const title = document.createElement("span");
     title.className = "queue-title";
-    title.textContent = track.title;
+    title.textContent = getOverlayTrackTitle(track);
 
     const meta = document.createElement("span");
     meta.className = "queue-meta";

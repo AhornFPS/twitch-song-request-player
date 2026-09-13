@@ -245,6 +245,28 @@ test("non-embeddable YouTube requests are rejected before queueing", async () =>
   assert.equal(controller.getPublicState().queue.length, 0);
 });
 
+test("late embedded errors cannot restart an already playing external request", async () => {
+  let activeId = "";
+  let starts = 0;
+  const { controller } = createController({ externalPlayback: {
+    shouldHandleTrack: () => false,
+    shouldHandlePlayerError: () => true,
+    isPlayingTrack: track => track?.id === activeId,
+    async startTrack(track) { activeId = track.id; starts++; return {durationSeconds:180}; },
+    async stopTrack() { activeId = ""; }
+  }});
+  await controller.addRequest({provider:"youtube",url:"https://youtu.be/loop-case",key:"youtube:loop-case",title:"Loop regression",durationSeconds:180});
+  const trackId = controller.currentTrack.id;
+  for (let i = 0; i < 4; i++) {
+    await controller.handlePlayerEvent({trackId,status:"error",reason:"youtube_150"});
+  }
+  assert.equal(starts, 1, "stale embedded errors must not reload the audible OBS URL");
+  assert.equal(controller.currentTrack.id, trackId);
+  assert.equal(controller.currentTrack.playbackConfirmed, true);
+  controller.clearPlaybackConfirmationTimer();
+  controller.clearFallbackPlaylistFinishTimer();
+});
+
 test("non-embeddable YouTube requests can start through external fallback playback", async () => {
   const fallbackStarts = [];
   const fallbackStops = [];
@@ -565,6 +587,65 @@ test("blocked embedded YouTube errors switch to external fallback playback inste
   assert.equal(socketEvents.some(({ event }) => event === "player:load"), false);
 });
 
+test("unconfirmed embedded YouTube playback automatically switches to external fallback", async () => {
+  let confirmationTimer = null;
+  let activeFallbackTrackId = "";
+  const fallbackStarts = [];
+  const { controller } = createController({
+    setTimeoutFn(callback) {
+      confirmationTimer = callback;
+      return { unref() {} };
+    },
+    clearTimeoutFn() {
+      confirmationTimer = null;
+    },
+    externalPlayback: {
+      shouldHandleTrack() {
+        return false;
+      },
+      shouldHandlePlayerError(track, payload) {
+        return track?.provider === "youtube" && payload?.reason === "playback_confirmation_timeout";
+      },
+      async startTrack(track, details) {
+        activeFallbackTrackId = track.id;
+        fallbackStarts.push({ track, details });
+        return { durationSeconds: 120 };
+      },
+      isPlayingTrack(track) {
+        return track?.id === activeFallbackTrackId;
+      },
+      async clearSource() {
+      },
+      async stopTrack() {
+      }
+    }
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/unconfirmed",
+    title: "Unconfirmed Embed",
+    key: "youtube:unconfirmed",
+    artworkUrl: "",
+    durationSeconds: 120,
+    requestedBy: {
+      username: "viewerone",
+      displayName: "ViewerOne"
+    }
+  });
+
+  assert.equal(typeof confirmationTimer, "function");
+  confirmationTimer();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(controller.getCurrentTrack()?.title, "Unconfirmed Embed");
+  assert.equal(controller.getCurrentTrack()?.playbackMode, "external");
+  assert.equal(controller.getCurrentTrack()?.playbackProvider, "obs_youtube_fallback");
+  assert.equal(controller.getPublicState().history.length, 0);
+  assert.equal(fallbackStarts.length, 1);
+  assert.equal(fallbackStarts[0].details.reason, "playback_confirmation_timeout");
+});
+
 test("OBS browser-source startup clears stale fallback audio before loading embedded playback", async () => {
   const lifecycle = [];
   let sourceClearNeeded = false;
@@ -621,6 +702,38 @@ test("OBS browser-source startup clears stale fallback audio before loading embe
     "socket:state"
   ]);
   assert.equal(lifecycle.includes("socket:player:load"), true);
+});
+
+test("OBS browser-source startup clears stale fallback audio while the controller is idle", async () => {
+  let sourceClearNeeded = true;
+  const socketEvents = [];
+  const { controller } = createController({
+    externalPlayback: {
+      needsSourceClear() {
+        return sourceClearNeeded;
+      },
+      isPlayingTrack() {
+        return false;
+      },
+      async clearSource() {
+        sourceClearNeeded = false;
+        return true;
+      }
+    }
+  });
+
+  await controller.handleSocketConnection({
+    id: "idle-obs-socket",
+    handshake: { auth: { playbackClientRole: "obs" } },
+    emit(event) {
+      socketEvents.push(event);
+    },
+    on() {
+    }
+  });
+
+  assert.equal(sourceClearNeeded, false);
+  assert.deepEqual(socketEvents, ["state"]);
 });
 
 test("OBS browser-source startup defers embedded playback while stale fallback cleanup fails", async () => {
@@ -2392,6 +2505,48 @@ test("online player load is held when the AutoDJ takeover is not acknowledged", 
   assert.equal(timers[0].delay, 5_000);
 });
 
+test("a transient AutoDJ takeover failure retries without another queue event", async () => {
+  const timers = [];
+  let takeoverAttempts = 0;
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({ matched: false }),
+    beforeTrackStart: async () => {
+      takeoverAttempts += 1;
+      if (takeoverAttempts === 1) {
+        throw new Error("The native audio engine is stopped.");
+      }
+      return { ready: true };
+    },
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimeoutFn() {}
+  });
+
+  await controller.addRequest({
+    provider: "youtube",
+    url: "https://youtu.be/retry-takeover",
+    title: "Retry Takeover Request",
+    key: "youtube:retry-takeover",
+    requestedBy: { username: "viewer", displayName: "Viewer" }
+  });
+
+  assert.equal(takeoverAttempts, 1);
+  assert.equal(controller.getPublicState().queue.length, 1);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+
+  const retry = timers.find((timer) => timer.delay === 3_000);
+  assert.ok(retry);
+  retry.callback();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(takeoverAttempts, 2);
+  assert.equal(controller.getPublicState().queue.length, 0);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), true);
+});
+
 test("a normal request waits for AutoDJ's natural handoff before takeover and player load", async () => {
   const timers = [];
   let readinessChecks = 0;
@@ -2469,6 +2624,76 @@ test("a request indexed during the AutoDJ wait is routed locally before takeover
   assert.equal(takeoverChecks, 1);
   assert.equal(controller.getPublicState().queue.length, 0);
   assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+});
+
+test("Die Herdplatte import arriving after the request stays with AutoDJ during the bounded grace window", async () => {
+  const timers = [];
+  let indexed = false;
+  let takeovers = 0;
+  const { controller, emittedEvents } = createController({
+    routeOwnedRequest: async () => ({ matched: indexed, localImportGraceMs: 45_000 }),
+    beforeTrackStart: async () => { takeovers += 1; return { ready: true }; },
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} }; timers.push(timer); return timer;
+    },
+    clearTimeoutFn() {}
+  });
+  await controller.addRequest({ provider: "youtube", title: "Gary D., Timo Maas - Die Herdplatte 100°", key: "youtube:wmgkGI39iUQ" });
+  assert.equal(controller.queue.length, 1);
+  assert.equal(takeovers, 0);
+  indexed = true;
+  timers.find((timer) => timer.delay === 3_000).callback();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(controller.queue.length, 0);
+  assert.equal(takeovers, 0);
+  assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+});
+
+test("an explicit negative ownership result can use fallback after the import grace expires", async () => {
+  const timers = [];
+  let takeovers = 0;
+  const { controller } = createController({
+    routeOwnedRequest: async () => ({ matched: false, localImportGraceMs: 45_000 }),
+    beforeTrackStart: async () => { takeovers += 1; return { ready: true }; },
+    setTimeoutFn(callback, delay) {
+      const timer = { callback, delay, unref() {} }; timers.push(timer); return timer;
+    },
+    clearTimeoutFn() {}
+  });
+  await controller.addRequest({ provider: "youtube", title: "Not owned", key: "youtube:not-owned" });
+  controller.ownedRequestFirstLookupAt.set(controller.queue[0], Date.now() - 46_000);
+  timers.find((timer) => timer.delay === 3_000).callback();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(takeovers, 1);
+  assert.equal(controller.currentTrack.title, "Not owned");
+});
+
+test("unavailable or thrown ownership checks never become external takeover permission", async () => {
+  for (const throws of [false, true]) {
+    const timers = [];
+    let unavailable = true;
+    let takeovers = 0;
+    const { controller, emittedEvents } = createController({
+      routeOwnedRequest: async () => {
+        if (unavailable && throws) throw new Error("control timeout");
+        return unavailable ? { matched: false, unavailable: true } : { matched: true };
+      },
+      beforeTrackStart: async () => { takeovers += 1; return { ready: true }; },
+      setTimeoutFn(callback, delay) {
+        const timer = { callback, delay, unref() {} }; timers.push(timer); return timer;
+      },
+      clearTimeoutFn() {}
+    });
+    await controller.addRequest({ provider: "youtube", title: "Owned but temporarily unreachable", key: `youtube:timeout-${throws}` });
+    assert.equal(takeovers, 0);
+    assert.equal(controller.queue.length, 1);
+    unavailable = false;
+    timers.find((timer) => timer.delay === 3_000).callback();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(controller.queue.length, 0);
+    assert.equal(takeovers, 0);
+    assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+  }
 });
 
 test("a final owned-request check can move a newly indexed track to AutoDJ before playback", async () => {

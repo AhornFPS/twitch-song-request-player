@@ -18,6 +18,9 @@
   --surface: rgba(255, 255, 255, 0.06);
   --surface-strong: rgba(255, 255, 255, 0.12);
   --overlay-scale: 1;
+  --overlay-font-micro: 0.64rem;
+  --overlay-font-small: 0.7rem;
+  --overlay-font-caption: 0.74rem;
 }
 
 * {
@@ -4099,6 +4102,55 @@ body {
   [data-theme="aurora"] .queue-list {
     grid-template-columns: 1fr;
   }
+}
+
+/* Keep secondary overlay copy legible after OBS scaling and stream compression. */
+#player-card #queue-count,
+#player-card .timeline__time,
+#player-card .queue-label {
+  font-size: var(--overlay-font-caption);
+}
+
+#player-card .provider-badge,
+#player-card .save-badge,
+#player-card .queue-title {
+  font-size: var(--overlay-font-small);
+}
+
+#player-card .queue-meta,
+#player-card .queue-list::before,
+#player-card::before {
+  font-size: var(--overlay-font-micro);
+}
+
+#player-card .station-id small,
+#player-card .deck__label,
+#player-card .handoff__node,
+#player-card .handoff__word,
+#player-card .incoming-player__readiness {
+  font-size: var(--overlay-font-micro);
+}
+
+#player-card .current-meta,
+#player-card .incoming-player p {
+  font-size: 0.78rem;
+}
+
+:root:not([data-theme="aurora"]) #player-card .deck__label {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+:root:not([data-theme="aurora"]) #player-card .deck__letter,
+:root:not([data-theme="aurora"]) #player-card .deck__signal {
+  color: var(--accent);
 }
 
 @media (prefers-reduced-motion: reduce) {

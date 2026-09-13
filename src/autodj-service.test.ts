@@ -197,6 +197,9 @@ test("owned-request metadata removes video promotions without removing mix versi
   assert.equal(calls[0].body.track.requestedFromTitle, "To The Ground (Extended Mix)");
   assert.equal(displayTitle, "JNW - To The Ground (Official Hardstyle Videoclip) [Copyright Free Music]");
   assert.equal(cleanAutoDjOwnedRequestTitle("Track (Official Remix)"), "Track (Official Remix)");
+  assert.equal(cleanAutoDjOwnedRequestTitle("Eiffel 65 - Move Your Body (Original Video with subtitles)"), "Eiffel 65 - Move Your Body");
+  assert.equal(cleanAutoDjOwnedRequestTitle("Track (Original Video Remix)"), "Track (Original Video Remix)");
+  assert.equal(cleanAutoDjOwnedRequestTitle("Bad ft.Vassy (Lyrics Video)"), "Bad ft.Vassy");
 });
 
 test("request-player client monitors remote AutoDJ tracks and forwards mix-next", async (t) => {
@@ -276,6 +279,66 @@ test("request takeover release waits until AutoDJ confirms audible playback", as
   await client.release("skipped_request");
 
   assert.equal(stateCalls, 2);
+  assert.equal(client.getStatus().takeoverActive, false);
+  assert.equal(client.getStatus().state.autoDj.playbackStatus, "playing");
+});
+
+test("request takeover release reapplies activation when playback recovery reports a stopped engine", async (t) => {
+  const calls = [];
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://127.0.0.1:3100",
+    token: "shared-secret",
+    fetchImpl: async (url, options = {}) => {
+      const requestUrl = String(url);
+      calls.push({
+        url: requestUrl,
+        body: options.body ? JSON.parse(options.body) : null
+      });
+      if (requestUrl.endsWith("/handoff/request-finished")) {
+        return new Response(JSON.stringify({
+          accepted: true,
+          sequence: 21,
+          state: { activation: { effective: true } }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      if (requestUrl.endsWith("/control/activation")) {
+        return new Response(JSON.stringify({
+          accepted: true,
+          sequence: 22,
+          state: { activation: { effective: true } }
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      const recovering = calls.some((call) => call.url.endsWith("/control/activation"));
+      return new Response(JSON.stringify(recovering ? {
+        application: { lastAppliedSequence: 22, lastApplyOutcome: "applied" },
+        activation: { effective: true },
+        takeover: null,
+        autoDj: { playbackStatus: "playing" }
+      } : {
+        application: {
+          lastAppliedSequence: 21,
+          lastApplyOutcome: "failed",
+          lastApplyError: "The native audio engine is stopped."
+        },
+        activation: { effective: true },
+        takeover: null,
+        autoDj: { playbackStatus: "paused" }
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+    setTimeoutFn: (callback) => {
+      callback();
+      return { unref() {} };
+    }
+  });
+  t.after(() => client.close());
+
+  const result = await client.release("final_request_finished");
+
+  const activationCall = calls.find((call) => call.url.endsWith("/control/activation"));
+  assert.equal(result.recovered, true);
+  assert.equal(activationCall.body.enabled, true);
+  assert.equal(activationCall.body.fadeSeconds, 0);
+  assert.equal(activationCall.body.reason, "request_release_recovery");
   assert.equal(client.getStatus().takeoverActive, false);
   assert.equal(client.getStatus().state.autoDj.playbackStatus, "playing");
 });

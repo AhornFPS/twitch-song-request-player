@@ -14,9 +14,12 @@ function isAutoDjEditorialTitleDecoration(value) {
     .trim();
   const describesMedia = /\b(?:audio|video|videoclip|visualizer|lyrics?|lyric video)\b/.test(normalized);
   const isOfficialMedia = /\bofficial\b/.test(normalized) && describesMedia;
+  const isLyricVideo = /\blyrics? video\b/.test(normalized);
+  const isOriginalVideo = /\boriginal video\b/.test(normalized) &&
+    !/\b(?:remix|mix|edit|bootleg|live)\b/.test(normalized);
   const isRightsFree = /\b(?:copyright|royalty) free\b/.test(normalized)
     || /\bno copyright\b/.test(normalized);
-  return isOfficialMedia || isRightsFree;
+  return isOfficialMedia || isLyricVideo || isOriginalVideo || isRightsFree;
 }
 
 export function cleanAutoDjOwnedRequestTitle(value) {
@@ -307,7 +310,8 @@ export class AutoDjServiceClient {
 
   async setActivation(enabled, {
     fadeSeconds = 2,
-    reason = "music_control_center"
+    reason = "music_control_center",
+    requirePlaybackActive = false
   } = {}) {
     if (!this.serviceUrl) {
       throw new Error("The AutoDJ service URL is not configured.");
@@ -327,7 +331,8 @@ export class AutoDjServiceClient {
       );
       this.markSuccess(result);
       await this.waitForCommandApplication(result, {
-        requireActivation: enabled === true
+        requireActivation: enabled === true,
+        requirePlaybackActive: enabled === true && requirePlaybackActive === true
       });
       this.logInfo("Applied Music Control Center AutoDJ authority", {
         enabled: enabled === true,
@@ -440,6 +445,41 @@ export class AutoDjServiceClient {
       this.leaseId = crypto.randomUUID();
       return result;
     } catch (error) {
+      const state = this.lastStatus.state && typeof this.lastStatus.state === "object"
+        ? this.lastStatus.state
+        : {};
+      const recoveryEligible = (
+        ["autodj_application_failed", "autodj_application_timeout"].includes(String(error?.code ?? "")) &&
+        state?.activation?.effective === true &&
+        !state?.takeover
+      );
+      if (recoveryEligible) {
+        try {
+          const recovery = await this.setActivation(true, {
+            fadeSeconds: 0,
+            reason: "request_release_recovery",
+            requirePlaybackActive: true
+          });
+          this.activeTrack = null;
+          this.lastStatus.takeoverActive = false;
+          this.logInfo("Recovered AutoDJ playback after request takeover release", {
+            reason,
+            leaseId: this.leaseId
+          });
+          this.leaseId = crypto.randomUUID();
+          return {
+            recovered: true,
+            recovery
+          };
+        } catch (recoveryError) {
+          this.markFailure(recoveryError);
+          this.logWarn("Could not recover AutoDJ playback after request takeover release", {
+            reason,
+            message: recoveryError?.message ?? String(recoveryError)
+          });
+          throw recoveryError;
+        }
+      }
       this.markFailure(error);
       this.logWarn("Could not release AutoDJ request takeover", { reason, message: error?.message ?? String(error) });
       throw error;

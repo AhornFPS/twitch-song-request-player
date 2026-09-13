@@ -42,7 +42,7 @@
     <iframe id="autodj-frame" class="overlay-frame" title="Standalone AutoDJ OBS Output" allow="autoplay"></iframe>
     <iframe id="request-frame" class="overlay-frame" title="Viewer Request OBS Overlay" allow="autoplay"></iframe>
     <script>
-      const overlaySources = {"request":"http://127.0.0.1:3000/overlay?obsLoader=1&unifiedOverlay=1","autodj":"http://127.0.0.1:3000/autodj-output?style=broadcast&obsLoader=1&unifiedOverlay=1"};
+      const overlaySources = {"request":"http://127.0.0.1:3000/overlay?obsLoader=1&unifiedOverlay=1","autodj":"http://127.0.0.1:3000/autodj-output?style=extended&obsLoader=1&unifiedOverlay=1"};
       const appVersion = "2.10.17";
       const retryIntervalMs = 2000;
       const frames = {
@@ -95,8 +95,8 @@
       }
 
       function applyActiveSurface() {
-        // A viewer request owns the shared OBS surface for the duration of its
-        // acknowledged AutoDJ takeover. Otherwise the standalone mixer owns it.
+        // Viewer requests temporarily own the unified surface. Standalone
+        // AutoDJ remains on its extended surface outside request takeover.
         if (active.request) {
           showRole("request");
         } else if (active.autodj) {
@@ -116,12 +116,16 @@
           ready[role] = true;
           stopRetry(role);
           if (loaderStatus) loaderStatus.textContent = role + " overlay connected.";
+          applyActiveSurface();
           return;
         }
         if (event.data?.type !== "tsrp:overlay-state") return;
         ready[role] = true;
         stopRetry(role);
-        active[role] = Boolean(event.data.currentTrack);
+        active[role] = Boolean(
+          event.data.currentTrack &&
+          (role !== "request" || event.data.currentTrack.provider !== "autodj")
+        );
         applyActiveSurface();
       });
 

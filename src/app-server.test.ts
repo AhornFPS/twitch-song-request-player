@@ -83,6 +83,26 @@ function createJsonResponse(payload, status = 200) {
   });
 }
 
+test("waiting requests repair lost AutoDJ authority and engine restarts resynchronize", async () => {
+  const source = await fs.readFile(path.join(appRootDir, "src", "app-server.ts"), "utf8");
+
+  assert.match(
+    source,
+    /if \(!autoDjAuthoritySynchronized\) \{[\s\S]*?await synchronizeAutoDjActivation\(currentSettings\.autoDjEnabled === true\)/,
+    "a waiting request must actively repair authority instead of remaining held forever"
+  );
+  assert.match(
+    source,
+    /if \(engineEpoch === observedAutoDjEngineEpoch\)[\s\S]*?autoDjAuthoritySynchronized = false;[\s\S]*?synchronizeAutoDjActivation\(currentSettings\.autoDjEnabled === true\)[\s\S]*?playerController\.ensurePlayback\(\)/,
+    "a new standalone engine epoch must reapply authority and wake the request queue"
+  );
+  assert.match(
+    source,
+    /autoDjAuthoritySynchronization\.client === autoDjServiceClient[\s\S]*?return await autoDjAuthoritySynchronization\.promise/,
+    "concurrent queue retries must share one authority command"
+  );
+});
+
 test("app server closes even when a client keeps a connection open", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
@@ -235,7 +255,7 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   );
   assert.match(
     overlayLoaderHtml,
-    /autodj-output\?style=broadcast&obsLoader=1&unifiedOverlay=1/
+    /autodj-output\?style=extended&obsLoader=1&unifiedOverlay=1/
   );
   assert.match(overlayLoaderHtml, /id="autodj-frame"/);
   assert.match(overlayLoaderHtml, /id="request-frame"/);
@@ -243,7 +263,11 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.match(overlayLoaderHtml, /tsrp:overlay-ready/);
   assert.match(overlayLoaderHtml, /tsrp:autodj-overlay-ready/);
   assert.match(overlayLoaderHtml, /tsrp:overlay-state/);
-  assert.match(overlayLoaderHtml, /ready\[role\] = true;\s+stopRetry\(role\);/);
+  assert.match(overlayLoaderHtml, /event\.data\.currentTrack\.provider !== "autodj"/);
+  assert.match(
+    overlayLoaderHtml,
+    /ready\[role\] = true;\s+stopRetry\(role\);[\s\S]*?applyActiveSurface\(\);\s+return;/
+  );
 });
 
 test("settings API stays loopback-local and does not expose stored secrets", async (t) => {

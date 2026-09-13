@@ -4,6 +4,28 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Use Suno's playable `media_urls` fallback when the page's `audio_url` is the current forbidden API sentinel.
+
+- Cancel in-flight OBS fallback starts on skip or stop, and serialize source changes so an older request cannot overwrite its replacement.
+
+- Ignore original-video subtitle labels when matching requests to the AutoDJ local collection, while retaining remix names.
+
+- Prevent delayed embedded-player errors from repeatedly restarting an already playing OBS YouTube request.
+
+- Recheck local song-request ownership after takeover acknowledgement, preventing late imports from also starting in the external player and releasing the provisional AutoDJ lease.
+
+- Give newly requested local imports up to 45 seconds to reach AutoDJ before external takeover; retry unavailable ownership checks without treating them as missing tracks.
+- Clear and retry the persisted OBS YouTube fallback URL at startup and after release failures, even when the control center is already idle and no longer remembers the fallback track owner.
+- Route locally owned requests such as `Bad ft.Vassy (Lyrics Video)` through AutoDJ by removing standalone lyric-video labels and preserving a safe trailing featured-artist title alias.
+- Keep a GPU crash or interrupted request-audit write from blocking Music Control Center startup by using atomic primary and backup snapshots and recovering with empty audit history when both are damaged.
+- Recover an unconfirmed embedded YouTube request through the configured OBS fallback after the startup timeout instead of leaving its UI and overlay clock stuck at zero.
+- Retry and single-flight AutoDJ authority synchronization for waiting requests, and automatically resynchronize when the standalone engine epoch changes instead of leaving the queue held forever.
+- Increase small badges, timers, queue details, and theme-specific micro-labels across OBS overlay themes so they remain readable after stream compression.
+- Retry viewer-request takeover after a transient AutoDJ application failure, and reapply AutoDJ authority if final release finds its native engine stopped, instead of leaving either side silent.
+- Split the stream-PC music visuals into clearly named Small Overlay and Extended Overlay OBS sources while keeping YouTube fallback playback separate.
+- Announce the already-playing standalone AutoDJ track after Twitch reconnects or the Control Center restarts.
+- Keep the compact OBS player visible for standalone AutoDJ tracks while the separate YouTube fallback source owns blocked YouTube playback.
+- Show standalone AutoDJ tracks as `Artist - Title` throughout the compact OBS overlay, including the current, next, and later queue rows.
 - Match owned AutoDJ requests against the real artist/title by removing bracketed YouTube video and copyright-free promotions from API metadata while preserving remix and version labels.
 - Keep confirmed standalone AutoDJ track changes announcing in Twitch chat when AutoDJ is visibly active after a lost controller synchronization acknowledgement.
 - Keep `!skip` from leaving music silent by retrying final viewer-request takeover release, waiting for standalone AutoDJ to confirm audible playback after release or Mix Next, and retrying controller authority synchronization while AutoDJ starts.
