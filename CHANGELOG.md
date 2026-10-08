@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.11.1 - 2026-10-08
+
 - Choose whether the Twitch bot announces all tracks, song requests only, or no tracks; requests-only skips playlist fallbacks, radio, and automatic AutoDJ tracks.
 
 - Show a persistent Save changes bar and mark tabs with unsaved settings; keep pending edits through automatic saves, show save failures with retry, and warn before leaving with unsaved changes.
