@@ -6,6 +6,37 @@ import path from "node:path";
 import test from "node:test";
 import { PlaylistRepository } from "./playlist-repository.js";
 
+test("starting a fresh library clears every page and review flags and persists an empty reusable library", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-fresh-library-"));
+  const playlistPath = path.join(runtimeDir, "playlist.csv");
+  t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
+  const csv = "Link,Title\n" + Array.from({ length: 105 }, (_, index) =>
+    `https://soundcloud.com/test/track-${index},Test track ${index}\n`
+  ).join("");
+  await fs.writeFile(playlistPath, csv, "utf8");
+  const repository = new PlaylistRepository(playlistPath);
+  await repository.init();
+  const track = repository.getTrackForKey("soundcloud:https://soundcloud.com/test/track-0");
+  await repository.recordTrackPlaybackFailure(track);
+  assert.equal(repository.listTracks().totalPages, 2);
+  assert.equal(repository.listReviewTracks().summary.flaggedCount, 1);
+
+  const result = await repository.importFromCsv("Link,Title\n", { mode: "replace" });
+
+  assert.equal(result.finalCount, 0);
+  assert.equal(repository.listTracks().total, 0);
+  assert.equal(repository.listReviewTracks().summary.flaggedCount, 0);
+  assert.equal(repository.listReviewTracks().summary.totalFailureCount, 0);
+  assert.equal(await fs.readFile(playlistPath, "utf8"), "Link,Title\n");
+  const reopened = new PlaylistRepository(playlistPath);
+  await reopened.init();
+  assert.equal(reopened.listTracks().total, 0);
+  assert.equal(await reopened.getRandomTrack(), null);
+  await reopened.appendTrack(track);
+  assert.equal(reopened.listTracks().total, 1);
+  assert.equal(reopened.listTracks().items[0].health.flagged, false);
+});
+
 test("playlist fallback refreshes undefined youtube titles from the API and persists them", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-playlist-repo-"));
   const playlistPath = path.join(runtimeDir, "playlist.csv");

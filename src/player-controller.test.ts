@@ -2770,3 +2770,42 @@ test("queued ownership rechecks apply a late match only while the request remain
   assert.equal(controller.getPublicState().queue.length, 0);
   assert.equal(checks, 2);
 });
+
+test("owned text lookup preserves the exact edition and has no queue or audit side effects", async () => {
+  const calls = [];
+  const track = { provider: "local", id: "black-hole", key: "local:black-hole", title: "Black Hole (Extended Mix)", artist: "JNXD & RAYZEN" };
+  const { controller } = createController({ routeOwnedRequest: async (identity, options) => { calls.push({ identity, options }); return { matched: true, queued: false, track }; } });
+  assert.equal(await controller.lookupOwnedTextRequest("JNXD & RAYZEN - Black Hole (Extended Mix)"), track);
+  assert.equal(calls[0].identity.trackTitle, "Black Hole (Extended Mix)");
+  assert.equal(calls[0].identity.artist, "JNXD & RAYZEN");
+  assert.deepEqual(calls[0].options, { lookupOnly: true, query: "JNXD & RAYZEN - Black Hole (Extended Mix)" });
+  assert.equal(controller.queue.length, 0);
+  assert.equal(controller.requestEvents.length, 0);
+  assert.equal(await controller.lookupOwnedTextRequest("https://youtube.com/watch?v=identity"), null);
+  assert.equal(await controller.lookupOwnedTextRequest("Headhunterz Vs Wildstylez Blame it on the music"), track);
+  assert.equal(calls.at(-1).options.query, "Headhunterz Vs Wildstylez Blame it on the music");
+  assert.equal(calls.at(-1).identity.artist, "");
+  assert.equal(calls.length, 2);
+  controller.routeOwnedRequest = async () => ({ matched: false, unavailable: true });
+  await assert.rejects(controller.lookupOwnedTextRequest("Missing - Song (Remix)"), { code: "local_request_lookup_unavailable" });
+  await assert.rejects(controller.addRequest(track), /local track could not be queued/);
+  assert.equal(controller.queue.length, 0);
+});
+
+test("ambiguous original queries stop before external fallback or queue mutation", async () => {
+  const { controller } = createController({ routeOwnedRequest: async () => ({ matched: false, queued: false,
+    resolution: { status: "ambiguous", candidates: [
+      { provider: "local", title: "Song (Radio Edit)", artist: "Artist" },
+      { provider: "local", title: "Song (Extended Mix)", artist: "Artist" }
+    ] } }) });
+  await assert.rejects(controller.lookupOwnedTextRequest("Artist Song"), error =>
+    error.code === "local_request_ambiguous" && error.message.includes("Song (Extended Mix)"));
+  assert.equal(controller.queue.length, 0);
+  assert.equal(controller.requestEvents.length, 0);
+  controller.routeOwnedRequest = async () => ({ matched: false, queued: false, resolution: { status: "not_found" } });
+  assert.equal(await controller.lookupOwnedTextRequest("Absent Artist Song"), null);
+  controller.routeOwnedRequest = async () => ({ matched: false, queued: false, unsupported: true });
+  assert.equal(await controller.lookupOwnedTextRequest("Old Engine Song"), null);
+  controller.routeOwnedRequest = async () => { throw new Error("disconnected"); };
+  await assert.rejects(controller.lookupOwnedTextRequest("Artist Song"), { code: "local_request_lookup_unavailable" });
+});

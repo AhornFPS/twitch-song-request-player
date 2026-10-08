@@ -27,6 +27,8 @@ let playlistQuery = "";
 let playlistSortBy = "recent";
 let playlistSearchDebounceTimer = null;
 let playlistImportMode = "append";
+let playlistResetPending = false;
+let youtubePlaylistImportPending = false;
 let playlistSelectedKeys = new Set();
 let settingsPayload = null;
 let playbackState = null;
@@ -783,12 +785,19 @@ function renderDashboard() {
               <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
               <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
             </form>
+            <form id="playlist-youtube-form" class="playlist-add-form">
+              <input id="playlist-youtube-input" class="control-input" type="url" aria-label="YouTube playlist URL" aria-describedby="playlist-youtube-help" placeholder="https://www.youtube.com/playlist?list=..." autocomplete="off" required />
+              <button id="playlist-youtube-button" class="secondary-button" type="submit">Import YouTube playlist</button>
+            </form>
+            <p id="playlist-youtube-help" class="panel-note">Append a public or unlisted YouTube playlist. Duplicates and unavailable videos are skipped. Requires a YouTube API key in Settings.</p>
+            <p id="playlist-youtube-feedback" class="feedback" role="status" aria-live="polite"></p>
             <div class="playlist-tools__body">
               <div class="playlist-tools__actions">
                 <div class="button-row button-row--wrap">
                   <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
                   <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
                   <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
+                  <button id="playlist-fresh-button" class="ghost-button ghost-button--danger" type="button">Start fresh library</button>
                 </div>
                 <div class="button-row button-row--wrap">
                   <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
@@ -2721,6 +2730,9 @@ function applyPlaylistState() {
   }
   if (emptyState) {
     emptyState.hidden = (playlistPayload.items || []).length > 0;
+    emptyState.textContent = playlistQuery
+      ? "No playlist tracks matched this search."
+      : "Your library is empty. Add a track or import a CSV to get started.";
   }
   if (!tableBody) {
     return;
@@ -2788,6 +2800,45 @@ async function bulkQueuePlaylistTracks() {
     );
   } catch (error) {
     setPlaylistFeedback(error?.message || "Could not queue the selected playlist tracks.", "error");
+  }
+}
+
+async function startFreshLibrary() {
+  if (playlistResetPending || !window.confirm(
+    "Start a fresh library? This removes ALL saved fallback tracks and their review flags, including tracks outside the current search or page.\n\n" +
+    "Current playback, queued requests, history, and settings are kept. Export CSV first if you want a backup.\n\n" +
+    "Clear the library?"
+  )) {
+    return;
+  }
+
+  playlistResetPending = true;
+  const button = el("playlist-fresh-button");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Starting fresh…";
+  }
+
+  try {
+    await fetchJson("/api/playlist/import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mode: "replace", csvText: "Link,Title\n" })
+    });
+    clearTimeout(playlistSearchDebounceTimer);
+    playlistSelectedKeys = new Set();
+    playlistQuery = "";
+    playlistPage = 1;
+    await loadPlaylist();
+    setPlaylistFeedback("Fresh library started. Add tracks or import a CSV to get started.", "success");
+  } catch (error) {
+    setPlaylistFeedback(error?.message || "Could not start a fresh library.", "error");
+  } finally {
+    playlistResetPending = false;
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Start fresh library";
+    }
   }
 }
 
@@ -3240,6 +3291,51 @@ async function cancelTwitchAuth() {
     setFeedback("Twitch login cancelled.", "warning");
   } catch (error) {
     setFeedback(error?.message || "Could not cancel Twitch login.", "error");
+  }
+}
+
+async function importYoutubePlaylist(event) {
+  event.preventDefault();
+  if (youtubePlaylistImportPending) return;
+  const input = el("playlist-youtube-input");
+  const button = el("playlist-youtube-button");
+  const feedback = el("playlist-youtube-feedback");
+  const url = input?.value.trim() || "";
+  if (!url || !button || !feedback) return;
+
+  youtubePlaylistImportPending = true;
+  input.disabled = true;
+  button.disabled = true;
+  button.textContent = "Importing…";
+  feedback.className = "feedback";
+  feedback.textContent = "Reading the YouTube playlist and checking its videos. Large playlists may take a moment…";
+  try {
+    const result = await fetchJson("/api/playlist/import-youtube", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url })
+    });
+    input.value = "";
+    clearTimeout(playlistSearchDebounceTimer);
+    playlistQuery = "";
+    playlistPage = 1;
+    const summary = `Added ${result.addedCount} track${result.addedCount === 1 ? "" : "s"} from ${result.title}. Skipped ${result.duplicateCount} duplicate${result.duplicateCount === 1 ? "" : "s"} and ${result.skippedCount} unavailable video${result.skippedCount === 1 ? "" : "s"}.`;
+    feedback.textContent = summary;
+    feedback.className = `feedback is-${result.addedCount > 0 ? "success" : "warning"}`;
+    try {
+      await loadPlaylist();
+    } catch {
+      feedback.textContent = `${summary} Refresh the library to see the updated list.`;
+      feedback.className = "feedback is-warning";
+    }
+  } catch (error) {
+    feedback.textContent = error?.message || "Could not import the YouTube playlist.";
+    feedback.className = "feedback is-error";
+  } finally {
+    youtubePlaylistImportPending = false;
+    input.disabled = false;
+    button.disabled = false;
+    button.textContent = "Import YouTube playlist";
   }
 }
 
@@ -4122,6 +4218,8 @@ root.addEventListener("click", (event) => {
     }
   } else if (event.target.id === "playlist-export-button") {
     void exportPlaylist();
+  } else if (event.target.id === "playlist-fresh-button") {
+    void startFreshLibrary();
   } else if (event.target.id === "playlist-export-selected-button") {
     void exportSelectedPlaylistTracks();
   } else if (event.target.id === "playlist-bulk-queue-button") {
@@ -4161,6 +4259,8 @@ root.addEventListener("submit", (event) => {
     void addOverviewQueueTrack(event);
   } else if (form.id === "playlist-add-form") {
     void addPlaylistTrack(event);
+  } else if (form.id === "playlist-youtube-form") {
+    void importYoutubePlaylist(event);
   }
 });
 

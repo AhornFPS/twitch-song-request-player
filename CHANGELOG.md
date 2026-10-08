@@ -4,6 +4,22 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Import public or unlisted YouTube playlists into the fallback library, with duplicate and unavailable-video counts.
+
+- Add a confirmed "Start fresh library" action to clear saved fallback tracks and review flags while keeping playback, queued requests, history, and settings.
+
+- Ask AutoDJ to resolve the original song-request text against its collection before YouTube search, including names without an artist/title separator; request a specific recording when local artists or versions are ambiguous.
+
+- Recognize artist/title separators containing invisible direction marks in YouTube titles, so locally owned songs reach AutoDJ with the recording artist instead of the uploader.
+
+- Match named local songs before YouTube search, preserving explicit extended and remix versions and keeping requests in AutoDJ's native queue.
+
+- Match dotted-initial song titles such as I.C.B and ICB consistently, including official Topic uploads, while keeping artist and title checks.
+
+- Reject unrelated YouTube search results for song names instead of queuing a different song; check up to ten candidates and verify the selected video's metadata.
+
+- Start waiting song requests before AutoDJ's transition activation window closes, preventing continuous mixes from postponing external requests indefinitely.
+
 - Use Suno's playable `media_urls` fallback when the page's `audio_url` is the current forbidden API sentinel.
 
 - Cancel in-flight OBS fallback starts on skip or stop, and serialize source changes so an older request cannot overwrite its replacement.

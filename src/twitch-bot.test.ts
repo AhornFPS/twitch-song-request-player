@@ -9,6 +9,7 @@ function createBotHarness({
   suppressChatMessages = false,
   addRequestResult = null,
   addRequestImpl = null,
+  lookupOwnedTextRequest = async () => null,
   resolvedTrack = null,
   resolvedPlaylist = null,
   appendTracksToPlaylistResult = {
@@ -43,6 +44,7 @@ function createBotHarness({
   const sentMessages = [];
   const requestAuditEvents = [];
   const playerController = {
+    lookupOwnedTextRequest,
     onTrackPlayback(listener) {
       playbackListener = listener;
       return () => {
@@ -1352,4 +1354,47 @@ test("duplicate requests for the current song send the already playing warning",
       message: "Song Current Duplicate Track is already playing"
     }
   ]);
+});
+
+test("Black Hole explicit local edition resolves without a provider result and keeps policy checks", async () => {
+  const local = { provider: "local", title: "Black Hole (Extended Mix)", artist: "JNXD & RAYZEN", key: "local:black-hole", durationSeconds: 265 };
+  let queued = 0;
+  const harness = createBotHarness({ currentTrack: null,
+    lookupOwnedTextRequest: async query => { assert.equal(query, "JNXD & RAYZEN - Black Hole (Extended Mix)"); return local; },
+    addRequestImpl: async track => { queued++; assert.equal(track.key, local.key); return { ...track, queuedForAutoDj: true }; }
+  });
+  harness.bot.songRequestResolver = async () => { throw new Error("YouTube must not be needed for an owned edition"); };
+  await harness.bot.handleCommand("#testchannel", { username: "viewer", "display-name": "Viewer" }, "!sr JNXD & RAYZEN - Black Hole (Extended Mix)");
+  assert.equal(queued, 1);
+  assert.match(harness.sentMessages.at(-1).message, /Queued for the next AutoDJ mix/);
+  harness.bot.config.requestPolicy.maxTrackDurationSeconds = 180;
+  await harness.bot.handleCommand("#testchannel", { username: "viewer" }, "!sr JNXD & RAYZEN - Black Hole (Extended Mix)");
+  assert.equal(queued, 1);
+  assert.match(harness.sentMessages.at(-1).message, /too long/);
+});
+
+test("freeform chat requests use the native collection before any provider search", async () => {
+  const query = "Headhunterz Vs Wildstylez Blame it on the music";
+  const local = { provider: "local", id: "blame", key: "local:blame", title: "Blame It On The Music", artist: "Headhunterz Vs Wildstylez", durationSeconds: 325 };
+  let queued = 0;
+  const harness = createBotHarness({ currentTrack: null,
+    lookupOwnedTextRequest: async text => { assert.equal(text, query); return local; },
+    addRequestImpl: async track => { queued++; assert.equal(track.id, "blame"); return { ...track, queuedForAutoDj: true }; }
+  });
+  harness.bot.songRequestResolver = async () => { throw new Error("provider search must be skipped"); };
+  await harness.bot.handleCommand("#testchannel", { username: "viewer" }, `!sr ${query}`);
+  assert.equal(queued, 1);
+  assert.match(harness.sentMessages.at(-1).message, /Queued for the next AutoDJ mix/);
+});
+
+test("ambiguous native requests ask for a version and never search or queue externally", async () => {
+  const harness = createBotHarness({ currentTrack: null, lookupOwnedTextRequest: async () => {
+    const error = new Error("Several local recordings match. Please include the artist and full version.");
+    error.code = "local_request_ambiguous";
+    throw error;
+  }, addRequestImpl: async () => { throw new Error("must not queue"); } });
+  harness.bot.songRequestResolver = async () => { throw new Error("must not search"); };
+  await harness.bot.handleIncomingMessage("#testchannel", { username: "viewer" }, "!sr Artist Song", false);
+  assert.match(harness.sentMessages.at(-1).message, /include the artist and full version/);
+  assert.equal(harness.requestAuditEvents.at(-1).reason, "local_request_ambiguous");
 });

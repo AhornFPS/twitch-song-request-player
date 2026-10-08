@@ -13,7 +13,9 @@ test("only the external AutoDJ controller boundary remains in runtime surfaces",
   const dashboard = read("client/dashboard.ts");
 
   assert.doesNotMatch(server, /\/api\/local-music|\/autodj-overlay|AutoDjServiceCoordinator|LocalMusic|NativeAutoDj/);
-  assert.doesNotMatch(player, /autoDjRequestQueue|localAssetId|provider === ["']local|player:autodj/);
+  // Local metadata is projected by the standalone service. The request player
+  // must never implement its own library, audio runtime or mixing queue.
+  assert.doesNotMatch(player, /autoDjRequestQueue|localAssetId|LocalMusicLibrary|NativeAutoDjAudio|AutoDjMixer|player:autodj/);
   assert.doesNotMatch(browserPlayer, /player:autodj|AutoDjMixer|native-autodj|provider === ["']local/);
   assert.doesNotMatch(dashboard, /local-music-autodj|transition-lab|autodj-mix-style|autodj-audio-backend/);
 

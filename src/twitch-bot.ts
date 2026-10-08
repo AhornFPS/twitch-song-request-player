@@ -575,9 +575,13 @@ export class TwitchBot {
       }
 
       let resolvedTrack;
+      let ownedTextRequest = false;
 
       try {
-        resolvedTrack = await this.songRequestResolver(query, this.config.youtubeApiKey, {
+        resolvedTrack = this.config.requestPolicy?.allowSearchRequests === false ? null
+          : await this.playerController.lookupOwnedTextRequest?.(query);
+        ownedTextRequest = resolvedTrack?.provider === "local";
+        resolvedTrack ??= await this.songRequestResolver(query, this.config.youtubeApiKey, {
           allowSearchRequests: this.config.requestPolicy?.allowSearchRequests,
           youtubeSafeSearch: this.config.requestPolicy?.youtubeSafeSearch,
           preferYouTubeApiMetadata: true
@@ -603,7 +607,7 @@ export class TwitchBot {
         ? resolvedTrack.requestedFromProvider.trim().toLowerCase()
         : resolvedTrack.provider;
 
-      if (!allowedProviders.includes(requestedProvider)) {
+      if (!ownedTextRequest && !allowedProviders.includes(requestedProvider)) {
         const providerBlockedMessage = `${requestedProvider} requests are currently disabled.`;
         await this.auditRejectedSongRequest({
           tags,

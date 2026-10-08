@@ -170,7 +170,7 @@ export function extractYouTubePlaylistId(rawUrl) {
     return null;
   }
 
-  if (!YOUTUBE_HOSTS.has(url.hostname.toLowerCase())) {
+  if (!["https:", "http:"].includes(url.protocol) || !YOUTUBE_HOSTS.has(url.hostname.toLowerCase())) {
     return null;
   }
 
@@ -582,9 +582,14 @@ function attachResolvedSource(playableTrack, sourceTrack) {
 
 function normalizeMatchText(value) {
   return String(value ?? "")
+    .normalize("NFKC")
     .toLowerCase()
+    // Keep dotted initials as a word before punctuation removal. Otherwise
+    // I.C.B becomes three discarded one-letter tokens and cannot match itself.
+    .replace(/(?<![\p{L}\p{N}])(?:\p{L}\.)+\p{L}(?![\p{L}\p{N}])/gu,
+      initials => initials.replaceAll(".", ""))
     .replaceAll("&", " and ")
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -594,7 +599,7 @@ function getMatchTokens(value) {
     normalizeMatchText(value)
       .split(" ")
       .map((token) => token.trim())
-      .filter((token) => token.length >= 2)
+      .filter((token) => token.length >= 2 || /[^\x00-\x7f]/.test(token))
   ));
 }
 
@@ -618,7 +623,9 @@ function getTokenCoverage(expectedValue, candidateValue) {
 }
 
 function splitArtistAndTitle(value) {
-  const normalizedValue = normalizeTrackTitle(value, "");
+  // Direction controls affect display, not the recording's artist/title identity.
+  const normalizedValue = normalizeTrackTitle(value, "")
+    .replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "");
   const match = normalizedValue.match(/^(.+?)\s[-–—]\s(.+)$/);
 
   if (!match) {
@@ -1394,7 +1401,7 @@ async function fetchYouTubeVideoMetadataItem(videoId, youtubeApiKey) {
   return items[0] ?? null;
 }
 
-async function fetchYouTubeVideoMetadataItems(videoIds, youtubeApiKey) {
+async function fetchYouTubeVideoMetadataItems(videoIds, youtubeApiKey, fetchMetadata = fetchJson) {
   const normalizedVideoIds = Array.from(
     new Set(
       Array.isArray(videoIds)
@@ -1410,15 +1417,45 @@ async function fetchYouTubeVideoMetadataItems(videoIds, youtubeApiKey) {
     apiUrl.searchParams.set("id", videoIdChunk.join(","));
     apiUrl.searchParams.set("key", youtubeApiKey);
 
-    const response = await fetchJson(apiUrl);
+    const response = await fetchMetadata(apiUrl);
     items.push(...(Array.isArray(response.items) ? response.items : []));
   }
 
   return items;
 }
 
+async function fetchYouTubePlaylistJson(url) {
+  let response;
+  try {
+    response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+    const payload = await response.json();
+    if (response.ok) return payload;
+
+    const reason = payload?.error?.errors?.[0]?.reason;
+    if (["quotaExceeded", "dailyLimitExceeded"].includes(reason)) {
+      throw new Error("YouTube API quota exceeded. Try again after the quota resets.");
+    }
+    if (reason === "playlistNotFound" || response.status === 404) {
+      throw new Error("YouTube playlist not found. Check the link and make sure the playlist is public or unlisted.");
+    }
+    if (["playlistItemsNotAccessible", "playlistOperationUnsupported"].includes(reason)) {
+      throw new Error("This playlist cannot be imported. Use a public or unlisted playlist instead of a private playlist or YouTube Mix.");
+    }
+    throw new Error("YouTube could not read this playlist. Check the YouTube API key in Settings and make sure the playlist is public or unlisted.");
+  } catch (error) {
+    if (!response || error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error("Could not reach YouTube. Check your connection and try importing again.");
+    }
+    if (error instanceof SyntaxError) {
+      throw new Error("YouTube returned an invalid response. Try importing again.");
+    }
+    throw error;
+  }
+}
+
 async function fetchYouTubePlaylistItems(playlistId, youtubeApiKey) {
   const items = [];
+  const seenPageTokens = new Set();
   let nextPageToken = "";
 
   do {
@@ -1432,40 +1469,19 @@ async function fetchYouTubePlaylistItems(playlistId, youtubeApiKey) {
       apiUrl.searchParams.set("pageToken", nextPageToken);
     }
 
-    const response = await fetchJson(apiUrl);
+    const response = await fetchYouTubePlaylistJson(apiUrl);
     items.push(...(Array.isArray(response.items) ? response.items : []));
     nextPageToken = typeof response.nextPageToken === "string" ? response.nextPageToken : "";
+    if (nextPageToken && seenPageTokens.has(nextPageToken)) {
+      throw new Error("YouTube repeated a playlist page. Try importing again.");
+    }
+    seenPageTokens.add(nextPageToken);
   } while (nextPageToken);
 
   return items;
 }
 
-function buildYouTubePlaylistFallbackTrack({
-  videoId,
-  title,
-  artworkUrl = "",
-  sourceChannelId = "",
-  sourceName = ""
-}) {
-  return {
-    provider: "youtube",
-    url: `https://www.youtube.com/watch?v=${videoId}`,
-    title: buildYouTubeTrackTitle(title, sourceName, `YouTube video ${videoId}`),
-    key: `youtube:${videoId}`,
-    artworkUrl,
-    durationSeconds: null,
-    sourceChannelId,
-    sourceName,
-    sourceUrl: sourceChannelId ? `https://www.youtube.com/channel/${sourceChannelId}` : "",
-    isLive: false
-  };
-}
-
 export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
-  if (!youtubeApiKey) {
-    throw new Error("YouTube API key is required to import YouTube playlists.");
-  }
-
   const provider = detectProvider(rawUrl);
 
   if (provider !== "youtube") {
@@ -1478,13 +1494,17 @@ export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
     throw new Error("Provide a YouTube playlist URL with a list= parameter.");
   }
 
+  if (!youtubeApiKey) {
+    throw new Error("Add a YouTube API key in Settings to import YouTube playlists.");
+  }
+
   const playlistUrl = new URL("https://www.googleapis.com/youtube/v3/playlists");
   playlistUrl.searchParams.set("part", "snippet");
   playlistUrl.searchParams.set("id", playlistId);
   playlistUrl.searchParams.set("key", youtubeApiKey);
 
   const [playlistResponse, playlistItems] = await Promise.all([
-    fetchJson(playlistUrl),
+    fetchYouTubePlaylistJson(playlistUrl),
     fetchYouTubePlaylistItems(playlistId, youtubeApiKey)
   ]);
 
@@ -1492,7 +1512,9 @@ export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
     playlistResponse.items?.[0]?.snippet?.title,
     `YouTube playlist ${playlistId}`
   );
-  const playlistEntriesByVideoId = new Map();
+  const playlistVideoIds = new Set();
+  let duplicateCount = 0;
+  let skippedCount = 0;
 
   for (const item of playlistItems) {
     const snippet = item?.snippet ?? {};
@@ -1503,38 +1525,23 @@ export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
         ? snippet.resourceId.videoId.trim()
         : "";
 
-    if (!videoId || playlistEntriesByVideoId.has(videoId)) {
+    if (!videoId) {
+      skippedCount += 1;
+      continue;
+    }
+    if (playlistVideoIds.has(videoId)) {
+      duplicateCount += 1;
       continue;
     }
 
-    const thumbnails = snippet.thumbnails ?? {};
-    const sourceChannelId = typeof snippet.videoOwnerChannelId === "string" ? snippet.videoOwnerChannelId.trim() : "";
-    const sourceName = typeof snippet.videoOwnerChannelTitle === "string" && snippet.videoOwnerChannelTitle.trim()
-      ? snippet.videoOwnerChannelTitle.trim()
-      : typeof snippet.channelTitle === "string"
-        ? snippet.channelTitle.trim()
-        : "";
-
-    playlistEntriesByVideoId.set(videoId, {
-      videoId,
-      title: typeof snippet.title === "string" ? snippet.title.trim() : "",
-      artworkUrl:
-        thumbnails.maxres?.url ??
-        thumbnails.standard?.url ??
-        thumbnails.high?.url ??
-        thumbnails.medium?.url ??
-        thumbnails.default?.url ??
-        "",
-      sourceChannelId,
-      sourceName
-    });
+    playlistVideoIds.add(videoId);
   }
 
-  if (playlistEntriesByVideoId.size === 0) {
+  if (playlistVideoIds.size === 0) {
     throw new Error("This YouTube playlist does not contain any playable videos.");
   }
 
-  const detailedItems = await fetchYouTubeVideoMetadataItems(Array.from(playlistEntriesByVideoId.keys()), youtubeApiKey);
+  const detailedItems = await fetchYouTubeVideoMetadataItems(Array.from(playlistVideoIds), youtubeApiKey, fetchYouTubePlaylistJson);
   const videoItemsById = new Map(
     detailedItems
       .filter((item) => typeof item?.id === "string" && item.id.trim())
@@ -1542,22 +1549,28 @@ export async function resolveYouTubePlaylistFromApi(rawUrl, youtubeApiKey) {
   );
   const tracks = [];
 
-  for (const [videoId, entry] of playlistEntriesByVideoId.entries()) {
+  for (const videoId of playlistVideoIds) {
     const videoItem = videoItemsById.get(videoId);
 
-    if (videoItem) {
+    if (videoItem && videoItem.status?.privacyStatus !== "private" &&
+        !["deleted", "failed", "rejected"].includes(videoItem.status?.uploadStatus)) {
       tracks.push(buildYouTubeTrackFromVideoApiItem(videoItem));
       continue;
     }
 
-    tracks.push(buildYouTubePlaylistFallbackTrack(entry));
+    skippedCount += 1;
+  }
+
+  if (tracks.length === 0) {
+    throw new Error("This YouTube playlist does not contain any available videos to import.");
   }
 
   return {
     playlistId,
     title: playlistTitle,
-    trackCount: playlistEntriesByVideoId.size,
-    skippedCount: Math.max(playlistEntriesByVideoId.size - tracks.length, 0),
+    trackCount: playlistItems.length,
+    duplicateCount,
+    skippedCount,
     tracks
   };
 }
@@ -1648,18 +1661,30 @@ export async function searchYouTubeMusic(query, youtubeApiKey, { safeSearch = "n
     throw new Error("YouTube search requires YOUTUBE_API_KEY in your .env file.");
   }
 
-  const item = (await searchYouTubeVideos(trimmedQuery, youtubeApiKey, {
+  const identity = splitArtistAndTitle(trimmedQuery);
+  const expected = { title: identity?.trackTitle || trimmedQuery, sourceName: identity?.artist || "" };
+  const matches = (await searchYouTubeVideos(trimmedQuery, youtubeApiKey, {
     safeSearch,
-    maxResults: 1
-  }))[0];
+    maxResults: 10
+  })).map(item => scoreExternalYouTubeCandidate(item, expected));
+  const item = matches.filter(match => isAcceptableExternalYouTubeCandidate(match, expected) &&
+    (!identity || match.sourceCoverage >= 0.5))
+    .sort((left, right) => right.score - left.score)[0]?.item;
 
   if (!item?.id?.videoId) {
-    throw new Error(`No YouTube music result found for "${trimmedQuery}".`);
+    throw new Error(`No close YouTube music result found for "${trimmedQuery}". Try a direct song link.`);
   }
 
   const videoId = item.id.videoId;
   const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
   const detailedTrack = await resolveYouTubeTrackFromApi(videoUrl, youtubeApiKey);
+  const detailedMatch = scoreExternalYouTubeCandidate({id: {videoId}, snippet: {
+    title: detailedTrack.title, channelTitle: detailedTrack.sourceName
+  }}, expected);
+  if (!isAcceptableExternalYouTubeCandidate(detailedMatch, expected) ||
+      (identity && detailedMatch.sourceCoverage < 0.5)) {
+    throw new Error(`The YouTube result did not match "${trimmedQuery}". Try a direct song link.`);
+  }
 
   return {
     ...detailedTrack,

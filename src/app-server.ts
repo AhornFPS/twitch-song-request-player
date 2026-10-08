@@ -14,7 +14,7 @@ import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
 import { PlayerController } from "./player-controller.js";
 import { ObsYoutubeFallback } from "./obs-youtube-fallback.js";
-import { findYouTubeRadioTracks, getTrackKey, resolveSongRequest, resolveYouTubeTrackFromApi, searchSongRequestCandidates } from "./providers.js";
+import { findYouTubeRadioTracks, getTrackKey, resolveSongRequest, resolveYouTubePlaylistFromApi, resolveYouTubeTrackFromApi, searchSongRequestCandidates } from "./providers.js";
 import { RequestAuditStore } from "./request-audit-store.js";
 import { RuntimeStateStore } from "./runtime-state-store.js";
 import { TwitchBotService } from "./twitch-bot-service.js";
@@ -975,11 +975,14 @@ export async function startAppServer({
         excludeTracks,
         isTrackAllowed: async (track) => !playlistRepository.hasTrack(track)
       }),
-    routeOwnedRequest: async (track) => {
-      if (!currentSettings.autoDjEnabled || !autoDjServiceClient) {
+    routeOwnedRequest: async (track, options = {}) => {
+      if (!currentSettings.autoDjEnabled) {
         return { matched: false, queued: false, track: null };
       }
-      const result = await autoDjServiceClient.queueOwnedRequest(track);
+      if (!autoDjServiceClient) {
+        return { matched: false, queued: false, track: null, unavailable: true };
+      }
+      const result = await autoDjServiceClient.queueOwnedRequest(track, options);
       return { ...result, localImportGraceMs: 45_000 };
     },
     beforeTrackStart: async (track) => {
@@ -1472,7 +1475,7 @@ export async function startAppServer({
         return;
       }
 
-      const track = await resolveSongRequest(input, currentSettings.youtubeApiKey, {
+      const track = await playerController.lookupOwnedTextRequest(input) ?? await resolveSongRequest(input, currentSettings.youtubeApiKey, {
         allowSearchRequests: true,
         youtubeSafeSearch: currentSettings.requestPolicy?.youtubeSafeSearch
       });
@@ -1912,6 +1915,27 @@ export async function startAppServer({
       });
       response.status(500).json({
         error: error?.message ?? "Failed to queue the selected playlist tracks."
+      });
+    }
+  });
+
+  app.post("/api/playlist/import-youtube", async (request, response) => {
+    try {
+      const url = typeof request.body?.url === "string" ? request.body.url.trim() : "";
+      const playlist = await resolveYouTubePlaylistFromApi(url, currentSettings.youtubeApiKey);
+      // Resolve every page before appending, so a failed API request cannot leave a partial import.
+      const result = await playlistRepository.appendTracks(playlist.tracks);
+      response.json({
+        title: playlist.title,
+        addedCount: result.addedCount,
+        duplicateCount: result.duplicateCount + playlist.duplicateCount,
+        skippedCount: playlist.skippedCount,
+        totalCount: playlist.trackCount,
+        finalCount: result.finalCount
+      });
+    } catch (error) {
+      response.status(400).json({
+        error: error?.message ?? "Could not import the YouTube playlist."
       });
     }
   });

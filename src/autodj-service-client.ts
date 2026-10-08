@@ -132,7 +132,10 @@ export class AutoDjServiceClient {
     return this.getStatus();
   }
 
-  async queueOwnedRequest(track) {
+  async queueOwnedRequest(track, { lookupOnly = false, query = "" } = {}) {
+    if (lookupOnly && typeof query === "string" && query.trim()) {
+      return this.resolveOwnedQuery(query, track);
+    }
     if (!this.serviceUrl || !track || typeof track !== "object") {
       return { matched: false, queued: false, track: null };
     }
@@ -162,9 +165,9 @@ export class AutoDjServiceClient {
       }
     });
     try {
-      const result = await this.requestWithRetries("POST", `${AUTODJ_API_PREFIX}/requests/owned`, body);
+      const result = await this.requestWithRetries("POST", `${AUTODJ_API_PREFIX}/requests/${lookupOnly ? "match" : "owned"}`, body);
       this.markSuccess(result);
-      if (result?.matched) {
+      if (result?.matched && !lookupOnly) {
         this.logInfo("Routed owned request to the AutoDJ mix queue", {
           track: result.track,
           queuePosition: result.queuePosition,
@@ -185,6 +188,36 @@ export class AutoDjServiceClient {
         unavailable: true,
         error: error?.message ?? String(error)
       };
+    }
+  }
+
+  async resolveOwnedQuery(query, legacyTrack = null) {
+    if (!this.serviceUrl) {
+      return { matched: false, queued: false, track: null, unavailable: true };
+    }
+    try {
+      const result = await this.requestWithRetries("POST", `${AUTODJ_API_PREFIX}/requests/resolve`,
+        this.commandBody({ query }));
+      const status = result?.resolution?.status;
+      if (!["matched", "ambiguous", "not_found"].includes(status) || result.queued !== false ||
+          result.matched !== (status === "matched") ||
+          (status === "matched" && (result.track?.provider !== "local" || !result.track?.id))) {
+        throw new Error("AutoDJ returned an invalid collection lookup result.");
+      }
+      this.markSuccess(result);
+      return result;
+    } catch (error) {
+      // Compatibility stays read-only. An old engine can still check explicit
+      // artist/title metadata, but never receives a queue command as a probe.
+      if (error?.statusCode === 404) {
+        if (legacyTrack?.artist && legacyTrack?.trackTitle) {
+          return this.queueOwnedRequest(legacyTrack, { lookupOnly: true });
+        }
+        return { matched: false, queued: false, track: null, unsupported: true };
+      }
+      this.markFailure(error);
+      return { matched: false, queued: false, track: null, unavailable: true,
+        invalidQuery: error?.code === "invalid_request_query", error: error?.message ?? String(error) };
     }
   }
 
@@ -396,9 +429,11 @@ export class AutoDjServiceClient {
         };
       }
       const safeLeadSeconds = Math.max(1, Math.min(8, Number(leadSeconds) || 3));
-      const publishedHandoff = typeof autoDj.naturalHandoffInSeconds === "number"
-        ? autoDj.naturalHandoffInSeconds
-        : Number.NaN;
+      // A resident mix owns its activation/pre-roll before audible overlap.
+      // New services publish that earlier acquisition boundary explicitly.
+      const publishedHandoff = Number.isFinite(autoDj.requestHandoffInSeconds)
+        ? autoDj.requestHandoffInSeconds
+        : typeof autoDj.naturalHandoffInSeconds === "number" ? autoDj.naturalHandoffInSeconds : Number.NaN;
       const playbackRate = Number.isFinite(autoDj.playbackRate) && autoDj.playbackRate > 0
         ? autoDj.playbackRate
         : 1;

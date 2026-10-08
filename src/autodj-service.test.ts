@@ -127,6 +127,25 @@ test("normal requests wait for AutoDJ's published natural handoff window", async
   assert.equal(transitioning.retryAfterMs, 1_000);
 });
 
+test("continuous native mixes leave a request acquisition window before activation", async (t) => {
+  const autoDj = { playbackStatus: "playing", currentTrack: { id: "wildin" },
+    naturalHandoffInSeconds: 30.677, requestHandoffInSeconds: 10.677, transitionLive: false };
+  const client = new AutoDjServiceClient({ serviceUrl: "http://127.0.0.1:3100",
+    fetchImpl: async () => new Response(JSON.stringify({ autoDj }), {
+      status: 200, headers: { "content-type": "application/json" }
+    }) });
+  t.after(() => client.close());
+  const waiting = await client.getRequestHandoffReadiness();
+  assert.equal(waiting.ready, false);
+  assert.equal(waiting.retryAfterMs, 7_677);
+  autoDj.naturalHandoffInSeconds = 23;
+  autoDj.requestHandoffInSeconds = 3;
+  assert.deepEqual(await client.getRequestHandoffReadiness(), { ready: true });
+  autoDj.transitionLive = true;
+  autoDj.requestHandoffInSeconds = 0;
+  assert.equal((await client.getRequestHandoffReadiness()).ready, false);
+});
+
 test("request-player client sends resolved metadata to the owned-request endpoint", async (t) => {
   const calls = [];
   const client = new AutoDjServiceClient({
@@ -452,4 +471,78 @@ test("takeover fails closed when AutoDJ never applies the acknowledged command",
     /safety deadline/
   );
   assert.equal(client.getStatus().takeoverActive, false);
+});
+
+test("read-only local name lookup uses its own endpoint and never falls back to queueing on old servers", async (t) => {
+  const calls = [];
+  const client = new AutoDjServiceClient({ serviceUrl: "http://127.0.0.1:3100", token: "test", fetchImpl: async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify({ error: "not found" }), { status: 404, headers: { "content-type": "application/json" } });
+  } });
+  t.after(() => client.close());
+  const result = await client.queueOwnedRequest({ title: "Black Hole (Extended Mix)", artist: "JNXD & RAYZEN" }, { lookupOnly: true });
+  assert.equal(result.matched, false);
+  assert.ok(calls.length > 0);
+  assert.ok(calls.every(call => call.url.endsWith("/requests/match")));
+  assert.equal(calls[0].body.track.title, "Black Hole (Extended Mix)");
+});
+
+test("original query lookup preserves Unicode and validates read-only native responses", async (t) => {
+  const query = "Billx & Dr. Peacock & Gre\u0301goire \u200e- Toi + Moi";
+  let payload = { matched: true, queued: false, track: { provider: "local", id: "toi" }, resolution: { status: "matched", candidates: [] } };
+  const calls = [];
+  const client = new AutoDjServiceClient({ serviceUrl: "http://127.0.0.1:3100", token: "test", fetchImpl: async (url, options) => {
+    calls.push({ url, options, body: JSON.parse(options.body) });
+    return Response.json(payload);
+  } });
+  t.after(() => client.close());
+  const result = await client.queueOwnedRequest({ provider: "local" }, { lookupOnly: true, query });
+  assert.equal(result.track.id, "toi");
+  assert.equal(calls[0].body.query, query);
+  assert.equal(calls[0].body.track, undefined);
+  assert.match(calls[0].url, /\/requests\/resolve$/);
+  assert.equal(calls[0].options.headers.authorization, "Bearer test");
+  for (const status of ["ambiguous", "not_found"]) {
+    payload = { matched: false, queued: false, track: null, resolution: { status, candidates: [] } };
+    assert.equal((await client.resolveOwnedQuery(query)).resolution.status, status);
+  }
+  for (const invalid of [ { ...payload, queued: true }, { matched: true, queued: false, track: { provider: "youtube", id: "toi" }, resolution: { status: "matched" } }, {} ]) {
+    payload = invalid;
+    assert.equal((await client.resolveOwnedQuery(query)).unavailable, true);
+  }
+  assert.ok(calls.every(call => call.url.endsWith("/requests/resolve")));
+});
+
+test("original query lookup on an older engine uses only read-only compatibility", async (t) => {
+  const calls = [];
+  const client = new AutoDjServiceClient({ serviceUrl: "http://127.0.0.1:3100", token: "test", fetchImpl: async (url, options) => {
+    calls.push({ url, body: JSON.parse(options.body) });
+    return url.endsWith("/resolve") ? Response.json({ code: "not_found" }, { status: 404 })
+      : Response.json({ matched: true, queued: false, track: { provider: "local", id: "old" } });
+  } });
+  t.after(() => client.close());
+  assert.equal((await client.queueOwnedRequest({ artist: "Artist", trackTitle: "Song" },
+    { lookupOnly: true, query: "Artist - Song" })).track.id, "old");
+  assert.deepEqual(calls.map(call => call.url.split("/").at(-1)), ["resolve", "match"]);
+  calls.length = 0;
+  assert.equal((await client.resolveOwnedQuery("Artist Song")).unsupported, true);
+  assert.equal(calls.length, 1);
+});
+
+test("original query retries keep their identity and distinguish invalid input from disconnection", async (t) => {
+  const calls = [];
+  const client = new AutoDjServiceClient({ serviceUrl: "http://127.0.0.1:3100", token: "test",
+    setTimeoutFn: callback => { callback(); return { unref() {} }; },
+    fetchImpl: async (url, options) => {
+      calls.push(JSON.parse(options.body));
+      return calls.length < 3 ? Response.json({ error: "offline" }, { status: 503 })
+        : Response.json({ matched: false, queued: false, resolution: { status: "not_found", candidates: [] } });
+    } });
+  t.after(() => client.close());
+  assert.equal((await client.resolveOwnedQuery("Artist Song")).resolution.status, "not_found");
+  assert.equal(new Set(calls.map(body => body.commandId)).size, 1);
+  client.fetchImpl = async () => Response.json({ code: "invalid_request_query", error: "Query too long" }, { status: 400 });
+  assert.equal((await client.resolveOwnedQuery("x".repeat(513))).invalidQuery, true);
+  client.fetchImpl = async () => { throw new Error("offline"); };
+  assert.equal((await client.resolveOwnedQuery("Artist Song")).unavailable, true);
 });

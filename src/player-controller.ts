@@ -973,6 +973,42 @@ export class PlayerController {
     return false;
   }
 
+  async lookupOwnedTextRequest(input) {
+    // Let AutoDJ resolve the original text against its collection before
+    // provider search. Explicit metadata is only for older API compatibility.
+    if (!this.routeOwnedRequest || this.requestPolicy.allowSearchRequests === false ||
+        typeof input !== "string" || /(?:https?:\/\/|www\.)/i.test(input)) return null;
+    const query = input.trim();
+    if (!query) return null;
+    const identity = query.replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "")
+      .match(/^(.+?)\s+[-–—]\s+(.+)$/u);
+    let result;
+    try {
+      result = await this.routeOwnedRequest({ provider: "local", artist: identity?.[1] || "",
+        title: identity?.[2] || query, trackTitle: identity?.[2] || "", url: "" },
+        { lookupOnly: true, query });
+    } catch (error) {
+      throw createRequestPolicyError("local_request_lookup_unavailable",
+        "AutoDJ's collection lookup is temporarily unavailable. Please try again.");
+    }
+    if (result?.resolution?.status === "ambiguous") {
+      const candidates = Array.isArray(result.resolution.candidates) ? result.resolution.candidates.slice(0, 5) : [];
+      const names = candidates.map(track => `${track.artist ? `${track.artist} - ` : ""}${track.title || track.trackTitle || ""}`)
+        .filter(Boolean).slice(0, 3).join("; ");
+      throw createRequestPolicyError("local_request_ambiguous",
+        `Several local recordings match. Please include the artist and full version.${names ? ` Matches: ${names}` : ""}`);
+    }
+    if (result?.invalidQuery) {
+      throw createRequestPolicyError("request_query_invalid", result.error || "That collection search is too long.");
+    }
+    if (result?.unavailable) {
+      throw createRequestPolicyError("local_request_lookup_unavailable",
+        "AutoDJ's collection lookup is temporarily unavailable. Please try again.");
+    }
+    return result?.matched === true && result.queued === false && result.track?.provider === "local"
+      ? result.track : null;
+  }
+
   async addRequest(track, {
     bypassRequestLimits = false,
     requestSource = "unknown",
@@ -1098,6 +1134,11 @@ export class PlayerController {
           duplicateType: null
         };
       }
+    }
+
+    if (track.provider === "local") {
+      // A disappeared local match cannot be played by the external player.
+      throw createRequestPolicyError("local_request_unavailable", "The local track could not be queued by AutoDJ. Please try again.");
     }
 
     const queueTrack = {

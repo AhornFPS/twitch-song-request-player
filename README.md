@@ -21,7 +21,9 @@ npm install
 npm start
 ```
 
-Copy `.env.example` to `.env` or configure the same values in the dashboard. A YouTube API key is needed for text searches, Spotify matching, and metadata repair; direct provider URLs do not require it.
+Copy `.env.example` to `.env` or configure the same values in the dashboard. A YouTube API key is needed for text searches, Spotify matching, playlist imports, and metadata repair; individual direct provider URLs do not require it.
+
+In **Library**, paste a public or unlisted YouTube playlist link into **YouTube playlist URL** and click **Import YouTube playlist**. Video links containing a `list=` parameter also work in this field. The import appends all available videos to the fallback library, skips duplicates and unavailable videos, and reports the counts. Save your YouTube API key in **Settings** first. Importing does not queue tracks or start playback.
 
 ## Connect standalone AutoDJ
 

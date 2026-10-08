@@ -9,6 +9,74 @@ import {
   resolveYouTubePlaylistFromApi,
   resolveYouTubeTrackFromApi
 } from "./providers.js";
+import { AutoDjServiceClient } from "./autodj-service-client.js";
+
+test("Headhunterz search sends the recording identity to AutoDJ across a bidi-marked separator", async (t) => {
+  const originalFetch = global.fetch;
+  const videoTitle = "Headhunterz Vs. Wildstylez \u200e- Blame It On The Music";
+  const videoId = "xebOKzDSb0I";
+  global.fetch = async (url) => {
+    const request = new URL(url);
+    if (request.pathname === "/youtube/v3/search") {
+      return { ok: true, async json() { return { items: [{
+        id: { videoId }, snippet: { title: videoTitle, channelTitle: "Hardztylerz" }
+      }] }; } };
+    }
+    if (request.pathname === "/youtube/v3/videos") {
+      return { ok: true, async json() { return { items: [{
+        id: videoId,
+        snippet: { title: videoTitle, channelTitle: "Hardztylerz", channelId: "uploader-channel" },
+        contentDetails: { duration: "PT5M24S" }, status: { embeddable: true }
+      }] }; } };
+    }
+    throw new Error(`Unexpected metadata request: ${request.pathname}`);
+  };
+  t.after(() => { global.fetch = originalFetch; });
+  const track = await resolveSongRequest("Headhunterz Vs Wildstylez Blame it on the music", "test-api-key");
+  assert.equal(track.artist, "Headhunterz Vs. Wildstylez");
+  assert.equal(track.trackTitle, "Blame It On The Music");
+  assert.equal(track.title, "Headhunterz Vs. Wildstylez - Blame It On The Music");
+  assert.equal(track.sourceName, "Hardztylerz");
+  assert.equal(track.durationSeconds, 324);
+  const calls = [];
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://127.0.0.1:3100", token: "test-token",
+    fetchImpl: async (url, options) => {
+      calls.push({ url, body: JSON.parse(options.body) });
+      return { ok: true, status: 200, async json() {
+        return { matched: true, queued: url.endsWith("/owned"), track: { id: "d535da90bf8323cb", provider: "local" } };
+      } };
+    }
+  });
+  t.after(() => client.close());
+  const result = await client.queueOwnedRequest(track, { lookupOnly: true });
+  assert.equal(result.matched, true);
+  assert.equal(result.queued, false);
+  const ownedResult = await client.queueOwnedRequest(track);
+  assert.equal(ownedResult.queued, true);
+  assert.equal(calls.length, 2);
+  assert.match(calls[0].url, /requests\/match$/);
+  assert.match(calls[1].url, /requests\/owned$/);
+  for (const call of calls) {
+    assert.equal(call.body.track.artist, "Headhunterz Vs. Wildstylez");
+    assert.equal(call.body.track.trackTitle, "Blame It On The Music");
+    assert.equal(call.body.track.sourceName, "Hardztylerz");
+  }
+});
+
+test("YouTube identity parsing ignores bidi presentation marks while preserving recording text", () => {
+  for (const mark of ["\u061c", "\u200e", "\u200f", "\u202a", "\u202b", "\u202c", "\u202d", "\u202e", "\u2066", "\u2067", "\u2068", "\u2069"]) {
+    assert.deepEqual(resolveYouTubeMusicIdentity(`Artist ${mark}-${mark} Song (Named Remix)`, "Uploader"), {
+      artist: "Artist", trackTitle: "Song (Named Remix)", source: "video_title"
+    });
+  }
+  assert.deepEqual(resolveYouTubeMusicIdentity("Dopamine \u200e- S3RL ft Sara", "S3RL"), {
+    artist: "S3RL ft Sara", trackTitle: "Dopamine", source: "video_title_reversed_by_channel"
+  });
+  assert.deepEqual(resolveYouTubeMusicIdentity("Artist\u200cName \u200e- Track (Live)", "Uploader"), {
+    artist: "Artist\u200cName", trackTitle: "Track (Live)", source: "video_title"
+  });
+});
 
 test("soundcloud profile URLs are rejected before metadata lookup", async (t) => {
   const originalFetch = global.fetch;
@@ -386,6 +454,103 @@ test("search-based song requests can be disabled independently from direct links
     }),
     /Search-based song requests are disabled/
   );
+});
+
+test("a song-name search rejects the unrelated result returned for METAL GOD", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  global.fetch = async url => {
+    const requested = new URL(url);
+    assert.equal(requested.pathname, "/youtube/v3/search", "unrelated search results must not reach video resolution");
+    assert.equal(requested.searchParams.get("maxResults"), "10");
+    return {ok: true, json: async () => ({items: [{id: {videoId: "XQEBzauVIlA"},
+      snippet: {title: "The Prodigy - Voodoo People (Pendulum Remix)", channelTitle: "The Prodigy"}}]})};
+  };
+  await assert.rejects(() => resolveSongRequest("Devor & Mc Pez - METAL GOD (Original Mix)", "test-key"), /No close YouTube music result/);
+});
+
+test("song-name search chooses a relevant later result and preserves complete featured credits", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  global.fetch = async url => {
+    const requested = new URL(url);
+    const snippet = {title: "Dual Damage ft. MC Livid - Step Into The Chaos (Official Get Wrecked 2024 Anthem) (Pro Mix)",
+      channelTitle: "xKami Project", liveBroadcastContent: "none", thumbnails: {}};
+    return {ok: true, json: async () => requested.pathname.endsWith("/search") ? {items: [
+      {id: {videoId: "wrong"}, snippet: {title: "Wrong Artist - Step Into The Chaos (Official Get Wrecked 2024 Anthem) (Pro Mix)", channelTitle: "Wrong Artist"}},
+      {id: {videoId: "mEHvo2eANV0"}, snippet}
+    ]} : {items: [{id: "mEHvo2eANV0", snippet, contentDetails: {duration: "PT3M52S"}}]}};
+  };
+  const track = await resolveSongRequest("Dual Damage & MC Livid - Step Into The Chaos (Official Get Wrecked 2024 Anthem) (Pro Mix)", "test-key");
+  assert.equal(track.key, "youtube:mEHvo2eANV0");
+  assert.equal(track.artist, "Dual Damage ft. MC Livid");
+});
+
+test("song-name search rechecks detailed metadata and supports an ordinary unseparated query", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  let changed = false;
+  global.fetch = async url => {
+    const requested = new URL(url);
+    const snippet = {title: "Rick Astley - Never Gonna Give You Up", channelTitle: "Rick Astley", liveBroadcastContent: "none", thumbnails: {}};
+    return {ok: true, json: async () => requested.pathname.endsWith("/search")
+      ? {items: [{id: {videoId: "dQw4w9WgXcQ"}, snippet}]}
+      : {items: [{id: "dQw4w9WgXcQ", snippet: changed ? {...snippet, title: "Unrelated song", channelTitle: "Another artist"} : snippet, contentDetails: {duration: "PT3M34S"}}]}};
+  };
+  const query = "Rick Astley Never Gonna Give You Up";
+  assert.equal((await resolveSongRequest(query, "test-key")).key, "youtube:dQw4w9WgXcQ");
+  changed = true;
+  await assert.rejects(() => resolveSongRequest(query, "test-key"), /result did not match/);
+});
+
+test("song-name relevance preserves non-Latin names and one-character song titles", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  global.fetch = async url => {
+    const requested = new URL(url);
+    const snippet = {title: "宇多田ヒカル - 光", channelTitle: "宇多田ヒカル", liveBroadcastContent: "none", thumbnails: {}};
+    return {ok: true, json: async () => requested.pathname.endsWith("/search")
+      ? {items: [{id: {videoId: "unicode1234"}, snippet}]}
+      : {items: [{id: "unicode1234", snippet, contentDetails: {duration: "PT4M"}}]}};
+  };
+  assert.equal((await resolveSongRequest("宇多田ヒカル - 光", "test-key")).key, "youtube:unicode1234");
+});
+
+test("I.C.B song-name requests retain dotted initials through search and detailed metadata checks", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  let topicUpload = false;
+  global.fetch = async url => {
+    const requested = new URL(url);
+    const snippet = {title: topicUpload ? "I.C.B" : "Crusherz - I.C.B",
+      channelTitle: topicUpload ? "Crusherz - Topic" : "Conspiracy Events & Music",
+      liveBroadcastContent: "none", thumbnails: {}};
+    return {ok: true, json: async () => requested.pathname.endsWith("/search")
+      ? {items: [{id: {videoId: "CfgIkgythE0"}, snippet}]}
+      : {items: [{id: "CfgIkgythE0", snippet, contentDetails: {duration: "PT2M59S"}}]}};
+  };
+  for (topicUpload of [false, true]) {
+    for (const query of ["Crusherz - I.C.B", "Crusherz - I.C.B.", "Crusherz - ICB", "crusherz i.c.b."]) {
+      assert.equal((await resolveSongRequest(query, "test-key")).key, "youtube:CfgIkgythE0", query);
+    }
+  }
+});
+
+test("dotted-initial matching still rejects a different title or artist", async (t) => {
+  const originalFetch = global.fetch;
+  t.after(() => {global.fetch = originalFetch;});
+  let snippet;
+  global.fetch = async url => {
+    assert.ok(new URL(url).pathname.endsWith("/search"), "a wrong identity cannot reach video resolution");
+    return {ok: true, json: async () => ({items: [{id: {videoId: "wrong"}, snippet}]})};
+  };
+  for (snippet of [
+    {title: "Crusherz - I.C.D", channelTitle: "Crusherz"},
+    {title: "Another Artist - I.C.B", channelTitle: "Another Artist - Topic"},
+    {title: "Crusherz - I Can Break", channelTitle: "Crusherz"}
+  ]) {
+    await assert.rejects(() => resolveSongRequest("Crusherz - I.C.B", "test-key"), /No close YouTube music result/);
+  }
 });
 
 test("youtube radio search skips alternate uploads of the seed song", async (t) => {
@@ -1780,7 +1945,7 @@ test("youtube search requests honor the configured safe search mode", async (t) 
     global.fetch = originalFetch;
   });
 
-  const track = await resolveSongRequest("safe song", "api-key", {
+  const track = await resolveSongRequest("safe result", "api-key", {
     allowSearchRequests: true,
     youtubeSafeSearch: "strict"
   });
