@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 2.11.0 - 2026-10-08
+
 - Import public or unlisted YouTube playlists into the fallback library, with duplicate and unavailable-video counts.
 
 - Add a confirmed "Start fresh library" action to clear saved fallback tracks and review flags while keeping playback, queued requests, history, and settings.
