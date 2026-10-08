@@ -9,6 +9,7 @@ import express from "express";
 import http from "node:http";
 import { Server as SocketServer } from "socket.io";
 import { validateChatCommands } from "./chat-commands.js";
+import { checkYouTubeApiKey } from "./youtube-api-check.js";
 import { createConfigStore, hasRequiredSettings } from "./config.js";
 import { logError, logInfo, logWarn } from "./logger.js";
 import { PlaylistRepository } from "./playlist-repository.js";
@@ -1971,6 +1972,17 @@ export async function startAppServer({
     response.send(playlistRepository.exportSelectedCsv(trackKeys));
   });
 
+  app.post("/api/settings/youtube/check", async (request, response) => {
+    response.setHeader("Cache-Control", "no-store");
+    const key = Object.prototype.hasOwnProperty.call(request.body ?? {}, "youtubeApiKey")
+      ? request.body.youtubeApiKey : currentSettings.youtubeApiKey;
+    if (typeof key !== "string") {
+      response.status(400).json({ error: "Enter the YouTube API key as text." });
+      return;
+    }
+    response.json(await checkYouTubeApiKey(key));
+  });
+
   app.put("/api/settings", async (request, response) => {
     try {
       if (request.body?.chatCommands) {
@@ -2036,14 +2048,18 @@ export async function startAppServer({
         }
       }
 
-      const botSettingsChanged = settingsChanged(previousSettings, nextSettings, [
+      const botConnectionKeys = [
         "twitchChannel",
         "twitchUsername",
         "twitchOauthToken",
         "twitchRefreshToken",
         "twitchClientId",
         "twitchClientSecret",
-        "twitchSharedChatForSourceOnly",
+        "twitchSharedChatForSourceOnly"
+      ];
+      const botSettingsChanged = settingsChanged(previousSettings, nextSettings, [
+        ...botConnectionKeys,
+        "twitchTrackAnnouncementMode",
         "chatSuppressedCategories",
         "playbackSuppressedCategories",
         "youtubeApiKey",
@@ -2052,13 +2068,13 @@ export async function startAppServer({
       ]);
 
       const shouldReconnectBot =
-        botSettingsChanged ||
+        settingsChanged(previousSettings, nextSettings, botConnectionKeys) ||
         (hasRequiredSettings(currentSettings) && previousTwitchStatus.state !== "connected");
       const themeChanged = previousSettings.theme !== nextSettings.theme;
       const overlayScaleChanged =
         previousSettings.overlayScalePercent !== nextSettings.overlayScalePercent;
       const portChanged = previousSettings.port !== nextSettings.port;
-      const twitchStatus = shouldReconnectBot
+      const twitchStatus = botSettingsChanged || shouldReconnectBot
         ? await twitchBotService.applySettings(currentSettings)
         : previousTwitchStatus;
 

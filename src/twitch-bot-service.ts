@@ -26,6 +26,7 @@ function toBotConfig(settings) {
       clientId: settings.twitchClientId,
       clientSecret: settings.twitchClientSecret,
       sharedChatForSourceOnly: settings.twitchSharedChatForSourceOnly,
+      trackAnnouncementMode: settings.twitchTrackAnnouncementMode,
       chatSuppressedCategories: settings.chatSuppressedCategories,
       playbackSuppressedCategories: settings.playbackSuppressedCategories
     },
@@ -100,8 +101,7 @@ export class TwitchBotService {
     if (!this.bot || !track) {
       return false;
     }
-    await this.bot.announceNowPlaying(track);
-    return true;
+    return (await this.bot.announceNowPlaying(track)) !== false;
   }
 
   async applySettings(settings) {

@@ -299,6 +299,11 @@ function normalizeRequestPolicy(value) {
   };
 }
 
+function normalizeTrackAnnouncementMode(value) {
+  const mode = trimValue(value).toLowerCase();
+  return ["all", "requests", "off"].includes(mode) ? mode : "all";
+}
+
 function normalizeSettings(raw) {
   const autoDjServiceUrl = normalizeAutoDjServiceUrl(
     raw.autoDjServiceUrl ?? raw.AUTODJ_SERVICE_URL
@@ -317,6 +322,9 @@ function normalizeSettings(raw) {
     twitchSharedChatForSourceOnly: normalizeBoolean(
       raw.twitchSharedChatForSourceOnly ?? raw.TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY,
       false
+    ),
+    twitchTrackAnnouncementMode: normalizeTrackAnnouncementMode(
+      raw.twitchTrackAnnouncementMode ?? raw.TWITCH_TRACK_ANNOUNCEMENT_MODE
     ),
     chatSuppressedCategories: normalizeCategoryList(
       raw.chatSuppressedCategories ?? raw.CHAT_SUPPRESSED_CATEGORIES,
@@ -412,6 +420,12 @@ function normalizeOverrideSettings(raw) {
     overrides.twitchSharedChatForSourceOnly = normalizeBoolean(
       raw.twitchSharedChatForSourceOnly ?? raw.TWITCH_SHARED_CHAT_FOR_SOURCE_ONLY,
       false
+    );
+  }
+
+  if (hasOwnSetting(raw, ["twitchTrackAnnouncementMode", "TWITCH_TRACK_ANNOUNCEMENT_MODE"])) {
+    overrides.twitchTrackAnnouncementMode = normalizeTrackAnnouncementMode(
+      raw.twitchTrackAnnouncementMode ?? raw.TWITCH_TRACK_ANNOUNCEMENT_MODE
     );
   }
 
@@ -539,6 +553,8 @@ function mergeSettings(baseSettings, overridingSettings) {
       typeof overridingSettings.twitchSharedChatForSourceOnly === "boolean"
         ? overridingSettings.twitchSharedChatForSourceOnly
         : (baseSettings.twitchSharedChatForSourceOnly ?? false),
+    twitchTrackAnnouncementMode:
+      overridingSettings.twitchTrackAnnouncementMode ?? baseSettings.twitchTrackAnnouncementMode ?? "all",
     chatSuppressedCategories:
       overridingSettings.chatSuppressedCategories || baseSettings.chatSuppressedCategories || [],
     playbackSuppressedCategories:
@@ -665,6 +681,7 @@ function normalizeBundledSettings(raw) {
     twitchClientId: trimValue(raw.twitchClientId ?? raw.TWITCH_CLIENT_ID),
     twitchClientSecret: "",
     twitchSharedChatForSourceOnly: false,
+    twitchTrackAnnouncementMode: "all",
     chatSuppressedCategories: ["Music", "DJs"],
     playbackSuppressedCategories: [],
     youtubeApiKey: "",
@@ -821,6 +838,7 @@ export function toRuntimeAppConfig(runtimeConfig) {
       clientId: runtimeConfig.settings.twitchClientId,
       clientSecret: runtimeConfig.settings.twitchClientSecret,
       sharedChatForSourceOnly: runtimeConfig.settings.twitchSharedChatForSourceOnly,
+      trackAnnouncementMode: runtimeConfig.settings.twitchTrackAnnouncementMode,
       chatSuppressedCategories: runtimeConfig.settings.chatSuppressedCategories,
       playbackSuppressedCategories: runtimeConfig.settings.playbackSuppressedCategories
     },

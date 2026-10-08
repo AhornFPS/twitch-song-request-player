@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createConfigStore } from "./config.js";
+import { createConfigStore, toRuntimeAppConfig } from "./config.js";
 
 function captureEnv(keys) {
   const snapshot = new Map();
@@ -341,6 +341,28 @@ test("stored source-only shared chat toggle is normalized and preserved", async 
   const settings = await configStore.loadEffectiveSettings();
 
   assert.equal(settings.twitchSharedChatForSourceOnly, true);
+});
+
+test("track announcement modes default to all, persist across reloads, and support environment overrides", async (t) => {
+  const restoreEnv = captureEnv(["TWITCH_TRACK_ANNOUNCEMENT_MODE"]);
+  delete process.env.TWITCH_TRACK_ANNOUNCEMENT_MODE;
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-announcements-"));
+  t.after(async () => {
+    restoreEnv();
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  });
+  const store = createConfigStore({ rootDir: runtimeDir, runtimeDir });
+  assert.equal((await store.loadEffectiveSettings()).twitchTrackAnnouncementMode, "all");
+  for (const mode of ["requests", "off", "all"]) {
+    await store.saveSettings({ twitchTrackAnnouncementMode: mode });
+    const reloaded = await createConfigStore({ rootDir: runtimeDir, runtimeDir }).loadEffectiveSettings();
+    assert.equal(reloaded.twitchTrackAnnouncementMode, mode);
+    assert.equal(toRuntimeAppConfig({ settings: reloaded }).twitch.trackAnnouncementMode, mode);
+  }
+  assert.equal((await store.saveSettings({ twitchTrackAnnouncementMode: " OFF " })).twitchTrackAnnouncementMode, "off");
+  assert.equal((await store.saveSettings({ twitchTrackAnnouncementMode: "invalid" })).twitchTrackAnnouncementMode, "all");
+  process.env.TWITCH_TRACK_ANNOUNCEMENT_MODE = "requests";
+  assert.equal((await store.loadEffectiveSettings()).twitchTrackAnnouncementMode, "requests");
 });
 
 test("new overlay themes are exposed and accepted as valid saved settings", async (t) => {

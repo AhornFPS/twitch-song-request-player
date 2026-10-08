@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { TwitchBotService } from "./twitch-bot-service.js";
+import { TwitchBot } from "./twitch-bot.js";
 
 function createDeferred() {
   let resolve;
@@ -93,6 +94,45 @@ test("applySettings uses the validated Twitch login as the bot username", async 
   ]);
 
   await service.disconnect();
+});
+
+test("announcement settings update the connected bot without reconnecting and report filtered AutoDJ tracks", async (t) => {
+  let connections = 0;
+  let disconnections = 0;
+  const messages = [];
+  const service = new TwitchBotService({
+    playerController: { onTrackPlayback: () => () => {}, async setPlaybackSuppressed() {} },
+    authManager: { async ensureValidUserToken(settings) {
+      return { oauthToken: settings.oauthToken, refreshToken: settings.refreshToken, login: "hornbots" };
+    } },
+    botFactory(options) {
+      const bot = new TwitchBot({ ...options,
+        client: { async say(_channel, message) { messages.push(message); } },
+        channelInfo: {
+          async shouldSuppressChatMessages() { return false; },
+          async getCategorySuppressionState() { return { categoryName: "", suppressMusicPlayback: false }; },
+          getStatus() { return { state: "ok" }; }
+        }
+      });
+      bot.connect = async () => { connections++; };
+      bot.disconnect = async () => { disconnections++; };
+      return bot;
+    }
+  });
+  t.after(() => service.disconnect());
+  const fallback = { title: "AutoDJ fallback", origin: "local", provider: "local" };
+  const request = { ...fallback, requestedBy: { username: "viewer" } };
+  for (const [mode, fallbackAllowed, requestAllowed] of [
+    ["all", true, true], ["requests", false, true], ["off", false, false], ["all", true, true]
+  ]) {
+    await service.applySettings(createConnectedSettings({ twitchTrackAnnouncementMode: mode }));
+    const before = messages.length;
+    assert.equal(await service.announceNowPlaying(fallback), fallbackAllowed);
+    assert.equal(await service.announceNowPlaying(request), requestAllowed);
+    assert.equal(messages.length - before, Number(fallbackAllowed) + Number(requestAllowed));
+  }
+  assert.equal(connections, 1);
+  assert.equal(disconnections, 0);
 });
 
 test("disconnect clears playback suppression", async () => {

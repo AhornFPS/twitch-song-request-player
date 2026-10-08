@@ -80,7 +80,53 @@ a {
 .app-shell {
   width: min(1480px, calc(100vw - 28px));
   margin: 0 auto;
-  padding: 18px 0 34px;
+  padding: 18px 0 150px;
+}
+
+.settings-save-bar {
+  position: fixed;
+  z-index: 40;
+  inset: auto max(14px, calc((100vw - 1480px) / 2)) 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-card);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(24px);
+}
+
+.settings-save-bar__copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  line-height: 1.4;
+}
+
+.settings-save-bar__copy span {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.settings-save-bar button { flex-shrink: 0; }
+.settings-save-bar[data-state="pending"] { border-color: var(--accent-strong); }
+.settings-save-bar[data-state="pending"] strong { color: var(--accent-strong); }
+.settings-save-bar[data-state="error"] { border-color: var(--danger); }
+.settings-save-bar[data-state="error"] strong { color: var(--danger); }
+
+.tab-button.has-unsaved-settings::after {
+  content: " •";
+  color: var(--accent-strong);
+}
+
+@media (max-width: 600px) {
+  .settings-save-bar { gap: 10px; padding: 12px; }
+  .settings-save-bar__copy span { font-size: 0.75rem; }
+  .settings-save-bar button { padding: 12px; }
 }
 
 .panel {

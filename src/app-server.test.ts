@@ -1490,6 +1490,51 @@ test("overview search API returns selectable track matches", async (t) => {
   assert.equal(searchPayload.tracks[1].title, "Search Artist Two - Search Result Two");
 });
 
+test("saving only the track announcement mode persists it and updates the running bot", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-announcement-api-"));
+  const originalEnv = snapshotEnv([...isolatedEnvKeys, "TWITCH_TRACK_ANNOUNCEMENT_MODE"]);
+  const originalCwd = process.cwd();
+  let appServer = null;
+  let appliedMode;
+  t.after(async () => {
+    await appServer?.close().catch(() => {});
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  });
+  process.chdir(runtimeDir);
+  clearEnv([...isolatedEnvKeys, "TWITCH_TRACK_ANNOUNCEMENT_MODE"]);
+  const store = createConfigStore({ rootDir: appRootDir, runtimeDir, publicDir: path.join(appRootDir, "public") });
+  await store.saveSettings({ port: await getAvailablePort(), radioModeEnabled: false });
+  await fs.writeFile(path.join(runtimeDir, "playlist.csv"), "Link,Title\n");
+  appServer = await startAppServer({
+    noBrowser: true, configStore: store,
+    twitchBotServiceFactory: () => ({
+      getStatus: () => ({ state: "connected" }),
+      getAuthStatus: () => ({ state: "idle" }),
+      async applySettings(settings) {
+        appliedMode = settings.twitchTrackAnnouncementMode;
+        return this.getStatus();
+      },
+      async disconnect() {}, cancelDeviceAuth() {}
+    })
+  });
+  const settingsUrl = new URL("/api/settings", appServer.urls.dashboardUrl);
+  assert.equal((await (await fetch(settingsUrl)).json()).settings.twitchTrackAnnouncementMode, "all");
+  for (const mode of ["requests", "off", "all"]) {
+    const response = await fetch(settingsUrl, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ twitchTrackAnnouncementMode: mode })
+    });
+    assert.equal(response.status, 200);
+    const payload = await response.json();
+    assert.equal(payload.settings.twitchTrackAnnouncementMode, mode);
+    assert.equal(payload.saveSummary.botReconnected, false);
+    assert.equal(appliedMode, mode);
+    assert.equal((await store.loadStoredSettings()).twitchTrackAnnouncementMode, mode);
+  }
+});
+
 test("settings API persists request policy and configurable chat commands", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);

@@ -24,6 +24,7 @@ function createBotHarness({
     requestsEnabled: true
   },
   sharedChatForSourceOnly = false,
+  trackAnnouncementMode = undefined,
   chatApi = null,
   queueSummary = [],
   queuePosition = null,
@@ -135,7 +136,8 @@ function createBotHarness({
         oauthToken: "oauth:test",
         clientId: "",
         clientSecret: "",
-        sharedChatForSourceOnly
+        sharedChatForSourceOnly,
+        trackAnnouncementMode
       },
       chatCommands,
       requestPolicy
@@ -286,6 +288,58 @@ test("automatic playback announcement uses the currentsong format for playlist t
     }),
     "Current song: Queued Track https://soundcloud.com/example/track, requested by ViewerOne"
   );
+});
+
+for (const mode of [undefined, "all", "requests", "off"]) {
+  test(`automatic track announcements honor ${mode ?? "default"} for requests and every fallback source`, async () => {
+    const requester = { username: "viewer", displayName: "Viewer" };
+    for (const [track, isRequest] of [
+      [{ provider: "youtube", origin: "queue", requestedBy: requester }, true],
+      [{ provider: "soundcloud", origin: "queue" }, true],
+      [{ provider: "suno", origin: "queue", requestedBy: requester }, true],
+      [{ provider: "local", origin: "queue", requestedBy: requester }, true],
+      [{ provider: "local", origin: "local", requestedBy: requester }, true],
+      [{ provider: "local", origin: "local" }, false],
+      [{ provider: "youtube", origin: "playlist", requestedBy: requester }, false],
+      [{ provider: "youtube", origin: "radio", requestedBy: requester }, false],
+      [{ provider: "youtube" }, false]
+    ]) {
+      const harness = createBotHarness({
+        trackAnnouncementMode: mode,
+        currentTrack: { title: "Track", ...track }
+      });
+      await harness.emitPlayback();
+      const expected = mode === "off" ? 0 : mode === "requests" ? Number(isRequest) : 1;
+      assert.equal(harness.sentMessages.length, expected, JSON.stringify(track));
+    }
+  });
+}
+
+test("announcement mode changes apply to the same bot while current-song and failure replies still work", async () => {
+  const track = { title: "Requested Track", origin: "queue", requestedBy: { username: "viewer" } };
+  const harness = createBotHarness({ currentTrack: track, trackAnnouncementMode: "off" });
+  assert.equal(await harness.bot.announceNowPlaying(track), false);
+  await harness.bot.handleCommand("#testchannel", { username: "viewer" }, "!currentsong");
+  await harness.emitTrackFinish({ track, status: "error", reason: "youtube_150" });
+  assert.equal(harness.sentMessages.length, 2);
+  assert.match(harness.sentMessages[0].message, /^Current song: Requested Track/);
+  assert.match(harness.sentMessages[1].message, /^Skipped Requested Track/);
+
+  harness.bot.updateConfig({
+    ...harness.bot.config,
+    twitch: { ...harness.bot.config.twitch, trackAnnouncementMode: "requests" }
+  });
+  assert.equal(await harness.bot.announceNowPlaying(track), true);
+  assert.equal(harness.sentMessages.length, 3);
+});
+
+test("allowed automatic announcements still respect category suppression", async () => {
+  const harness = createBotHarness({
+    trackAnnouncementMode: "requests", suppressChatMessages: true,
+    currentTrack: { title: "Request", origin: "queue" }
+  });
+  await harness.emitPlayback();
+  assert.equal(harness.sentMessages.length, 0);
 });
 
 test("playback errors for requested tracks explain skipped songs in Twitch chat", async () => {

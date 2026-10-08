@@ -15,6 +15,10 @@ const updateSkipBtn = document.getElementById("update-skip-btn");
 
 let isSavingSettings = false;
 let isHydratingForm = false;
+let savedSettingsDraft = null;
+let settingsSaveError = "";
+let settingsSaveNotice = "";
+let youtubeApiCheckController = null;
 let availableThemes = [];
 let lastSavedTheme = "aurora";
 let lastSavedOverlayScalePercent = 100;
@@ -123,12 +127,20 @@ function renderDashboard() {
             </label>
             <button id="check-for-updates-button" class="secondary-button" type="button">Check for updates</button>
             <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
-            <button id="save-button" class="primary-button" type="button">Save settings</button>
+            <span class="field__hint">Theme and scale save automatically.</span>
           </div>
         </div>
       </header>
 
       <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
+
+      <aside class="settings-save-bar" aria-label="Save settings">
+        <div class="settings-save-bar__copy" role="status" aria-live="polite" aria-atomic="true">
+          <strong id="settings-save-status">Loading settings…</strong>
+          <span id="settings-save-detail">Changes that need saving will appear here.</span>
+        </div>
+        <button id="save-button" class="primary-button" type="button" disabled>Save changes</button>
+      </aside>
 
       <nav class="atlas-tabs" aria-label="Dashboard sections">
         <button class="tab-button" type="button" data-tab="overview">Overview</button>
@@ -221,6 +233,7 @@ function renderDashboard() {
       </section>
 
       <section id="tab-playback" class="atlas-view" hidden>
+        <p class="panel-note">Playback and OBS settings apply with Save changes below. Player activation and volume save automatically.</p>
         <div class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -323,6 +336,7 @@ function renderDashboard() {
       </section>
 
       <section id="tab-autodj" class="atlas-view" hidden>
+        <p class="panel-note">Connection settings apply with Save changes or when you enable AutoDJ. Other edits stay pending.</p>
         <div class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -411,6 +425,7 @@ function renderDashboard() {
       </section>
 
       <section id="tab-requests" class="atlas-view" hidden>
+        <p id="requests-save-note" class="panel-note">Request controls and chat commands apply with Save changes below.</p>
         <div class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -583,6 +598,7 @@ function renderDashboard() {
       </section>
 
       <section id="tab-settings" class="atlas-view" hidden>
+        <p class="panel-note">Changes on this tab apply when you click Save changes below. You can keep editing or switch tabs first.</p>
         <form id="settings-form" class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -613,6 +629,23 @@ function renderDashboard() {
                 </div>
               </div>
             </div>
+          </section>
+          <section class="panel card-panel">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Bot messages</p>
+                <h2>Track announcements</h2>
+              </div>
+            </div>
+            <label class="field">
+              <span class="field__label">Announce now playing</span>
+              <select id="twitch-track-announcement-mode" class="control-input" aria-describedby="track-announcement-hint">
+                <option value="all">All tracks</option>
+                <option value="requests">Song requests only</option>
+                <option value="off">Off</option>
+              </select>
+            </label>
+            <p id="track-announcement-hint" class="panel-note">Choose which tracks the bot announces automatically in Twitch chat. Song requests only skips playlist fallbacks, radio, and automatic AutoDJ tracks. Current-song commands and request replies still work.</p>
           </section>
           <div class="atlas-grid atlas-grid--connection">
             <section class="panel card-panel">
@@ -655,11 +688,16 @@ function renderDashboard() {
                   </span>
                   <input id="twitch-shared-chat-source-only-toggle" type="checkbox" />
                 </label>
-                <label class="field field--full">
-                  <span class="field__label">YouTube API key</span>
-                  <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" />
-                  <span class="field__hint">Only needed when viewers request tracks by search terms instead of direct links.</span>
-                </label>
+                <div class="field field--full">
+                  <label class="field__label" for="youtubeApiKey">YouTube API key</label>
+                  <div class="copy-row">
+                    <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" aria-describedby="youtube-api-help youtube-api-feedback" />
+                    <button id="youtube-api-check" class="secondary-button" type="button">Check API key</button>
+                  </div>
+                  <span id="youtube-api-help" class="field__hint">Needed for text searches, Spotify matching, playlist imports, and metadata repair. Checking does not save changes; use Save changes to apply a new key. Each check uses 1 API quota unit.</span>
+                  <span class="field__hint"><a class="field__link" href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">Enable YouTube Data API v3</a> · <a class="field__link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Manage API keys</a></span>
+                  <p id="youtube-api-feedback" class="feedback" role="status" aria-live="polite">Not checked. Click Check API key to test access.</p>
+                </div>
                 <label class="field field--narrow">
                   <span class="field__label">Local port</span>
                   <input id="port" name="port" class="control-input" type="number" min="1" max="65535" />
@@ -1369,13 +1407,15 @@ function applyYoutubeFallbackState() {
   const isEnabled = settings.obsYoutubeFallbackEnabled === true;
   const sourceName = settings.obsYoutubeFallbackSourceName || "";
 
-  if (enabledToggle instanceof HTMLInputElement) {
+  if (isHydratingForm && enabledToggle instanceof HTMLInputElement) {
     enabledToggle.checked = isEnabled;
   }
 
-  setValue("obs-websocket-url", settings.obsWebSocketUrl || "ws://127.0.0.1:4455");
-  setValue("obs-youtube-source-name", sourceName);
-  setValue("obs-websocket-password", "");
+  if (isHydratingForm) {
+    setValue("obs-websocket-url", settings.obsWebSocketUrl || "ws://127.0.0.1:4455");
+    setValue("obs-youtube-source-name", sourceName);
+    setValue("obs-websocket-password", "");
+  }
 
   if (el("obs-websocket-password") instanceof HTMLInputElement) {
     el("obs-websocket-password").placeholder = settings.hasObsWebSocketPassword
@@ -1465,11 +1505,113 @@ function collectChatCommandsPayload() {
   );
 }
 
+// Track raw control values so empty/invalid numeric edits and hidden credentials
+// remain drafts until the corresponding setting is acknowledged by the server.
+function settingsControls() {
+  const fields = {
+    twitchChannel: "twitchChannel", twitchUsername: "twitchUsername",
+    twitchOauthToken: "twitchOauthToken", twitchClientId: "twitchClientId",
+    twitchClientSecret: "twitchClientSecret", youtubeApiKey: "youtubeApiKey", port: "port",
+    "twitch-shared-chat-source-only-toggle": "twitchSharedChatForSourceOnly",
+    "twitch-track-announcement-mode": "twitchTrackAnnouncementMode",
+    "start-with-windows-toggle": "startWithWindows",
+    "playback-startup-timeout-seconds": "playerStartupTimeoutSeconds",
+    "youtube-fallback-enabled-toggle": "obsYoutubeFallbackEnabled",
+    "obs-websocket-url": "obsWebSocketUrl", "obs-websocket-password": "obsWebSocketPassword",
+    "obs-youtube-source-name": "obsYoutubeFallbackSourceName",
+    "radio-mode-enabled-toggle": "radioModeEnabled", "radio-track-count": "radioTrackCount",
+    "autodj-service-url": "autoDjServiceUrl", "autodj-browser-output-url": "autoDjBrowserOutputUrl",
+    "autodj-service-token": "autoDjServiceToken", "autodj-lease-seconds": "autoDjServiceLeaseSeconds"
+  };
+  const controls = Object.entries(fields).map(([id, setting]) => ({ id, setting, element: el(id) }));
+  root.querySelectorAll('#tab-requests input[id], #tab-requests select[id], #tab-requests textarea[id]').forEach((element) => {
+    if (element.id.startsWith("requests-")) controls.push({ id: element.id, setting: "requestPolicy", element });
+  });
+  root.querySelectorAll("[data-chat-command-field]").forEach((element) => {
+    const command = element.closest("[data-chat-command-id]").dataset.chatCommandId;
+    controls.push({ id: `command:${command}:${element.dataset.chatCommandField}`, setting: "chatCommands", element });
+  });
+  return controls.filter(({ element }) => element);
+}
+
+function captureSettingsDraft() {
+  const draft = Object.fromEntries(settingsControls().map(({ id, setting, element }) => [id, {
+    setting, value: element.type === "checkbox" ? element.checked : element.value
+  }]));
+  for (const [id, setting] of [["chat-category-select", "chatSuppressedCategories"], ["playback-category-select", "playbackSuppressedCategories"]]) {
+    draft[id] = { setting, value: Array.from(el(id)?.options || [], (option) => option.value).filter(Boolean) };
+  }
+  return draft;
+}
+
+function pendingSettingsDraft(current = captureSettingsDraft()) {
+  if (!savedSettingsDraft) return {};
+  return Object.fromEntries(Object.entries(current).filter(([id, entry]) =>
+    JSON.stringify(entry.value) !== JSON.stringify(savedSettingsDraft[id]?.value)
+  ));
+}
+
+function restoreSettingsDraft(draft) {
+  for (const { id, element } of settingsControls()) {
+    if (!Object.hasOwn(draft, id)) continue;
+    if (element.type === "checkbox") element.checked = draft[id].value;
+    else element.value = draft[id].value;
+    if (element.dataset.chatCommandField === "enabled") {
+      element.closest(".command-toggle").querySelector("span").textContent = element.checked ? "Enabled" : "Disabled";
+    }
+  }
+  if (draft["chat-category-select"]) chatSuppressedCategories = [...draft["chat-category-select"].value];
+  if (draft["playback-category-select"]) playbackSuppressedCategories = [...draft["playback-category-select"].value];
+  renderCategorySelect("chat-category-select", chatSuppressedCategories);
+  renderCategorySelect("playback-category-select", playbackSuppressedCategories);
+  syncRequestPolicyDraftFromInputs();
+  const radioCount = el("radio-track-count");
+  if (radioCount) radioCount.disabled = !el("radio-mode-enabled-toggle").checked;
+}
+
+function updateSettingsSaveState() {
+  const button = el("save-button");
+  if (!button || !savedSettingsDraft || isHydratingForm) return;
+  const pending = pendingSettingsDraft();
+  const entries = Object.values(pending);
+  const busy = isSavingSettings || isRequestPolicyAutosaveSaving;
+  if (!entries.length && !busy) settingsSaveError = "";
+  const automatic = entries.length > 0 && entries.every(({ setting }) => setting === "requestPolicy") &&
+    getRequestPolicyAutosaveEnabled() && (requestPolicyAutosaveTimer || isRequestPolicyAutosaveSaving);
+  const sections = new Set();
+  for (const { id, element } of settingsControls()) {
+    if (pending[id]) sections.add(element.closest(".atlas-view")?.id.replace("tab-", ""));
+  }
+  if (pending["chat-category-select"] || pending["playback-category-select"]) sections.add("settings");
+  root.querySelectorAll("[data-tab]").forEach((tab) => {
+    const changed = sections.has(tab.dataset.tab);
+    tab.classList.toggle("has-unsaved-settings", changed);
+    tab.setAttribute("aria-label", `${tab.textContent}${changed ? " (unsaved changes)" : ""}`);
+  });
+  const sectionNames = [...sections].filter(Boolean).map((name) => name === "autodj" ? "AutoDJ" : name[0].toUpperCase() + name.slice(1));
+  const title = busy ? "Saving changes…" : settingsSaveError ? "Changes could not be saved" :
+    automatic ? "Saving automatically…" : entries.length ? "Unsaved changes" : "All changes saved";
+  const detail = settingsSaveError || (entries.length
+    ? `${sectionNames.join(", ")} · ${automatic ? "Request autosave is on." : "Click Save changes to apply your edits."}`
+    : settingsSaveNotice || "You’re up to date. Controls marked automatic save as you change them.");
+  setText("settings-save-status", title);
+  setText("settings-save-detail", detail);
+  button.disabled = busy || entries.length === 0;
+  button.textContent = busy ? "Saving…" : settingsSaveError ? "Retry save" : "Save changes";
+  const bar = button.closest(".settings-save-bar");
+  bar.dataset.state = settingsSaveError ? "error" : entries.length ? "pending" : "saved";
+  bar.setAttribute("aria-busy", busy ? "true" : "false");
+  setText("requests-save-note", getRequestPolicyAutosaveEnabled()
+    ? "Request controls save automatically. Chat commands still need Save changes below."
+    : "Request controls and chat commands apply with Save changes below. Turn on Autosave for automatic request-control saves.");
+}
+
 function collectSettingsPayload() {
   const payload = {
     twitchChannel: el("twitchChannel")?.value.trim() || "",
     twitchUsername: el("twitchUsername")?.value.trim() || "",
     twitchClientId: el("twitchClientId")?.value.trim() || "",
+    twitchTrackAnnouncementMode: el("twitch-track-announcement-mode")?.value || "all",
     twitchSharedChatForSourceOnly: el("twitch-shared-chat-source-only-toggle") instanceof HTMLInputElement
       ? el("twitch-shared-chat-source-only-toggle").checked
       : false,
@@ -1679,7 +1821,10 @@ async function setAutoDjActivation() {
   const desired = !(autoDjStatus?.activation?.desired === true);
   setText("autodj-feedback", desired ? "Enabling AutoDJ..." : "Disabling AutoDJ...");
   try {
-    settingsPayload = await persistSettings(collectSettingsPayload());
+    const pairing = collectSettingsPayload();
+    settingsPayload = await persistSettings(Object.fromEntries(Object.entries(pairing).filter(([key]) =>
+      ["autoDjServiceUrl", "autoDjBrowserOutputUrl", "autoDjServiceToken", "autoDjServiceLeaseSeconds"].includes(key)
+    )));
     applySettingsPayload();
     autoDjStatus = await fetchJson("/api/autodj-service/activation", {
       method: "POST",
@@ -1719,7 +1864,8 @@ async function discoverAutoDj() {
       peer.address && peer.servicePort ? `http://${peer.address}:${peer.servicePort}` : ""
     );
     if (serviceUrl) setValue("autodj-service-url", serviceUrl);
-    setText("autodj-feedback", `Found ${peer.displayName || "AutoDJ"}. Save settings to pair this controller.`);
+    updateSettingsSaveState();
+    setText("autodj-feedback", `Found ${peer.displayName || "AutoDJ"}. Save changes below to pair this controller.`);
   } catch (error) {
     setText("autodj-feedback", error?.message || "AutoDJ discovery failed.");
   }
@@ -1754,7 +1900,12 @@ function applySettingsPayload() {
     return;
   }
 
+  const pendingDraft = pendingSettingsDraft();
+  const focused = settingsControls().find(({ element }) => element === document.activeElement);
+  const selection = focused ? [focused.element.selectionStart, focused.element.selectionEnd] : null;
   isHydratingForm = true;
+  chatSuppressedCategories = [...(settingsPayload.settings.chatSuppressedCategories || [])];
+  playbackSuppressedCategories = [...(settingsPayload.settings.playbackSuppressedCategories || [])];
   requestPolicyDraft = null;
   renderThemeOptions(settingsPayload.settings.theme);
   renderOverlayScaleControl(settingsPayload.settings.overlayScalePercent);
@@ -1774,8 +1925,12 @@ function applySettingsPayload() {
       : "";
   }
   const sharedChatSourceOnlyToggle = el("twitch-shared-chat-source-only-toggle");
+  setValue("twitch-track-announcement-mode", settingsPayload.settings.twitchTrackAnnouncementMode || "all");
   if (sharedChatSourceOnlyToggle instanceof HTMLInputElement) {
     sharedChatSourceOnlyToggle.checked = settingsPayload.settings.twitchSharedChatForSourceOnly === true;
+  }
+  if (el("youtubeApiKey")?.value !== (settingsPayload.settings.youtubeApiKey || "")) {
+    resetYouTubeApiCheck();
   }
   setValue("youtubeApiKey", settingsPayload.settings.youtubeApiKey || "");
   setValue("port", settingsPayload.settings.port || 3000);
@@ -1813,7 +1968,15 @@ function applySettingsPayload() {
   applyYoutubeFallbackState();
   applyRuntimeState();
   applyGuiPlayerState();
+  savedSettingsDraft = captureSettingsDraft();
+  restoreSettingsDraft(pendingDraft);
+  if (focused) {
+    const control = settingsControls().find(({ id }) => id === focused.id)?.element;
+    control?.focus({ preventScroll: true });
+    if (control && selection?.[0] != null) control.setSelectionRange(...selection);
+  }
   isHydratingForm = false;
+  updateSettingsSaveState();
 }
 
 function categoryBadgeState(categoryLookup) {
@@ -1946,7 +2109,7 @@ function applyRuntimeState() {
       ? (
           desktopIntegration.enabled === true
             ? "Windows will launch the desktop app automatically at sign-in."
-            : "Disabled. Turn this on and save settings to register the app with Windows startup."
+            : "Disabled. Turn this on and click Save changes below to register the app with Windows startup."
         )
       : (desktopIntegration?.reason || "Only available in the packaged Windows desktop app.");
   }
@@ -2897,21 +3060,94 @@ async function queueSinglePlaylistTrack(trackKey) {
   }
 }
 
+function setYouTubeApiFeedback(message, tone = "") {
+  const feedback = el("youtube-api-feedback");
+  feedback.textContent = message;
+  feedback.className = `feedback${tone ? ` is-${tone}` : ""}`;
+}
+
+function resetYouTubeApiCheck() {
+  youtubeApiCheckController?.abort();
+  youtubeApiCheckController = null;
+  const button = el("youtube-api-check");
+  button.disabled = false;
+  button.textContent = "Check API key";
+  setYouTubeApiFeedback("Not checked. Click Check API key to test access.");
+}
+
+async function checkEnteredYouTubeApiKey() {
+  if (youtubeApiCheckController) return;
+  const key = el("youtubeApiKey").value.trim();
+  const controller = new AbortController();
+  youtubeApiCheckController = controller;
+  const button = el("youtube-api-check");
+  button.disabled = true;
+  button.textContent = "Checking...";
+  setYouTubeApiFeedback("Checking access from the Music Control Center server...");
+  const timeout = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const check = await fetchJson("/api/settings/youtube/check", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ youtubeApiKey: key }),
+      signal: controller.signal
+    });
+    if (youtubeApiCheckController !== controller) return;
+    const tone = check.status === "valid" ? "success"
+      : ["missing", "quota_exceeded", "rate_limited", "timeout", "network_error", "service_error"].includes(check.status) ? "warning" : "error";
+    setYouTubeApiFeedback(check.message, tone);
+  } catch {
+    if (youtubeApiCheckController !== controller) return;
+    setYouTubeApiFeedback("Could not complete the check. Make sure Music Control Center is reachable and try again; the key's validity is unknown.", "warning");
+  } finally {
+    window.clearTimeout(timeout);
+    if (youtubeApiCheckController === controller) {
+      youtubeApiCheckController = null;
+      button.disabled = false;
+      button.textContent = "Check API key";
+    }
+  }
+}
+
 async function persistSettings(payload) {
-  return fetchJson("/api/settings", {
+  const submittedDraft = captureSettingsDraft();
+  const result = await fetchJson("/api/settings", {
     method: "PUT",
     headers: {
       "Content-Type": "application/json"
     },
     body: JSON.stringify(payload)
   });
+  // A partial autosave must not acknowledge other fields or later keystrokes.
+  for (const [id, entry] of Object.entries(submittedDraft)) {
+    if (savedSettingsDraft && Object.hasOwn(payload, entry.setting)) savedSettingsDraft[id] = entry;
+  }
+  return result;
 }
 
 async function saveSettings(event) {
   event?.preventDefault?.();
+  if (!settingsPayload || isSavingSettings || isRequestPolicyAutosaveSaving) return;
+  const pending = pendingSettingsDraft();
+  if (Object.keys(pending).length === 0) return;
+  const invalid = settingsControls().find(({ id, element }) => pending[id] && !element.disabled && !element.checkValidity());
+  if (invalid) {
+    activeTab = invalid.element.closest(".atlas-view").id.replace("tab-", "");
+    applyTabState();
+    invalid.element.reportValidity();
+    settingsSaveError = "Check the highlighted field, then save again.";
+    updateSettingsSaveState();
+    return;
+  }
+  const allSettings = collectSettingsPayload();
+  const changedSettings = new Set(Object.values(pending).map(({ setting }) => setting));
+  const payload = Object.fromEntries(Object.entries(allSettings).filter(([setting]) => changedSettings.has(setting)));
+  settingsSaveError = "";
+  settingsSaveNotice = "";
   clearRequestPolicyAutosaveTimer();
   hasPendingRequestPolicyAutosave = false;
   isSavingSettings = true;
+  updateSettingsSaveState();
   const saveButton = el("save-button");
   const themeSelect = el("theme-select");
   const overlayScaleSlider = el("overlay-scale-slider");
@@ -2929,7 +3165,7 @@ async function saveSettings(event) {
   setFeedback("Saving settings...");
 
   try {
-    settingsPayload = await persistSettings(collectSettingsPayload());
+    settingsPayload = await persistSettings(payload);
     availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
     lastSavedTheme = settingsPayload.settings.theme || "aurora";
     lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
@@ -2947,6 +3183,7 @@ async function saveSettings(event) {
     applySettingsPayload();
 
     if (settingsPayload.saveSummary?.restartRequired) {
+      settingsSaveNotice = "Restart the app to switch to the new port.";
       setFeedback("Settings saved. Restart the app to switch to the new port.", "warning");
     } else if (settingsPayload.saveSummary?.botReconnected) {
       setFeedback("Settings saved and Twitch chat was reconnected.", "success");
@@ -2954,6 +3191,7 @@ async function saveSettings(event) {
       setFeedback("Settings saved.", "success");
     }
   } catch (error) {
+    settingsSaveError = error?.message || "Could not save settings. Your edits are still here; retry when ready.";
     setFeedback(error?.message || "Could not save settings.", "error");
   } finally {
     isSavingSettings = false;
@@ -2972,6 +3210,7 @@ async function saveSettings(event) {
       hasPendingRequestPolicyAutosave = false;
       scheduleRequestPolicyAutosave(true);
     }
+    updateSettingsSaveState();
   }
 }
 
@@ -2997,7 +3236,7 @@ async function saveRequestPolicySection({
       setRequestsFeedback(
         requestPolicyAutosaveEnabled
           ? "Request autosave is on. Request changes now save automatically."
-          : "Request autosave is off. Use Save settings to keep request changes.",
+          : "Request autosave is off. Use Save changes below to apply request changes.",
         "success"
       );
       applyRequestAutosaveState();
@@ -3011,6 +3250,8 @@ async function saveRequestPolicySection({
   }
 
   isRequestPolicyAutosaveSaving = true;
+  settingsSaveError = "";
+  updateSettingsSaveState();
   applyRequestAutosaveState();
   if (reason === "autosave") {
     setRequestsFeedback("Saving request changes automatically...");
@@ -3053,13 +3294,14 @@ async function saveRequestPolicySection({
       setRequestsFeedback(
         requestPolicyAutosaveEnabled
           ? "Request autosave is on. Request changes now save automatically."
-          : "Request autosave is off. Use Save settings to keep request changes.",
+          : "Request autosave is off. Use Save changes below to apply request changes.",
         "success"
       );
     } else {
       setRequestsFeedback("Request controls saved.", "success");
     }
   } catch (error) {
+    settingsSaveError = error?.message || "Could not save request controls. Your edits are still here.";
     setRequestsFeedback(error?.message || "Could not save request controls.", "error");
   } finally {
     isRequestPolicyAutosaveSaving = false;
@@ -3068,6 +3310,7 @@ async function saveRequestPolicySection({
       hasPendingRequestPolicyAutosave = false;
       scheduleRequestPolicyAutosave(true);
     }
+    updateSettingsSaveState();
   }
 }
 
@@ -3214,7 +3457,10 @@ async function openYoutubeFallbackLogin() {
   setYoutubeFallbackFeedback("Saving OBS fallback settings...");
 
   try {
-    settingsPayload = await persistSettings(collectSettingsPayload());
+    const fallback = collectSettingsPayload();
+    settingsPayload = await persistSettings(Object.fromEntries(Object.entries(fallback).filter(([key]) =>
+      ["obsYoutubeFallbackEnabled", "obsWebSocketUrl", "obsWebSocketPassword", "obsYoutubeFallbackSourceName"].includes(key)
+    )));
     availableThemes = Array.isArray(settingsPayload.themeOptions) ? settingsPayload.themeOptions : [];
     lastSavedTheme = settingsPayload.settings.theme || lastSavedTheme;
     lastSavedOverlayScalePercent = normalizeOverlayScalePercent(
@@ -4043,6 +4289,10 @@ overviewProgressTimer = window.setInterval(() => {
 }, 500);
 
 root.addEventListener("click", (event) => {
+  if (event.target.id === "youtube-api-check") {
+    void checkEnteredYouTubeApiKey();
+    return;
+  }
   if (!(event.target instanceof Element)) {
     return;
   }
@@ -4401,6 +4651,9 @@ root.addEventListener("change", async (event) => {
 });
 
 root.addEventListener("input", (event) => {
+  if (event.target.id === "youtubeApiKey") {
+    resetYouTubeApiCheck();
+  }
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
     return;
@@ -4497,6 +4750,18 @@ root.addEventListener("keydown", (event) => {
     } else {
       void saveSettings();
     }
+  }
+});
+
+// Run after the feature handlers, including category Add/Delete and command edits.
+for (const eventName of ["input", "change", "click"]) {
+  root.addEventListener(eventName, () => updateSettingsSaveState());
+}
+
+window.addEventListener("beforeunload", (event) => {
+  if (Object.keys(pendingSettingsDraft()).length || isSavingSettings || isRequestPolicyAutosaveSaving) {
+    event.preventDefault();
+    event.returnValue = "";
   }
 });
 

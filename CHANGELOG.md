@@ -4,6 +4,12 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Choose whether the Twitch bot announces all tracks, song requests only, or no tracks; requests-only skips playlist fallbacks, radio, and automatic AutoDJ tracks.
+
+- Show a persistent Save changes bar and mark tabs with unsaved settings; keep pending edits through automatic saves, show save failures with retry, and warn before leaving with unsaved changes.
+
+- Check YouTube API keys in Settings before saving, with guidance for invalid keys, disabled API access, key restrictions, quota limits, and connection failures.
+
 ## 2.11.0 - 2026-10-08
 
 - Import public or unlisted YouTube playlists into the fallback library, with duplicate and unavailable-video counts.

@@ -1031,7 +1031,18 @@ export class TwitchBot {
 
   async announceNowPlaying(track) {
     if (!track) {
-      return;
+      return false;
+    }
+
+    const mode = this.config.twitch.trackAnnouncementMode ?? "all";
+    // Queue origin identifies player requests. Standalone AutoDJ can retain
+    // local origin for an owned request, so also accept its requester metadata.
+    const isRequest = track.origin === "queue" || (
+      track.origin !== "playlist" && track.origin !== "radio" &&
+      Boolean(track.requestedBy?.username || track.requestedBy?.displayName)
+    );
+    if (mode === "off" || (mode === "requests" && !isRequest)) {
+      return false;
     }
 
     logInfo("Announcing now playing in chat", {
@@ -1042,6 +1053,7 @@ export class TwitchBot {
     });
 
     await this.reply(`#${this.config.twitch.channel}`, this.formatCurrentSongMessage(track));
+    return true;
   }
 
   async announcePlaybackFailure({ track, status, reason = "", message = "" } = {}) {

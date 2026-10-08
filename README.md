@@ -23,6 +23,12 @@ npm start
 
 Copy `.env.example` to `.env` or configure the same values in the dashboard. A YouTube API key is needed for text searches, Spotify matching, playlist imports, and metadata repair; individual direct provider URLs do not require it.
 
+In **Settings → Track announcements**, choose **All tracks** (the default), **Song requests only**, or **Off**, then click **Save changes**. Requests-only excludes playlist fallbacks, radio, and automatic AutoDJ tracks while still announcing requested tracks played by AutoDJ. This controls automatic now-playing messages; current-song commands, request confirmations, and playback-error replies remain available. The setting applies without reconnecting the bot. The optional `TWITCH_TRACK_ANNOUNCEMENT_MODE` environment override accepts `all`, `requests`, or `off`.
+
+The **Save changes** bar stays visible at the bottom of the dashboard. It shows pending changes across tabs, saving progress, errors with retry, and when everything is saved. Tabs with pending changes have a dot; switching tabs keeps your edits. Theme, overlay scale, player activation, and volume save automatically. In **Requests**, Autosave applies to request controls; chat commands still use **Save changes**. Other settings apply when saved. Automatic saves preserve unrelated edits, and the dashboard warns before closing or reloading with unsaved changes.
+
+In **Settings**, click **Check API key** beside the YouTube key to test the entered value before saving. The check makes one metadata request from the Music Control Center server (1 API quota unit) and explains invalid keys, disabled YouTube Data API v3 access, incompatible key restrictions, quota limits, and connection failures. It does not save the key or change playback. A successful check confirms metadata access; search has a separate quota limit. Click **Save changes** to apply a new key.
+
 In **Library**, paste a public or unlisted YouTube playlist link into **YouTube playlist URL** and click **Import YouTube playlist**. Video links containing a `list=` parameter also work in this field. The import appends all available videos to the fallback library, skips duplicates and unavailable videos, and reports the counts. Save your YouTube API key in **Settings** first. Importing does not queue tracks or start playback.
 
 ## Connect standalone AutoDJ
