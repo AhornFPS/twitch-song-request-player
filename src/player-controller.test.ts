@@ -2668,6 +2668,44 @@ test("an explicit negative ownership result can use fallback after the import gr
   assert.equal(controller.currentTrack.title, "Not owned");
 });
 
+test("BIG BANG remains native-owned when its folder scan outlasts the 45-second import grace", async () => {
+  for (const imported of [true, false]) {
+    const timers = [];
+    let scanPending = true;
+    let takeovers = 0;
+    const { controller, emittedEvents } = createController({
+      routeOwnedRequest: async () => scanPending
+        ? { matched: false, queued: false, unavailable: true, localImportPending: true, localImportGraceMs: 45_000 }
+        : { matched: imported, queued: imported, localImportGraceMs: 45_000 },
+      beforeTrackStart: async () => { takeovers += 1; return { ready: true }; },
+      setTimeoutFn(callback, delay) {
+        const timer = { callback, delay, unref() {} }; timers.push(timer); return timer;
+      },
+      clearTimeoutFn() {}
+    });
+    await controller.addRequest({ provider: "youtube", title: "Fraw - BIG BANG (Official Video)",
+      key: "youtube:VgsQ1CaNkCw", durationSeconds: 129,
+      requestedBy: { username: "cxholly", displayName: "cxHolly" } });
+    const queued = controller.queue[0];
+    controller.ownedRequestFirstLookupAt.set(queued, Date.now() - 74_000);
+    const retry = async () => {
+      const index = timers.findIndex((timer) => timer.delay === 3_000);
+      assert.ok(index >= 0);
+      timers.splice(index, 1)[0].callback();
+      await new Promise((resolve) => setImmediate(resolve));
+    };
+    await retry();
+    assert.equal(takeovers, 0, "expired grace is not permission while the scan is unfinished");
+    assert.equal(controller.queue[0], queued);
+    assert.equal(emittedEvents.some(({ event }) => event === "player:load"), false);
+    scanPending = false;
+    await retry();
+    assert.equal(controller.queue.length, 0);
+    assert.equal(takeovers, imported ? 0 : 1, "a completed scan still permits fallback for an actual miss");
+    assert.equal(emittedEvents.some(({ event }) => event === "player:load"), !imported);
+  }
+});
+
 test("unavailable or thrown ownership checks never become external takeover permission", async () => {
   for (const throws of [false, true]) {
     const timers = [];
