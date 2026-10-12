@@ -37,6 +37,8 @@ Open the AutoDJ tab, use **Find AutoDJ** or enter its service URL, save the bear
 
 The integration uses versioned authenticated JSON only. Music Control Center calls AutoDJ state, activation, Mix Next, owned-request, and request handoff endpoints. It never starts or stops the AutoDJ process and never transports audio, waveforms, or analysis.
 
+To use regular playback while paired with AutoDJ, press **Play normally** in **Overview**. Music Control Center pauses a running AutoDJ before starting the normal playlist or queued tracks. If AutoDJ is closed or unreachable, normal playback starts without requiring you to open it; the normal-playback selection is applied when AutoDJ reconnects. The saved connection stays in place. Choose **Resume AutoDJ** in the AutoDJ tab to stop normal playback and return to a running AutoDJ. You can also select **Use normal playback** from that tab. Pausing a track in the standalone AutoDJ app alone does not change which player owns automatic playback.
+
 When AutoDJ is enabled, online playback fails closed until the request-takeover lease is acknowledged as applied. Owned YouTube, Suno, and SoundCloud requests are routed to AutoDJ. Unmatched requests remain normal online requests, with ownership rechecks while queued and a final check immediately before playback. Consecutive online requests share one renewable lease; the lease is released after the final request ends, is cancelled, or is skipped.
 
 The canonical control contract is maintained in `D:\AutoDJ\docs\control-api.md` alongside the Rust implementation.

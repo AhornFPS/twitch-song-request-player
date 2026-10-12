@@ -743,6 +743,7 @@ export async function startAppServer({
 
   autoDjServiceClient = createAutoDjServiceClient(currentSettings);
   autoDjAuthoritySynchronized = !autoDjServiceClient;
+  let normalPlaybackAutoDjOffline = false;
 
   async function releaseAutoDjTakeover(reason) {
     let lastError = null;
@@ -877,7 +878,15 @@ export async function startAppServer({
     const synchronizationClient = autoDjServiceClient;
     autoDjAuthoritySynchronized = false;
     const synchronizationPromise = (async () => {
-      await synchronizationClient.probe();
+      const connection = await synchronizationClient.probe();
+      if (connection?.serviceUnavailable === true) {
+        if (desiredEnabled) throw new Error("Start AutoDJ before resuming AutoDJ playback.");
+        // A stopped service cannot acknowledge a pause. Keep the user's normal
+        // playback selection and apply it when the saved connection returns.
+        normalPlaybackAutoDjOffline = true;
+        synchronizationClient.stopHeartbeat?.();
+        return getAutoDjControllerStatus();
+      }
       await synchronizationClient.setActivation(desiredEnabled, {
         reason: "music_control_center_authority"
       });
@@ -885,6 +894,7 @@ export async function startAppServer({
         throw new Error("AutoDJ connection changed while authority was synchronizing.");
       }
       autoDjAuthoritySynchronized = true;
+      normalPlaybackAutoDjOffline = false;
       return getAutoDjControllerStatus();
     })();
     autoDjAuthoritySynchronization = {
@@ -916,7 +926,7 @@ export async function startAppServer({
         });
       }
       try {
-        return await synchronizeAutoDjActivation(enabled);
+        return await synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true);
       } catch (error) {
         lastError = error;
         logWarn("AutoDJ startup authority is not ready; retrying", {
@@ -994,6 +1004,10 @@ export async function startAppServer({
         return { ready: true };
       }
       if (!autoDjAuthoritySynchronized) {
+        if (!currentSettings.autoDjEnabled && normalPlaybackAutoDjOffline &&
+          autoDjServiceClient.getStatus().serviceUnavailable === true) {
+          return { ready: true };
+        }
         try {
           await synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true);
         } catch (error) {
@@ -1137,11 +1151,12 @@ export async function startAppServer({
         if (!engineEpoch) {
           return;
         }
-        if (!observedAutoDjEngineEpoch) {
+        const firstConnection = !observedAutoDjEngineEpoch;
+        const normalSelectionNeedsApplying = !currentSettings.autoDjEnabled && (
+          normalPlaybackAutoDjOffline || !autoDjAuthoritySynchronized || service.activation?.effective !== false
+        );
+        if ((firstConnection || engineEpoch === observedAutoDjEngineEpoch) && !normalSelectionNeedsApplying) {
           observedAutoDjEngineEpoch = engineEpoch;
-          return;
-        }
-        if (engineEpoch === observedAutoDjEngineEpoch) {
           return;
         }
 
@@ -1150,7 +1165,10 @@ export async function startAppServer({
         autoDjAuthoritySynchronized = false;
         void synchronizeAutoDjActivation(currentSettings.autoDjEnabled === true)
           .then(async () => {
-            logInfo("Resynchronized AutoDJ authority after engine restart", {
+            if (!currentSettings.autoDjEnabled && client.getStatus().takeoverActive) {
+              await releaseAutoDjTakeover("normal_playback_reconnected");
+            }
+            logInfo("Resynchronized AutoDJ playback selection after connection returned", {
               previousEngineEpoch,
               engineEpoch
             });
@@ -1168,6 +1186,53 @@ export async function startAppServer({
   }
 
   bindAutoDjTrackAnnouncements(autoDjServiceClient);
+
+  let playbackCommandQueue = Promise.resolve();
+  function runPlaybackCommand(command) {
+    const result = playbackCommandQueue.then(command);
+    playbackCommandQueue = result.catch(() => {});
+    return result;
+  }
+
+  async function switchPlaybackAuthority(enabled, { startNormalPlayback = true } = {}) {
+    await playerController.holdPlaybackStarts();
+    try {
+      if (enabled && (await autoDjServiceClient?.probe?.())?.serviceUnavailable === true) {
+        throw new Error("Start AutoDJ before resuming AutoDJ playback.");
+      }
+      if (enabled && playerController.getCurrentTrack()) {
+        // Stop the embedded/OBS output before allowing AutoDJ to resume. Keep
+        // the stopped track and queued requests available for normal playback.
+        await playerController.stopPlayback("autodj_enabled");
+      }
+      await synchronizeAutoDjActivation(enabled, { persist: true });
+      if (!normalPlaybackAutoDjOffline && autoDjServiceClient?.getStatus?.().takeoverActive) {
+        await releaseAutoDjTakeover(enabled ? "autodj_enabled" : "normal_playback");
+      }
+      await playerController.setRadioSettings({
+        enabled: enabled ? false : currentSettings.radioModeEnabled,
+        trackCount: currentSettings.radioTrackCount
+      });
+    } finally {
+      playerController.releasePlaybackStarts();
+    }
+    if (!enabled && startNormalPlayback) {
+      await playerController.ensurePlayback();
+    }
+    return getAutoDjControllerStatus();
+  }
+
+  function playOrPauseNormalPlayback(triggeredBy) {
+    return runPlaybackCommand(async () => {
+      const normalPlaybackIsPlaying = playerController.getPublicState().playbackStatus === "playing";
+      if (currentSettings.autoDjEnabled && !normalPlaybackIsPlaying) {
+        // A saved connection is not a permanent claim on the normal player.
+        // Wait for AutoDJ's pause acknowledgement before starting online audio.
+        await switchPlaybackAuthority(false, { startNormalPlayback: false });
+      }
+      return playerController.playOrPausePlayback(triggeredBy);
+    });
+  }
 
   if (updateService) {
     updateService.on("status-changed", (status) => {
@@ -1276,15 +1341,7 @@ export async function startAppServer({
   app.post("/api/autodj-service/activation", async (request, response) => {
     const enabled = request.body?.enabled === true;
     try {
-      const status = await synchronizeAutoDjActivation(enabled, { persist: true });
-      await playerController.setRadioSettings({
-        enabled: enabled ? false : currentSettings.radioModeEnabled,
-        trackCount: currentSettings.radioTrackCount
-      });
-      if (!enabled) {
-        await autoDjServiceClient?.release?.("autodj_disabled").catch(() => {});
-        await playerController.ensurePlayback();
-      }
+      const status = await runPlaybackCommand(() => switchPlaybackAuthority(enabled));
       response.json(status);
     } catch (error) {
       response.status(503).json({
@@ -2214,18 +2271,20 @@ export async function startAppServer({
 
   app.post("/api/playback/play-pause", async (_request, response) => {
     try {
-      const result = await playerController.playOrPausePlayback("dashboard");
+      const result = await playOrPauseNormalPlayback("dashboard");
       response.json({
         result,
-        state: playerController.getPublicState()
+        state: playerController.getBroadcastState()
       });
     } catch (error) {
       logError("Failed to toggle dashboard playback", {
         message: error?.message ?? String(error),
         stack: error?.stack ?? null
       });
-      response.status(500).json({
-        error: error?.message ?? "Failed to toggle playback."
+      const retryable = Boolean(autoDjServiceClient && !autoDjAuthoritySynchronized);
+      response.status(retryable ? 503 : 500).json({
+        error: error?.message ?? "Failed to toggle playback.",
+        retryable
       });
     }
   });
@@ -2434,7 +2493,7 @@ export async function startAppServer({
     },
     updates: updateService,
     async togglePauseCurrentTrack(triggeredBy = "desktop_media_key") {
-      return playerController.playOrPausePlayback(triggeredBy);
+      return playOrPauseNormalPlayback(triggeredBy);
     },
     async skipCurrentTrack(triggeredBy = "desktop_media_key") {
       return playerController.skipToNextTrack(triggeredBy);

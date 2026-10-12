@@ -82,6 +82,7 @@ export class AutoDjServiceClient {
     this.lastStatus = {
       configured: Boolean(this.serviceUrl),
       connected: false,
+      serviceUnavailable: false,
       takeoverActive: false,
       serviceUrl: this.serviceUrl,
       browserOutputUrl: this.configuredBrowserOutputUrl,
@@ -596,7 +597,9 @@ export class AutoDjServiceClient {
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     timeout?.unref?.();
     try {
-      const response = await this.fetchImpl(`${this.serviceUrl}${path}`, {
+      let response;
+      try {
+        response = await this.fetchImpl(`${this.serviceUrl}${path}`, {
         method,
         signal: controller.signal,
         headers: {
@@ -605,7 +608,12 @@ export class AutoDjServiceClient {
           ...(this.token ? { authorization: `Bearer ${this.token}` } : {})
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) })
-      });
+        });
+      } catch {
+        const error = new Error("AutoDJ is offline or unreachable.");
+        error.code = "autodj_service_unavailable";
+        throw error;
+      }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         const error = new Error(payload.error || `AutoDJ service returned HTTP ${response.status}.`);
@@ -728,6 +736,7 @@ export class AutoDjServiceClient {
       return false;
     }
     this.lastStatus.connected = true;
+    this.lastStatus.serviceUnavailable = false;
     this.lastStatus.engineEpoch = payload?.engineEpoch ?? payload?.state?.engineEpoch ?? this.lastStatus.engineEpoch;
     this.lastStatus.revision = payload?.revision ?? payload?.state?.revision ?? this.lastStatus.revision;
     this.lastStatus.activation = state?.activation && typeof state.activation === "object"
@@ -742,6 +751,7 @@ export class AutoDjServiceClient {
 
   markFailure(error) {
     this.lastStatus.connected = false;
+    this.lastStatus.serviceUnavailable = error?.code === "autodj_service_unavailable";
     this.lastStatus.lastError = error?.message ?? String(error);
   }
 }

@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Let normal Play pause connected AutoDJ and switch to regular playback without removing the saved connection; also play normally when AutoDJ is closed, and stop the normal player before resuming AutoDJ.
+
 ## 2.11.1 - 2026-10-08
 
 - Choose whether the Twitch bot announces all tracks, song requests only, or no tracks; requests-only skips playlist fallbacks, radio, and automatic AutoDJ tracks.

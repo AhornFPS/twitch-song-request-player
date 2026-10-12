@@ -93,7 +93,7 @@ test("waiting requests repair lost AutoDJ authority and engine restarts resynchr
   );
   assert.match(
     source,
-    /if \(engineEpoch === observedAutoDjEngineEpoch\)[\s\S]*?autoDjAuthoritySynchronized = false;[\s\S]*?synchronizeAutoDjActivation\(currentSettings\.autoDjEnabled === true\)[\s\S]*?playerController\.ensurePlayback\(\)/,
+    /engineEpoch === observedAutoDjEngineEpoch\) && !normalSelectionNeedsApplying[\s\S]*?autoDjAuthoritySynchronized = false;[\s\S]*?synchronizeAutoDjActivation\(currentSettings\.autoDjEnabled === true\)[\s\S]*?playerController\.ensurePlayback\(\)/,
     "a new standalone engine epoch must reapply authority and wake the request queue"
   );
   assert.match(

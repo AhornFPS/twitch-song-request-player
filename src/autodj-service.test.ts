@@ -20,6 +20,25 @@ function command(overrides = {}) {
   };
 }
 
+test("offline transport is distinct from a responding AutoDJ that rejects a command", async () => {
+  let mode = "offline";
+  const client = new AutoDjServiceClient({
+    serviceUrl: "http://isolated.invalid", token: "fixture",
+    fetchImpl: async () => {
+      if (mode === "offline") throw new TypeError("fetch failed");
+      if (mode === "rejected") return new Response(JSON.stringify({ code: "autodj_application_failed", error: "Native command rejected" }), { status: 503 });
+      return new Response(JSON.stringify({ activation: { effective: false } }), { status: 200 });
+    }
+  });
+  assert.equal((await client.probe()).serviceUnavailable, true);
+  mode = "rejected";
+  assert.equal((await client.probe()).serviceUnavailable, false);
+  mode = "ready";
+  const status = await client.probe();
+  assert.equal(status.connected, true);
+  assert.equal(status.serviceUnavailable, false);
+});
+
 test("AutoDJ service settings normalize URLs and recovery leases", () => {
   assert.equal(normalizeAutoDjServiceUrl("http://127.0.0.1:3100/"), "http://127.0.0.1:3100");
   assert.equal(normalizeAutoDjServiceUrl("file:///tmp/autodj"), "");

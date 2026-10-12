@@ -152,6 +152,7 @@ export class PlayerController {
     this.requestEvents = [];
     this.requesterStatsByUser = new Map();
     this.isAdvancing = false;
+    this.playbackStartsHeld = false;
     this.isPlaybackPaused = false;
     this.currentTrackStartedAt = 0;
     this.currentTrackElapsedSeconds = 0;
@@ -2018,7 +2019,21 @@ export class PlayerController {
     return finishedTrack;
   }
 
+  async holdPlaybackStarts() {
+    this.playbackStartsHeld = true;
+    // Let an admitted start settle before stopping its output. Pending starts
+    // recheck the hold before consuming a queued track or loading a player.
+    while (this.isAdvancing) {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
+  releasePlaybackStarts() {
+    this.playbackStartsHeld = false;
+  }
+
   async ensurePlayback() {
+    if (this.playbackStartsHeld) return;
     if (this.currentTrack || this.isAdvancing) {
       if (this.currentTrack) {
         logInfo("Playback already active", {
@@ -2211,6 +2226,8 @@ export class PlayerController {
           return;
         }
       }
+
+      if (this.playbackStartsHeld) return;
 
       if (source === "queue" && this.queue[0]?.id === nextTrack.id) {
         this.queue.shift();
@@ -2428,6 +2445,9 @@ export class PlayerController {
   }
 
   async playOrPausePlayback(triggeredBy) {
+    if (this.playbackStartsHeld) {
+      throw new Error("Playback is switching between AutoDJ and the normal player. Please try again.");
+    }
     if (this.currentTrack) {
       return this.togglePauseCurrentTrack(triggeredBy);
     }

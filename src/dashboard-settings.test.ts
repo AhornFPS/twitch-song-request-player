@@ -126,17 +126,37 @@ test("enabling AutoDJ saves its connection without applying unrelated drafts", a
   let saved;
   const context = vm.createContext({
     autoDjStatus: { activation: { desired: false } },
+    isAutoDjActivationPending: false, isPlaybackCommandPending: false,
     collectSettingsPayload: () => ({ autoDjServiceUrl: "http://preview.invalid", autoDjServiceLeaseSeconds: 90,
       autoDjServiceToken: "fixture-token", radioTrackCount: 7, chatCommands: {} }),
     persistSettings: async payload => { saved = payload; return { settings: {} }; },
     setText() {}, applySettingsPayload() {}, renderAutoDjStatus() {},
     fetchJson: async () => ({ activation: { desired: true } }),
-    loadAutoDjStatus: async () => {}
+    loadAutoDjStatus: async () => {}, loadPlaybackState: async () => {}
   });
   vm.runInContext(functions("setAutoDjActivation"), context);
   await context.setAutoDjActivation();
   assert.deepEqual(Object.keys(saved).sort(), ["autoDjServiceLeaseSeconds", "autoDjServiceToken", "autoDjServiceUrl"]);
   assert.equal(context.autoDjStatus.activation.desired, true);
+  assert.equal(context.isAutoDjActivationPending, false);
+});
+
+test("pausing AutoDJ for normal playback leaves unsaved connection edits untouched", async () => {
+  const context = vm.createContext({
+    autoDjStatus: { activation: { desired: true } },
+    isAutoDjActivationPending: false, isPlaybackCommandPending: false,
+    collectSettingsPayload: () => assert.fail("normal playback must use the existing connection"),
+    persistSettings: () => assert.fail("normal playback must not save connection drafts"),
+    setText() {}, renderAutoDjStatus() {},
+    fetchJson: async (_url, options) => {
+      assert.equal(JSON.parse(options.body).enabled, false);
+      return { activation: { desired: false } };
+    },
+    loadAutoDjStatus: async () => {}, loadPlaybackState: async () => {}
+  });
+  vm.runInContext(functions("setAutoDjActivation"), context);
+  await context.setAutoDjActivation();
+  assert.equal(context.autoDjStatus.activation.desired, false);
 });
 
 test("OBS login saves only its own settings and retains other pending drafts", async () => {

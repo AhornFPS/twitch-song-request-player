@@ -60,6 +60,7 @@ let requestPolicyAutosaveTimer = null;
 let isRequestPolicyAutosaveSaving = false;
 let hasPendingRequestPolicyAutosave = false;
 let autoDjStatus = null;
+let isAutoDjActivationPending = false;
 let autoDjStatusTimer = null;
 
 function el(id) {
@@ -216,6 +217,7 @@ function renderDashboard() {
                 <button id="overview-stop" class="secondary-button" type="button">Stop</button>
                 <button id="overview-next" class="ghost-button" type="button">Next track</button>
               </div>
+              <p id="overview-playback-owner" class="field__hint" hidden></p>
               <form id="overview-queue-form" class="queue-add-form">
                 <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
                 <div class="overview-queue-actions">
@@ -336,7 +338,7 @@ function renderDashboard() {
       </section>
 
       <section id="tab-autodj" class="atlas-view" hidden>
-        <p class="panel-note">Connection settings apply with Save changes or when you enable AutoDJ. Other edits stay pending.</p>
+        <p class="panel-note">Connection settings apply with Save changes or when you resume AutoDJ. Play normally in Overview pauses AutoDJ and keeps this connection saved.</p>
         <div class="stack-layout">
           <section class="panel card-panel">
             <div class="panel__header">
@@ -1722,7 +1724,9 @@ function renderAutoDjStatus() {
         ? "status-pill status-pill--ok"
         : "status-pill status-pill--idle"
       : "status-pill status-pill--warn";
-    activationPill.textContent = activation.synchronized
+    activationPill.textContent = !responding && activation.desired === false
+      ? "Normal playback"
+      : activation.synchronized
       ? activation.effective
         ? "Enabled"
         : "Disabled"
@@ -1732,7 +1736,8 @@ function renderAutoDjStatus() {
   }
   const activationButton = el("autodj-activation");
   if (activationButton instanceof HTMLButtonElement) {
-    activationButton.textContent = activation.desired ? "Disable AutoDJ" : "Enable AutoDJ";
+    activationButton.textContent = activation.desired ? "Use normal playback" : "Resume AutoDJ";
+    activationButton.disabled = isAutoDjActivationPending || isPlaybackCommandPending;
   }
   const mixNextButton = el("autodj-mix-next");
   if (mixNextButton instanceof HTMLButtonElement) {
@@ -1767,6 +1772,7 @@ function renderAutoDjStatus() {
     }
   }
   setText("autodj-feedback", status?.error || "");
+  applyPlaybackState();
 }
 
 async function loadAutoDjStatus() {
@@ -1818,23 +1824,32 @@ async function answerAutoDjPairing(requestId, decision) {
 }
 
 async function setAutoDjActivation() {
+  if (isAutoDjActivationPending || isPlaybackCommandPending) return;
   const desired = !(autoDjStatus?.activation?.desired === true);
-  setText("autodj-feedback", desired ? "Enabling AutoDJ..." : "Disabling AutoDJ...");
+  isAutoDjActivationPending = true;
+  renderAutoDjStatus();
+  setText("autodj-feedback", desired ? "Resuming AutoDJ..." : "Pausing AutoDJ for normal playback...");
   try {
-    const pairing = collectSettingsPayload();
-    settingsPayload = await persistSettings(Object.fromEntries(Object.entries(pairing).filter(([key]) =>
-      ["autoDjServiceUrl", "autoDjBrowserOutputUrl", "autoDjServiceToken", "autoDjServiceLeaseSeconds"].includes(key)
-    )));
-    applySettingsPayload();
+    if (desired) {
+      const pairing = collectSettingsPayload();
+      settingsPayload = await persistSettings(Object.fromEntries(Object.entries(pairing).filter(([key]) =>
+        ["autoDjServiceUrl", "autoDjBrowserOutputUrl", "autoDjServiceToken", "autoDjServiceLeaseSeconds"].includes(key)
+      )));
+      applySettingsPayload();
+    }
     autoDjStatus = await fetchJson("/api/autodj-service/activation", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: desired })
     });
     renderAutoDjStatus();
+    await loadPlaybackState();
   } catch (error) {
     setText("autodj-feedback", error?.message || "AutoDJ activation failed.");
     await loadAutoDjStatus().catch(() => {});
+  } finally {
+    isAutoDjActivationPending = false;
+    renderAutoDjStatus();
   }
 }
 
@@ -2570,8 +2585,17 @@ function applyPlaybackState() {
   const restartStoppedButton = el("playback-restart-stopped");
 
   if (playPauseButton) {
-    playPauseButton.disabled = isPlaybackCommandPending;
-    playPauseButton.textContent = playbackStatus === "playing" ? "Pause" : "Play";
+    playPauseButton.disabled = isPlaybackCommandPending || isAutoDjActivationPending;
+    playPauseButton.textContent = playbackStatus === "playing" ? "Pause"
+      : autoDjStatus?.activation?.desired ? "Play normally" : "Play";
+  }
+
+  const playbackOwnerHint = el("overview-playback-owner");
+  if (playbackOwnerHint) {
+    playbackOwnerHint.hidden = !autoDjStatus?.configured;
+    playbackOwnerHint.textContent = autoDjStatus?.activation?.desired
+      ? "Play normally pauses AutoDJ, then starts your normal playlist or queued tracks. Your AutoDJ connection stays saved."
+      : "Normal playback is selected. Resume AutoDJ from the AutoDJ tab to switch back.";
   }
 
   if (stopButton) {
@@ -3758,6 +3782,10 @@ async function sendOverviewPlaybackCommand(url) {
       method: "POST"
     });
     playbackState = payload.state;
+    if (payload.state?.autoDjController) {
+      autoDjStatus = payload.state.autoDjController;
+      renderAutoDjStatus();
+    }
     applyPlaybackState();
     return payload;
   } finally {
