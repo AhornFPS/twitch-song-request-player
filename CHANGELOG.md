@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+## 3.1.0 - 2026-10-12
+
 - Add a Save button to Now Playing to keep the current track in the fallback library, with a Saved state for existing tracks.
 
 - Add a toggle in Requests & Chat for automatically saving naturally completed requests to the fallback library.
