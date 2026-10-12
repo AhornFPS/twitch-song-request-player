@@ -7,7 +7,7 @@ function createController({
   runtimeStateStore = null,
   requestAuditStore = null,
   requestPolicy = {},
-  radioModeEnabled = true,
+  radioModeEnabled = undefined,
   radioTrackCount = 3,
   playlistRepositoryOverrides = {},
   getRadioTracks = null,
@@ -64,6 +64,85 @@ function createController({
     emittedEvents
   };
 }
+
+test("completed requests auto-save by default and never auto-save when skipped or failed", async () => {
+  for (const status of ["ended", "skipped", "error", "deleted"]) {
+    const savedTracks = [];
+    const { controller } = createController({
+      playlistRepositoryOverrides: {
+        async appendTrack(track) { savedTracks.push(track.key); return true; }
+      }
+    });
+    await controller.addRequest({
+      provider: "youtube", url: "https://youtu.be/request-save", title: "Request Save",
+      key: "youtube:request-save", requestedBy: { username: "viewer" }
+    });
+    await controller.finishCurrentTrack({ trackId: controller.getCurrentTrack().id, status });
+    assert.deepEqual(savedTracks, status === "ended" ? ["youtube:request-save"] : []);
+    assert.equal(controller.getPublicState().history[0].status, status);
+  }
+});
+
+test("completed-request auto-save can be changed during playback without preventing history or queue advancement", async () => {
+  const savedTracks = [];
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      async appendTrack(track) { savedTracks.push(track.key); return true; }
+    }
+  });
+  for (const name of ["first", "second", "third"]) {
+    await controller.addRequest({
+      provider: "youtube", url: `https://youtu.be/${name}`, title: name,
+      key: `youtube:${name}`, requestedBy: { username: "viewer" }
+    });
+  }
+  controller.setRequestPolicy({ autoSaveCompletedRequests: false });
+  await controller.handlePlayerEvent({ trackId: controller.getCurrentTrack().id, status: "ended" });
+  assert.deepEqual(savedTracks, []);
+  assert.equal(controller.getPublicState().history[0].track.title, "first");
+  assert.equal(controller.getCurrentTrack().title, "second");
+
+  // Explicit saving still works with automatic saving disabled.
+  await controller.saveCurrentTrack();
+  assert.deepEqual(savedTracks, ["youtube:second"]);
+  await controller.handlePlayerEvent({ trackId: controller.getCurrentTrack().id, status: "ended" });
+  assert.deepEqual(savedTracks, ["youtube:second"]);
+  assert.equal(controller.getCurrentTrack().title, "third");
+
+  controller.setRequestPolicy({ autoSaveCompletedRequests: true });
+  await controller.handlePlayerEvent({ trackId: controller.getCurrentTrack().id, status: "ended" });
+  assert.deepEqual(savedTracks, ["youtube:second", "youtube:third"]);
+  assert.equal(controller.getPublicState().history.length, 3);
+  assert.equal(controller.getCurrentTrack(), null);
+});
+
+test("manual saving keeps the selected track when playback advances during persistence", async () => {
+  let finishSave;
+  let appendedKey;
+  const { controller } = createController({
+    playlistRepositoryOverrides: {
+      async appendTrack(track) {
+        appendedKey = track.key;
+        await new Promise(resolve => { finishSave = resolve; });
+        return true;
+      }
+    }
+  });
+  for (const name of ["save-first", "save-second"]) {
+    await controller.addRequest({
+      provider: "youtube", url: `https://youtu.be/${name}`, title: name,
+      key: `youtube:${name}`, requestedBy: { username: "viewer" }
+    });
+  }
+  const saving = controller.saveCurrentTrack("dashboard");
+  await controller.skipToNextTrack("dashboard");
+  finishSave();
+  const result = await saving;
+  assert.equal(appendedKey, "youtube:save-first");
+  assert.equal(result.track.key, "youtube:save-first");
+  assert.equal(controller.getCurrentTrack().key, "youtube:save-second");
+  assert.equal(controller.getPublicState().adminEvents[0].track.key, "youtube:save-first");
+});
 
 test("duplicate requests are ignored when the same track is already active", async () => {
   const { controller, emittedEvents } = createController();
@@ -1240,6 +1319,7 @@ test("fallback playlist tracks advance when the player misses the ended event", 
 test("radio queues three related tracks after the final queued request finishes", async () => {
   const radioCalls = [];
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async ({ seedTrack, excludeTrackKeys, count }) => {
       radioCalls.push({
         seedTrack,
@@ -1310,10 +1390,9 @@ test("radio queues three related tracks after the final queued request finishes"
   );
 });
 
-test("radio disabled does not fetch or queue automatic radio tracks", async () => {
+test("radio defaults to disabled and does not fetch or queue automatic radio tracks", async () => {
   let radioCallCount = 0;
   const { controller } = createController({
-    radioModeEnabled: false,
     getRadioTracks: async () => {
       radioCallCount += 1;
       return [
@@ -1352,6 +1431,7 @@ test("radio disabled does not fetch or queue automatic radio tracks", async () =
 test("disabling radio clears existing radio queue", async () => {
   let savedState = null;
   const { controller } = createController({
+    radioModeEnabled: true,
     runtimeStateStore: {
       async save(state) {
         savedState = JSON.parse(JSON.stringify(state));
@@ -1382,6 +1462,7 @@ test("disabling radio clears existing radio queue", async () => {
 test("radio track count controls how many automatic picks are queued", async () => {
   const radioCalls = [];
   const { controller } = createController({
+    radioModeEnabled: true,
     radioTrackCount: 5,
     getRadioTracks: async ({ count }) => {
       radioCalls.push({ count });
@@ -1424,6 +1505,7 @@ test("radio track count controls how many automatic picks are queued", async () 
 test("lowering radio track count trims existing queued radio tracks", async () => {
   let savedState = null;
   const { controller } = createController({
+    radioModeEnabled: true,
     radioTrackCount: 5,
     runtimeStateStore: {
       async save(state) {
@@ -1455,6 +1537,7 @@ test("lowering radio track count trims existing queued radio tracks", async () =
 
 test("radio skips alternate uploads of the seed song before queueing the next picks", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async () => [
       {
         provider: "youtube",
@@ -1518,6 +1601,7 @@ test("radio skips alternate uploads of the seed song before queueing the next pi
 
 test("radio skips repeated song titles even when they come from different artists or channels", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async () => [
       {
         provider: "youtube",
@@ -1581,6 +1665,7 @@ test("radio skips repeated song titles even when they come from different artist
 
 test("radio skips renamed uploads of the same song when only version text changes", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async () => [
       {
         provider: "youtube",
@@ -1644,6 +1729,7 @@ test("radio skips renamed uploads of the same song when only version text change
 
 test("radio skips fuzzy title duplicates when descriptor words differ without brackets", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async () => [
       {
         provider: "youtube",
@@ -1707,6 +1793,7 @@ test("radio skips fuzzy title duplicates when descriptor words differ without br
 
 test("radio skips tracks longer than ten minutes before queueing picks", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async () => [
       {
         provider: "youtube",
@@ -1765,6 +1852,7 @@ test("radio skips tracks longer than ten minutes before queueing picks", async (
 
 test("new queued requests take priority over leftover radio tracks and refresh the radio seed", async () => {
   const { controller } = createController({
+    radioModeEnabled: true,
     getRadioTracks: async ({ seedTrack }) => {
       if (seedTrack.title === "First Seed") {
         return [
@@ -1876,6 +1964,7 @@ test("new queued requests take priority over leftover radio tracks and refresh t
 test("radio tracks are auto-saved only when they finish naturally", async () => {
   const savedTracks = [];
   const { controller } = createController({
+    radioModeEnabled: true,
     playlistRepositoryOverrides: {
       async appendTrack(track) {
         savedTracks.push(track.title);
@@ -1955,7 +2044,7 @@ test("controller persists queue, stopped track, and history to the runtime state
     }
   };
 
-  const { controller } = createController({ runtimeStateStore });
+  const { controller } = createController({ runtimeStateStore, radioModeEnabled: true });
 
   await controller.addRequest({
     provider: "youtube",
@@ -2077,7 +2166,7 @@ test("controller restores queue, stopped track, and history from the runtime sta
     }
   };
 
-  const { controller } = createController({ runtimeStateStore });
+  const { controller } = createController({ runtimeStateStore, radioModeEnabled: true });
   await controller.restoreRuntimeState();
 
   const state = controller.getPublicState();

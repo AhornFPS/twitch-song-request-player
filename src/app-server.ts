@@ -2310,6 +2310,27 @@ export async function startAppServer({
     }
   });
 
+  app.post("/api/playback/save", async (request, response) => {
+    try {
+      const track = playerController.currentTrack;
+      if (!track) {
+        response.status(409).json({ error: "There is no current track to save." });
+        return;
+      }
+      if (request.body?.trackId !== track.id) {
+        response.status(409).json({ error: "The current track changed. Please save the new track." });
+        return;
+      }
+      const result = await playerController.saveCurrentTrack("dashboard");
+      response.json({ result, state: playerController.getBroadcastState() });
+    } catch (error) {
+      logError("Failed to save the current track from the dashboard", {
+        message: error?.message ?? String(error)
+      });
+      response.status(500).json({ error: error?.message ?? "Could not save the current track." });
+    }
+  });
+
   app.post("/api/playback/next", async (_request, response) => {
     try {
       const result = await playerController.skipToNextTrack("dashboard");

@@ -271,6 +271,7 @@ function normalizeRequestPolicy(value) {
 
   return {
     requestsEnabled: normalizeBoolean(rawValue.requestsEnabled, true),
+    autoSaveCompletedRequests: normalizeBoolean(rawValue.autoSaveCompletedRequests, true),
     accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
     maxQueueLength: normalizeLimit(rawValue.maxQueueLength, 0),
     maxRequestsPerUser: normalizeLimit(rawValue.maxRequestsPerUser, 0),
@@ -361,7 +362,7 @@ function normalizeSettings(raw) {
     autoDjServiceLeaseSeconds: normalizeAutoDjLeaseSeconds(
       raw.autoDjServiceLeaseSeconds ?? raw.AUTODJ_SERVICE_LEASE_SECONDS
     ),
-    radioModeEnabled: normalizeBoolean(raw.radioModeEnabled, true),
+    radioModeEnabled: normalizeBoolean(raw.radioModeEnabled, false),
     radioTrackCount: normalizeRadioTrackCount(raw.radioTrackCount, 3),
     requestPolicyAutosaveEnabled: normalizeBoolean(raw.requestPolicyAutosaveEnabled, false),
     requestPolicy: normalizeRequestPolicy(raw.requestPolicy),
@@ -615,7 +616,7 @@ function mergeSettings(baseSettings, overridingSettings) {
     radioModeEnabled:
       typeof overridingSettings.radioModeEnabled === "boolean"
         ? overridingSettings.radioModeEnabled
-        : (baseSettings.radioModeEnabled ?? true),
+        : (baseSettings.radioModeEnabled ?? false),
     radioTrackCount:
       typeof overridingSettings.radioTrackCount === "number"
         ? normalizeRadioTrackCount(overridingSettings.radioTrackCount, baseSettings.radioTrackCount ?? 3)
@@ -700,7 +701,7 @@ function normalizeBundledSettings(raw) {
     autoDjBrowserOutputUrl: "",
     autoDjServiceToken: "",
     autoDjServiceLeaseSeconds: 90,
-    radioModeEnabled: true,
+    radioModeEnabled: false,
     radioTrackCount: 3,
     requestPolicyAutosaveEnabled: false,
     requestPolicy: normalizeRequestPolicy(),

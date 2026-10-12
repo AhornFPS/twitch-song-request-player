@@ -119,7 +119,7 @@ test("saved GUI player state is preserved across reloads", async (t) => {
   assert.equal(settings.requestPolicyAutosaveEnabled, true);
 });
 
-test("radio mode settings default to enabled with three tracks", async (t) => {
+test("radio mode settings default to disabled with three tracks", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-"));
 
   t.after(async () => {
@@ -129,16 +129,18 @@ test("radio mode settings default to enabled with three tracks", async (t) => {
     });
   });
 
+  const configStore = createConfigStore({ runtimeDir });
+  assert.equal((await configStore.loadEffectiveSettings()).radioModeEnabled, false);
+
   await fs.writeFile(
     path.join(runtimeDir, "settings.json"),
     `${JSON.stringify({}, null, 2)}\n`,
     "utf8"
   );
 
-  const configStore = createConfigStore({ runtimeDir });
   const settings = await configStore.loadEffectiveSettings();
 
-  assert.equal(settings.radioModeEnabled, true);
+  assert.equal(settings.radioModeEnabled, false);
   assert.equal(settings.radioTrackCount, 3);
 });
 
@@ -175,6 +177,7 @@ test("radio mode settings are normalized and preserved", async (t) => {
 
   assert.equal(savedSettings.radioModeEnabled, true);
   assert.equal(savedSettings.radioTrackCount, 10);
+  assert.equal((await configStore.loadEffectiveSettings()).radioModeEnabled, true);
 });
 
 test("invalid radio track counts fall back to the default", async (t) => {
@@ -439,6 +442,29 @@ test("dashboard layout is fixed to atlas", async (t) => {
   assert.deepEqual(layoutIds, [
     "atlas"
   ]);
+});
+
+test("completed-request auto-save defaults on and persists both choices across reloads", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-config-request-save-"));
+  t.after(() => fs.rm(runtimeDir, { recursive: true, force: true }));
+  const store = createConfigStore({ runtimeDir });
+  assert.equal((await store.loadStoredSettings()).requestPolicy.autoSaveCompletedRequests, true);
+
+  // Existing settings without the new field retain the previous behavior.
+  await fs.writeFile(path.join(runtimeDir, "settings.json"), JSON.stringify({
+    requestPolicy: { maxQueueLength: 7 }
+  }));
+  assert.equal((await store.loadEffectiveSettings()).requestPolicy.autoSaveCompletedRequests, true);
+  for (const enabled of [false, true]) {
+    const settings = await store.loadStoredSettings();
+    await store.saveSettings({
+      ...settings,
+      requestPolicy: { ...settings.requestPolicy, autoSaveCompletedRequests: enabled }
+    });
+    const reloaded = await createConfigStore({ runtimeDir }).loadEffectiveSettings();
+    assert.equal(reloaded.requestPolicy.autoSaveCompletedRequests, enabled);
+    assert.equal(reloaded.requestPolicy.maxQueueLength, 7);
+  }
 });
 
 test("request policy and chat commands are normalized with defaults", async (t) => {

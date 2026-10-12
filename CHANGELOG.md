@@ -4,6 +4,12 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Add a Save button to Now Playing to keep the current track in the fallback library, with a Saved state for existing tracks.
+
+- Add a toggle in Requests & Chat for automatically saving naturally completed requests to the fallback library.
+
+- Turn radio mode off by default; keep existing saved radio preferences.
+
 ## 3.0.0 - 2026-10-12
 
 - Redesign the dashboard with a compact sticky header and six tabs: Now Playing, Queue & History, Requests & Chat, Library, AutoDJ, and Settings. Overlay theme and scale, OBS URLs and fallback, startup timeout, and app actions move into Settings sections with quick links; track announcements move next to chat commands; history and control activity move next to the queue.

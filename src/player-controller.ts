@@ -80,6 +80,7 @@ function normalizeRequestPolicy(requestPolicy = {}) {
 
   return {
     requestsEnabled: requestPolicy.requestsEnabled !== false,
+    autoSaveCompletedRequests: requestPolicy.autoSaveCompletedRequests !== false,
     accessLevel: validRequestAccessLevels.has(accessLevel) ? accessLevel : "everyone",
     maxQueueLength: Number.parseInt(String(requestPolicy.maxQueueLength ?? 0), 10) || 0,
     maxRequestsPerUser: Number.parseInt(String(requestPolicy.maxRequestsPerUser ?? 0), 10) || 0,
@@ -123,7 +124,7 @@ export class PlayerController {
     historyLimit = 100,
     requestAuditLimit = 1000,
     requestPolicy = {},
-    radioModeEnabled = true,
+    radioModeEnabled = false,
     radioTrackCount = 3,
     getRadioTracks = null,
     routeOwnedRequest = null,
@@ -1639,8 +1640,8 @@ export class PlayerController {
       return null;
     }
 
-    const saved = await this.playlistRepository.appendTrack(this.currentTrack);
     const track = this.currentTrack;
+    const saved = await this.playlistRepository.appendTrack(track);
 
     logInfo("Saving current track", {
       triggeredBy,
@@ -1979,7 +1980,8 @@ export class PlayerController {
 
     if (
       payload.status === "ended" &&
-      (finishedTrack.origin === "queue" || finishedTrack.origin === "radio")
+      ((finishedTrack.origin === "queue" && this.requestPolicy.autoSaveCompletedRequests) ||
+        finishedTrack.origin === "radio")
     ) {
       await this.playlistRepository.appendTrack(finishedTrack);
     }

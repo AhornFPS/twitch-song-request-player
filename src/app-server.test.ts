@@ -238,7 +238,7 @@ test("app server exposes and writes an OBS local loader file", async (t) => {
   assert.equal(settingsResponse.ok, true);
 
   const settingsPayload = await settingsResponse.json();
-  assert.equal(settingsPayload.settings.radioModeEnabled, true);
+  assert.equal(settingsPayload.settings.radioModeEnabled, false);
   assert.equal(settingsPayload.settings.radioTrackCount, 3);
   const overlayLoaderFilePath = settingsPayload.runtime.overlayLoaderFilePath;
   assert.equal(
@@ -1213,6 +1213,39 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   assert.equal(requestLogPayload.requesterStats[0].requester.username, "dashboard");
   assert.equal(requestLogPayload.requesterStats[0].acceptedRequests, 2);
 
+  const staleSaveResponse = await fetch(new URL("/api/playback/save", appServer.urls.dashboardUrl), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackId: "previous-track" })
+  });
+  assert.equal(staleSaveResponse.status, 409);
+  assert.equal(await fs.readFile(path.join(runtimeDir, "playlist.csv"), "utf8"), "Link,Title\n");
+
+  // Save works while paused and with completed-request auto-saving disabled.
+  const settingsResponse = await fetch(new URL("/api/settings", appServer.urls.dashboardUrl), {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestPolicy: { autoSaveCompletedRequests: false } })
+  });
+  assert.equal(settingsResponse.ok, true);
+  const pauseResponse = await fetch(new URL("/api/playback/play-pause", appServer.urls.dashboardUrl), { method: "POST" });
+  assert.equal((await pauseResponse.json()).state.playbackStatus, "paused");
+  for (const alreadySaved of [false, true]) {
+    const saveResponse = await fetch(new URL("/api/playback/save", appServer.urls.dashboardUrl), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ trackId: firstQueuePayload.track.id })
+    });
+    assert.equal(saveResponse.ok, true);
+    const savePayload = await saveResponse.json();
+    assert.equal(savePayload.result.alreadySaved, alreadySaved);
+    assert.equal(savePayload.state.currentTrack.id, firstQueuePayload.track.id);
+    assert.equal(savePayload.state.currentTrack.isSaved, true);
+    assert.equal(savePayload.state.playbackStatus, "paused");
+    assert.equal(savePayload.state.queue.length, 1);
+    assert.equal(savePayload.state.history.length, 0);
+  }
+  const savedCsv = await fs.readFile(path.join(runtimeDir, "playlist.csv"), "utf8");
+  assert.equal(savedCsv.trim().split(/\r?\n/).length, 2, "repeated saves must not duplicate the library entry");
+  assert.match(savedCsv, /Dashboard One/);
+
   const stopResponse = await fetch(new URL("/api/playback/stop", appServer.urls.dashboardUrl), {
     method: "POST"
   });
@@ -1221,6 +1254,12 @@ test("dashboard queue and playback APIs add tracks and expose transport controls
   assert.equal(stopPayload.state.playbackStatus, "stopped");
   assert.equal(stopPayload.state.stoppedTrack.title, "Dashboard One");
   assert.equal(stopPayload.state.currentTrack, null);
+
+  const stoppedSaveResponse = await fetch(new URL("/api/playback/save", appServer.urls.dashboardUrl), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trackId: firstQueuePayload.track.id })
+  });
+  assert.equal(stoppedSaveResponse.status, 409);
 
   const playResponse = await fetch(new URL("/api/playback/play-pause", appServer.urls.dashboardUrl), {
     method: "POST"
@@ -1535,6 +1574,61 @@ test("saving only the track announcement mode persists it and updates the runnin
   }
 });
 
+test("completed-request auto-save settings apply to the active player and survive restart", async (t) => {
+  const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-request-save-api-"));
+  const originalEnv = snapshotEnv(isolatedEnvKeys);
+  const originalCwd = process.cwd();
+  let appServer = null;
+  let controller;
+  t.after(async () => {
+    await appServer?.close().catch(() => {});
+    process.chdir(originalCwd);
+    restoreEnv(originalEnv);
+    await fs.rm(runtimeDir, { recursive: true, force: true });
+  });
+  process.chdir(runtimeDir);
+  clearEnv(isolatedEnvKeys);
+  const store = createConfigStore({ rootDir: appRootDir, runtimeDir, publicDir: path.join(appRootDir, "public") });
+  await store.saveSettings({ port: await getAvailablePort() });
+  await fs.writeFile(path.join(runtimeDir, "playlist.csv"), "Link,Title\n");
+  const start = () => startAppServer({
+    noBrowser: true, configStore: store,
+    twitchBotServiceFactory: ({ playerController }) => {
+      controller = playerController;
+      return {
+        getStatus: () => ({ state: "disconnected" }),
+        getAuthStatus: () => ({ state: "idle" }),
+        async applySettings() { return this.getStatus(); },
+        async disconnect() {}, cancelDeviceAuth() {}
+      };
+    }
+  });
+  appServer = await start();
+  const settingsUrl = new URL("/api/settings", appServer.urls.dashboardUrl);
+  const initial = await (await fetch(settingsUrl)).json();
+  assert.equal(initial.settings.requestPolicy.autoSaveCompletedRequests, true);
+  await controller.addRequest({
+    provider: "youtube", url: "https://youtu.be/unsaved-request", title: "Unsaved Request",
+    key: "youtube:unsaved-request", requestedBy: { username: "viewer" }
+  });
+  const response = await fetch(settingsUrl, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ requestPolicy: { ...initial.settings.requestPolicy, autoSaveCompletedRequests: false } })
+  });
+  assert.equal(response.status, 200);
+  assert.equal(controller.requestPolicy.autoSaveCompletedRequests, false);
+  await controller.handlePlayerEvent({ trackId: controller.getCurrentTrack().id, status: "ended" });
+  assert.equal(await fs.readFile(path.join(runtimeDir, "playlist.csv"), "utf8"), "Link,Title\n");
+  assert.equal(controller.getPublicState().history[0].status, "ended");
+
+  await appServer.close();
+  appServer = null;
+  appServer = await start();
+  assert.equal(controller.requestPolicy.autoSaveCompletedRequests, false);
+  assert.equal((await (await fetch(new URL("/api/settings", appServer.urls.dashboardUrl))).json())
+    .settings.requestPolicy.autoSaveCompletedRequests, false);
+});
+
 test("settings API persists request policy and configurable chat commands", async (t) => {
   const runtimeDir = await fs.mkdtemp(path.join(os.tmpdir(), "tsrp-app-server-"));
   const originalEnv = snapshotEnv(isolatedEnvKeys);
@@ -1618,6 +1712,7 @@ test("settings API persists request policy and configurable chat commands", asyn
       requestPolicyAutosaveEnabled: true,
       requestPolicy: {
         requestsEnabled: false,
+        autoSaveCompletedRequests: false,
         accessLevel: "subscriber",
         maxQueueLength: 7,
         maxRequestsPerUser: 2,
@@ -1728,6 +1823,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.deepEqual(payload.settings.playbackSuppressedCategories, ["Just Chatting"]);
   assert.equal(payload.settings.requestPolicyAutosaveEnabled, true);
   assert.equal(payload.settings.requestPolicy.requestsEnabled, false);
+  assert.equal(payload.settings.requestPolicy.autoSaveCompletedRequests, false);
   assert.equal(payload.settings.requestPolicy.accessLevel, "subscriber");
   assert.equal(payload.settings.requestPolicy.maxQueueLength, 7);
   assert.equal(payload.settings.requestPolicy.maxRequestsPerUser, 2);
@@ -1763,6 +1859,7 @@ test("settings API persists request policy and configurable chat commands", asyn
   assert.deepEqual(persistedSettings.chatSuppressedCategories, ["Music", "DJs", "Creative"]);
   assert.deepEqual(persistedSettings.playbackSuppressedCategories, ["Just Chatting"]);
   assert.equal(persistedSettings.requestPolicyAutosaveEnabled, true);
+  assert.equal(persistedSettings.requestPolicy.autoSaveCompletedRequests, false);
   assert.equal(persistedSettings.requestPolicy.requestsEnabled, false);
   assert.equal(persistedSettings.requestPolicy.accessLevel, "subscriber");
   assert.equal(persistedSettings.requestPolicy.maxQueueLength, 7);

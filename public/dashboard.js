@@ -144,6 +144,7 @@ function renderDashboard() {
                 <button id="overview-play-pause" class="primary-button" type="button">Play</button>
                 <button id="overview-stop" class="secondary-button" type="button">Stop</button>
                 <button id="overview-next" class="secondary-button" type="button">Next track</button>
+                <button id="overview-save" class="secondary-button" type="button" title="Save the current track to the fallback library">Save</button>
                 <button id="playback-restart-stopped" class="ghost-button" type="button">Restart stopped track</button>
               </div>
               <p id="overview-playback-owner" class="field__hint" hidden></p>
@@ -259,6 +260,13 @@ function renderDashboard() {
                   <span id="requests-status-copy" class="toggle-card__body">Viewer requests can be queued from chat.</span>
                 </span>
                 <input id="requests-enabled-toggle" class="switch" type="checkbox" role="switch" />
+              </label>
+              <label class="toggle-card field--full" for="requests-auto-save-completed-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Automatically save completed requests</span>
+                  <span class="toggle-card__body">Add requested tracks to the fallback library after they finish naturally. Skipped or failed requests are not added.</span>
+                </span>
+                <input id="requests-auto-save-completed-toggle" class="switch" type="checkbox" role="switch" />
               </label>
               <label class="field">
                 <span class="field__label">Who can request</span>
@@ -970,6 +978,7 @@ function renderOverlayScaleControl(scalePercent) {
 function getRequestPolicy() {
   return settingsPayload?.settings?.requestPolicy ?? {
     requestsEnabled: true,
+    autoSaveCompletedRequests: true,
     accessLevel: "everyone",
     maxQueueLength: 0,
     maxRequestsPerUser: 0,
@@ -1000,6 +1009,7 @@ function getDraftRequestPolicy() {
   if (requestPolicyDraft && typeof requestPolicyDraft === "object") {
     return {
       requestsEnabled: requestPolicyDraft.requestsEnabled !== false,
+      autoSaveCompletedRequests: requestPolicyDraft.autoSaveCompletedRequests !== false,
       accessLevel: typeof requestPolicyDraft.accessLevel === "string" ? requestPolicyDraft.accessLevel : "everyone",
       maxQueueLength: Number.parseInt(String(requestPolicyDraft.maxQueueLength ?? 0), 10) || 0,
       maxRequestsPerUser: Number.parseInt(String(requestPolicyDraft.maxRequestsPerUser ?? 0), 10) || 0,
@@ -1034,6 +1044,7 @@ function syncRequestPolicyDraftFromInputs() {
   const blockedPhrasesInput = el("requests-blocked-phrases");
   requestPolicyDraft = {
     requestsEnabled: toggle instanceof HTMLInputElement ? toggle.checked : getRequestPolicy().requestsEnabled !== false,
+    autoSaveCompletedRequests: el("requests-auto-save-completed-toggle") instanceof HTMLInputElement ? el("requests-auto-save-completed-toggle").checked : getRequestPolicy().autoSaveCompletedRequests !== false,
     accessLevel: accessLevelSelect instanceof HTMLSelectElement ? accessLevelSelect.value : getRequestPolicy().accessLevel || "everyone",
     maxQueueLength: Number.parseInt(maxQueueLengthInput?.value || "0", 10) || 0,
     maxRequestsPerUser: Number.parseInt(maxPerUserInput?.value || "0", 10) || 0,
@@ -1059,6 +1070,7 @@ function syncRequestPolicyDraftFromInputs() {
 function collectRequestPolicyPayload() {
   return {
     requestsEnabled: el("requests-enabled-toggle") instanceof HTMLInputElement ? el("requests-enabled-toggle").checked : true,
+    autoSaveCompletedRequests: el("requests-auto-save-completed-toggle") instanceof HTMLInputElement ? el("requests-auto-save-completed-toggle").checked : true,
     accessLevel: el("requests-access-level") instanceof HTMLSelectElement ? el("requests-access-level").value : "everyone",
     maxQueueLength: Number.parseInt(el("requests-max-queue-length")?.value || "0", 10) || 0,
     maxRequestsPerUser: Number.parseInt(el("requests-max-per-user")?.value || "0", 10) || 0,
@@ -1145,6 +1157,10 @@ function applyRequestPolicyState() {
   }
   if (toggle instanceof HTMLInputElement) {
     toggle.checked = isEnabled;
+  }
+  const autoSaveCompletedToggle = el("requests-auto-save-completed-toggle");
+  if (autoSaveCompletedToggle instanceof HTMLInputElement) {
+    autoSaveCompletedToggle.checked = requestPolicy.autoSaveCompletedRequests !== false;
   }
   if (accessLevelSelect instanceof HTMLSelectElement) {
     accessLevelSelect.value = requestPolicy.accessLevel || "everyone";
@@ -1409,7 +1425,7 @@ function collectSettingsPayload() {
     obsYoutubeFallbackEnabled: el("youtube-fallback-enabled-toggle") instanceof HTMLInputElement ? el("youtube-fallback-enabled-toggle").checked : false,
     obsWebSocketUrl: el("obs-websocket-url")?.value.trim() || "ws://127.0.0.1:4455",
     obsYoutubeFallbackSourceName: el("obs-youtube-source-name")?.value.trim() || "",
-    radioModeEnabled: el("radio-mode-enabled-toggle") instanceof HTMLInputElement ? el("radio-mode-enabled-toggle").checked : true,
+    radioModeEnabled: el("radio-mode-enabled-toggle") instanceof HTMLInputElement ? el("radio-mode-enabled-toggle").checked : false,
     radioTrackCount: Number.parseInt(el("radio-track-count")?.value || "3", 10) || 3,
     requestPolicyAutosaveEnabled: getRequestPolicyAutosaveEnabled(),
     requestPolicy: collectRequestPolicyPayload(),
@@ -1687,7 +1703,7 @@ function applySettingsPayload() {
   );
   const radioModeEnabledToggle = el("radio-mode-enabled-toggle");
   const radioTrackCountInput = el("radio-track-count");
-  const radioModeEnabled = settingsPayload.settings.radioModeEnabled !== false;
+  const radioModeEnabled = settingsPayload.settings.radioModeEnabled === true;
   if (radioModeEnabledToggle instanceof HTMLInputElement) {
     radioModeEnabledToggle.checked = radioModeEnabled;
   }
@@ -2182,6 +2198,7 @@ function applyPlaybackState() {
   const playPauseButton = el("overview-play-pause");
   const stopButton = el("overview-stop");
   const nextButton = el("overview-next");
+  const saveButton = el("overview-save");
   const queueButton = el("overview-queue-button");
   const searchButton = el("overview-search-button");
   const restartStoppedButton = el("playback-restart-stopped");
@@ -2199,6 +2216,10 @@ function applyPlaybackState() {
   }
   if (nextButton) {
     nextButton.disabled = isPlaybackCommandPending;
+  }
+  if (saveButton) {
+    saveButton.disabled = isPlaybackCommandPending || !currentTrack || currentTrack.isSaved;
+    saveButton.textContent = currentTrack?.isSaved ? "Saved" : "Save";
   }
   if (queueButton) {
     queueButton.disabled = isQueueSubmitting || isOverviewSearchPending;
@@ -3197,12 +3218,13 @@ async function queueOverviewSearchResult(index) {
     applyPlaybackState();
   }
 }
-async function sendOverviewPlaybackCommand(url) {
+async function sendOverviewPlaybackCommand(url, body2 = null) {
   isPlaybackCommandPending = true;
   applyPlaybackState();
   try {
     const payload = await fetchJson(url, {
-      method: "POST"
+      method: "POST",
+      ...body2 ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body2) } : {}
     });
     playbackState = payload.state;
     if (payload.state?.autoDjController) {
@@ -3260,6 +3282,17 @@ async function playNextOverviewTrack() {
     }
   } catch (error) {
     setOverviewFeedback(error?.message || "Could not advance to the next track.", "error");
+  }
+}
+async function saveOverviewCurrentTrack() {
+  const track = playbackState?.currentTrack;
+  if (!track || track.isSaved || isPlaybackCommandPending) return;
+  setOverviewFeedback("Saving the current track...");
+  try {
+    const payload = await sendOverviewPlaybackCommand("/api/playback/save", { trackId: track.id });
+    setOverviewFeedback(payload.result.alreadySaved ? `Already saved: ${payload.result.track.title}.` : `Saved ${payload.result.track.title} to the fallback library.`, "success");
+  } catch (error) {
+    setOverviewFeedback(error?.message || "Could not save the current track.", "error");
   }
 }
 async function restartStoppedTrack() {
@@ -3856,6 +3889,8 @@ root.addEventListener("click", (event) => {
     void stopOverviewPlayback();
   } else if (event.target.id === "overview-next") {
     void playNextOverviewTrack();
+  } else if (event.target.id === "overview-save") {
+    void saveOverviewCurrentTrack();
   } else if (event.target.id === "overview-search-button") {
     void searchOverviewTracks();
   } else if (event.target.id === "playback-restart-stopped") {
@@ -3915,7 +3950,7 @@ root.addEventListener("change", async (event) => {
     playlistPage = 1;
     await loadPlaylist();
   }
-  if (target.id === "requests-enabled-toggle" && target instanceof HTMLInputElement) {
+  if ((target.id === "requests-enabled-toggle" || target.id === "requests-auto-save-completed-toggle") && target instanceof HTMLInputElement) {
     syncRequestPolicyDraftFromInputs();
     applyRequestPolicyState();
     scheduleRequestPolicyAutosave();
