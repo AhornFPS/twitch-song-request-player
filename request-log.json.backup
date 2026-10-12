@@ -1,0 +1,685 @@
+{
+  "events": [
+    {
+      "id": "6ededdb0-87d2-4025-82b1-a932e512b155",
+      "createdAt": "2026-04-08T22:11:50.808Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "b73f0faa-db85-48c4-958d-d630d4a206bd",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=FPs325BkBzs",
+        "title": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII",
+        "key": "youtube:FPs325BkBzs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/FPs325BkBzs/maxresdefault.jpg",
+        "durationSeconds": 197,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "b736ef12-a4b8-4307-bd0a-df86f6de6286",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 8,
+        "acceptedRequests": 8,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 8,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-08T22:11:50.808Z",
+        "lastAcceptedAt": "2026-04-08T22:11:50.808Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl",
+        "lastTrackKey": "youtube:FPs325BkBzs",
+        "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "f4fb4997-40a2-4983-94a1-b0ff137a76d6",
+      "createdAt": "2026-04-08T21:49:00.953Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "e09aff43-9f4d-4712-9ca9-74d966027a05",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=FPs325BkBzs",
+        "title": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII",
+        "key": "youtube:FPs325BkBzs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/FPs325BkBzs/maxresdefault.jpg",
+        "durationSeconds": 197,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "b4d92eef-55ae-49b0-8462-bd76614524f8",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 7,
+        "acceptedRequests": 7,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 7,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-08T21:49:00.953Z",
+        "lastAcceptedAt": "2026-04-08T21:49:00.953Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl",
+        "lastTrackKey": "youtube:FPs325BkBzs",
+        "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "584fd938-7180-426f-9de5-6651b9773353",
+      "createdAt": "2026-04-07T18:33:21.176Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://open.spotify.com/intl-de/track/5kV68VhPRX61l7v30bqAEI?go=1&sp_cid=3fac4fc263e2a77ef919c2e02f528eea&utm_source=embed_player_p&utm_medium=desktop&nd=1&dlsi=121a84a0ff174fb8",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "202eddd2-d87f-4652-b0c8-bad822956fcb",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=_p2TkvuNYVU",
+        "title": "RAMØN - Topic - The Third Dome",
+        "key": "youtube:_p2TkvuNYVU",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/_p2TkvuNYVU/maxresdefault.jpg",
+        "durationSeconds": 181,
+        "isLive": false,
+        "sourceName": "RAMØN - Topic",
+        "sourceChannelId": "UCsBN78ZmuIUzLethp16YE7Q",
+        "sourceUrl": "https://www.youtube.com/channel/UCsBN78ZmuIUzLethp16YE7Q"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "aed77df3-aacf-49de-af8b-946cc533b50e",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 6,
+        "acceptedRequests": 6,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 6,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-07T18:33:21.176Z",
+        "lastAcceptedAt": "2026-04-07T18:33:21.176Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://open.spotify.com/intl-de/track/5kV68VhPRX61l7v30bqAEI?go=1&sp_cid=3fac4fc263e2a77ef919c2e02f528eea&utm_source=embed_player_p&utm_medium=desktop&nd=1&dlsi=121a84a0ff174fb8",
+        "lastTrackKey": "youtube:_p2TkvuNYVU",
+        "lastTrackTitle": "RAMØN - Topic - The Third Dome"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "376ffadd-ff57-46e9-84ed-94b1a051ccc4",
+      "createdAt": "2026-04-01T01:53:15.681Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://youtu.be/ZEAKJw8Cz1c",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "dc96dbed-cc2a-4f82-8173-7b0d66a986cc",
+        "provider": "youtube",
+        "url": "https://youtu.be/ZEAKJw8Cz1c",
+        "title": "Desire - Under Your Spell",
+        "key": "youtube:ZEAKJw8Cz1c",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/ZEAKJw8Cz1c/hqdefault.jpg",
+        "durationSeconds": null,
+        "isLive": false,
+        "sourceName": "jglopur",
+        "sourceChannelId": "",
+        "sourceUrl": "https://www.youtube.com/@jglopur"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "f85dbb30-453c-4c61-bc1f-ce5aecf40d3d",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 5,
+        "acceptedRequests": 5,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 5,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-04-01T01:53:15.681Z",
+        "lastAcceptedAt": "2026-04-01T01:53:15.681Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://youtu.be/ZEAKJw8Cz1c",
+        "lastTrackKey": "youtube:ZEAKJw8Cz1c",
+        "lastTrackTitle": "Desire - Under Your Spell"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "839ca7f6-d993-4600-85f5-fab1dc77604e",
+      "createdAt": "2026-03-31T16:53:30.669Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "alligatoah",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "06dab7dd-c2f4-4240-af24-702eb64a22bb",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=SPkVRk4rWzg",
+        "title": "Alligatoah - Verloren",
+        "key": "youtube:SPkVRk4rWzg",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/SPkVRk4rWzg/maxresdefault.jpg",
+        "durationSeconds": 253,
+        "isLive": false,
+        "sourceName": "Alligatoah",
+        "sourceChannelId": "UC7OwZsuUYLUpAk-T-uKLrQw",
+        "sourceUrl": "https://www.youtube.com/channel/UC7OwZsuUYLUpAk-T-uKLrQw"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "c73fc012-a724-423b-93bd-abd7a038b013",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 4,
+        "acceptedRequests": 4,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 4,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:53:30.669Z",
+        "lastAcceptedAt": "2026-03-31T16:53:30.669Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "alligatoah",
+        "lastTrackKey": "youtube:SPkVRk4rWzg",
+        "lastTrackTitle": "Alligatoah - Verloren"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 2,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "6f4a3106-9684-4afa-b423-eb59adb7d6af",
+      "createdAt": "2026-03-31T16:52:40.143Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "nine inch nails",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "c73fc012-a724-423b-93bd-abd7a038b013",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=PTFwQP86BRs",
+        "title": "Nine Inch Nails - Closer (Director's Cut)",
+        "key": "youtube:PTFwQP86BRs",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/PTFwQP86BRs/maxresdefault.jpg",
+        "durationSeconds": 282,
+        "isLive": false,
+        "sourceName": "NineInchNailsVEVO",
+        "sourceChannelId": "UCeQAnhVwklc7uo0cpMGqBiA",
+        "sourceUrl": "https://www.youtube.com/channel/UCeQAnhVwklc7uo0cpMGqBiA"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "e43cd821-1ae3-45ae-8dc2-0f7cb1666dd1",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 3,
+        "acceptedRequests": 3,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 3,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:52:40.143Z",
+        "lastAcceptedAt": "2026-03-31T16:52:40.143Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "nine inch nails",
+        "lastTrackKey": "youtube:PTFwQP86BRs",
+        "lastTrackTitle": "Nine Inch Nails - Closer (Director's Cut)"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "88479805-8ecc-46c7-a864-67a75ffd077a",
+      "createdAt": "2026-03-31T16:48:53.915Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "63c88171-4d35-4249-acb8-c0763dc55056",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+        "title": "Berserk - S3RL ft Iceman",
+        "key": "youtube:xd9fiOrfEqI",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/xd9fiOrfEqI/hqdefault.jpg",
+        "durationSeconds": null,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "",
+        "sourceUrl": "https://www.youtube.com/@S3RL"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 2,
+        "currentTrackId": "0a4685bb-4128-4386-a657-802e140c7e00",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 2,
+        "acceptedRequests": 2,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 2,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:48:53.915Z",
+        "lastAcceptedAt": "2026-03-31T16:48:53.915Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "https://www.youtube.com/watch?v=xd9fiOrfEqI",
+        "lastTrackKey": "youtube:xd9fiOrfEqI",
+        "lastTrackTitle": "Berserk - S3RL ft Iceman"
+      },
+      "details": {
+        "queuePosition": 2,
+        "activeRequestsForRequester": 2,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "683c9dd8-c162-46e3-9119-55fe50f39162",
+      "createdAt": "2026-03-31T16:48:33.656Z",
+      "source": "dashboard_queue",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "s3rl play it loud",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "track": {
+        "id": "1b99f380-177c-4198-9bdc-f87368489e44",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=Pnp-vIrNaYc",
+        "title": "Play It Loud - S3RL & Remzcore 📢 DEFI BRILATOR",
+        "key": "youtube:Pnp-vIrNaYc",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/Pnp-vIrNaYc/maxresdefault.jpg",
+        "durationSeconds": 154,
+        "isLive": false,
+        "sourceName": "S3RL",
+        "sourceChannelId": "UCb6JTMjrHZCYFD9Y04CBk9g",
+        "sourceUrl": "https://www.youtube.com/channel/UCb6JTMjrHZCYFD9Y04CBk9g"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "0a4685bb-4128-4386-a657-802e140c7e00",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "dashboard",
+          "displayName": "Dashboard"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-31T16:48:33.656Z",
+        "lastAcceptedAt": "2026-03-31T16:48:33.656Z",
+        "lastOutcome": "accepted",
+        "lastSource": "dashboard_queue",
+        "lastInput": "s3rl play it loud",
+        "lastTrackKey": "youtube:Pnp-vIrNaYc",
+        "lastTrackTitle": "Play It Loud - S3RL & Remzcore 📢 DEFI BRILATOR"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "endpoint": "/api/queue",
+          "triggeredBy": "dashboard"
+        }
+      }
+    },
+    {
+      "id": "70fdba73-ab94-4246-8522-18cf8e306d07",
+      "createdAt": "2026-03-21T20:07:39.537Z",
+      "source": "twitch_chat",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+      "bypassRequestLimits": true,
+      "requester": {
+        "username": "oldmanrune",
+        "displayName": "OldManRune"
+      },
+      "track": {
+        "id": "81042b8f-4272-42e6-9991-eec37c2be2e9",
+        "provider": "youtube",
+        "url": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+        "title": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)",
+        "key": "youtube:9hGcJA8fXvU",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/9hGcJA8fXvU/maxresdefault.jpg",
+        "durationSeconds": 287,
+        "isLive": false,
+        "sourceName": "Echo & the Bunnymen",
+        "sourceChannelId": "UCC4vxWpMSKdJlUBC9Lw93Tg",
+        "sourceUrl": "https://www.youtube.com/channel/UCC4vxWpMSKdJlUBC9Lw93Tg"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "oldmanrune",
+          "displayName": "OldManRune"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-21T20:07:39.537Z",
+        "lastAcceptedAt": "2026-03-21T20:07:39.537Z",
+        "lastOutcome": "accepted",
+        "lastSource": "twitch_chat",
+        "lastInput": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+        "lastTrackKey": "youtube:9hGcJA8fXvU",
+        "lastTrackTitle": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "channel": "ahorn",
+          "command": "song_request",
+          "roleState": {
+            "isBroadcaster": false,
+            "isModerator": true,
+            "isVip": false,
+            "isSubscriber": false
+          }
+        }
+      }
+    },
+    {
+      "id": "2606a290-195f-48f5-bc5d-f2ec033409f1",
+      "createdAt": "2026-03-21T18:43:01.505Z",
+      "source": "twitch_chat",
+      "outcome": "accepted",
+      "reason": "queued",
+      "message": "",
+      "input": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+      "bypassRequestLimits": false,
+      "requester": {
+        "username": "hollyhopdrive42",
+        "displayName": "HollyHopDrive42"
+      },
+      "track": {
+        "id": "4fe1cd41-2b6c-4934-8ec8-ad7fb657b4c3",
+        "provider": "youtube",
+        "url": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+        "title": "Radio",
+        "key": "youtube:L0BjHPapWLM",
+        "origin": "queue",
+        "artworkUrl": "https://i.ytimg.com/vi/L0BjHPapWLM/maxresdefault.jpg",
+        "durationSeconds": 192,
+        "isLive": false,
+        "sourceName": "Freak Slug - Topic",
+        "sourceChannelId": "UCkwKhDRSgMntfZXIN68uJVg",
+        "sourceUrl": "https://www.youtube.com/channel/UCkwKhDRSgMntfZXIN68uJVg"
+      },
+      "queueState": {
+        "playbackStatus": "playing",
+        "queueLength": 1,
+        "currentTrackId": "8e3968ca-fe4b-4363-bdb3-ffb551e3d76a",
+        "stoppedTrackId": ""
+      },
+      "requesterStats": {
+        "requester": {
+          "username": "hollyhopdrive42",
+          "displayName": "HollyHopDrive42"
+        },
+        "totalRequests": 1,
+        "acceptedRequests": 1,
+        "duplicateRequests": 0,
+        "rejectedRequests": 0,
+        "youtubeRequests": 1,
+        "soundcloudRequests": 0,
+        "lastRequestedAt": "2026-03-21T18:43:01.505Z",
+        "lastAcceptedAt": "2026-03-21T18:43:01.505Z",
+        "lastOutcome": "accepted",
+        "lastSource": "twitch_chat",
+        "lastInput": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+        "lastTrackKey": "youtube:L0BjHPapWLM",
+        "lastTrackTitle": "Radio"
+      },
+      "details": {
+        "queuePosition": 1,
+        "activeRequestsForRequester": 1,
+        "requestContext": {
+          "channel": "ahorn",
+          "command": "song_request",
+          "roleState": {
+            "isBroadcaster": false,
+            "isModerator": false,
+            "isVip": true,
+            "isSubscriber": true
+          }
+        }
+      }
+    }
+  ],
+  "requesterStats": {
+    "hollyhopdrive42": {
+      "requester": {
+        "username": "hollyhopdrive42",
+        "displayName": "HollyHopDrive42"
+      },
+      "totalRequests": 1,
+      "acceptedRequests": 1,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 1,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-03-21T18:43:01.505Z",
+      "lastAcceptedAt": "2026-03-21T18:43:01.505Z",
+      "lastOutcome": "accepted",
+      "lastSource": "twitch_chat",
+      "lastInput": "https://www.youtube.com/watch?v=L0BjHPapWLM",
+      "lastTrackKey": "youtube:L0BjHPapWLM",
+      "lastTrackTitle": "Radio"
+    },
+    "oldmanrune": {
+      "requester": {
+        "username": "oldmanrune",
+        "displayName": "OldManRune"
+      },
+      "totalRequests": 1,
+      "acceptedRequests": 1,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 1,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-03-21T20:07:39.537Z",
+      "lastAcceptedAt": "2026-03-21T20:07:39.537Z",
+      "lastOutcome": "accepted",
+      "lastSource": "twitch_chat",
+      "lastInput": "https://youtu.be/9hGcJA8fXvU?si=zqoj9phvzx0GTlFT",
+      "lastTrackKey": "youtube:9hGcJA8fXvU",
+      "lastTrackTitle": "Echo & The Bunnymen - Lips Like Sugar (Official Music Video)"
+    },
+    "dashboard": {
+      "requester": {
+        "username": "dashboard",
+        "displayName": "Dashboard"
+      },
+      "totalRequests": 8,
+      "acceptedRequests": 8,
+      "duplicateRequests": 0,
+      "rejectedRequests": 0,
+      "youtubeRequests": 8,
+      "soundcloudRequests": 0,
+      "lastRequestedAt": "2026-04-08T22:11:50.808Z",
+      "lastAcceptedAt": "2026-04-08T22:11:50.808Z",
+      "lastOutcome": "accepted",
+      "lastSource": "dashboard_queue",
+      "lastInput": "s3rl",
+      "lastTrackKey": "youtube:FPs325BkBzs",
+      "lastTrackTitle": "Pretty Little Kitty (Neko Nation 2wu) - S3RL x PiNKII"
+    }
+  }
+}

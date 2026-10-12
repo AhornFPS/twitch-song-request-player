@@ -23,7 +23,7 @@ test("only the external AutoDJ controller boundary remains in runtime surfaces",
   assert.match(server, /\/api\/autodj-service\/activation/);
   assert.match(server, /\/api\/autodj-service\/mix-next/);
   assert.match(server, /\/autodj-output/);
-  assert.match(dashboard, /\["overview", "playback", "autodj", "queue", "requests", "settings", "library"\]/);
+  assert.match(dashboard, /const DASHBOARD_TABS = \[[\s\S]*?\{ id: "autodj", label: "AutoDJ" \}[\s\S]*?\];/);
   assert.match(dashboard, /Standalone service/);
 });
 

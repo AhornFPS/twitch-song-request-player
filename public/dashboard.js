@@ -59,6 +59,7 @@ let hasPendingRequestPolicyAutosave = false;
 let autoDjStatus = null;
 let isAutoDjActivationPending = false;
 let autoDjStatusTimer = null;
+let saveFeedbackTimer = null;
 function el(id) {
   return document.getElementById(id);
 }
@@ -77,50 +78,40 @@ function setValue(id, value) {
 function htmlEscape(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
+const DASHBOARD_TABS = [
+  { id: "overview", label: "Now Playing" },
+  { id: "queue", label: "Queue & History" },
+  { id: "requests", label: "Requests & Chat" },
+  { id: "library", label: "Library" },
+  { id: "autodj", label: "AutoDJ" },
+  { id: "settings", label: "Settings" }
+];
 function renderDashboard() {
   body.dataset.dashboardLayout = "atlas";
   root.innerHTML = `
     <div class="app-shell atlas-shell">
-      <header class="panel shell-header shell-header--compact">
-        <div class="hero-copy hero-copy--minimal">
-          <h1>Twitch Song Request Player</h1>
-        </div>
-        <div class="hero-side">
-          <div class="status-strip">
+      <header class="shell-header">
+        <div class="shell-header__bar">
+          <div class="brand">
+            <span class="brand__mark" aria-hidden="true">\u266A</span>
+            <h1 class="brand__title">HornGaming <span>Music Control Center</span></h1>
             <span id="app-version-badge" class="status-pill status-pill--idle">Version Loading</span>
+          </div>
+          <div class="status-strip" role="group" aria-label="Live status">
             <span id="twitch-status-pill" class="status-pill status-pill--idle">Waiting</span>
             <span id="twitch-category-pill" class="status-pill status-pill--idle">Category unknown</span>
             <span id="requests-status-pill" class="status-pill status-pill--idle">Requests loading</span>
             <span id="server-port-pill" class="status-pill status-pill--accent">Port 3000</span>
           </div>
-          <div class="appearance-controls appearance-controls--single">
-            <label class="control-field">
-              <span class="control-field__label">Overlay theme</span>
-              <select id="theme-select"></select>
-            </label>
-            <label class="control-field control-field--slider">
-              <span class="control-field__label">Overlay scale</span>
-              <div class="control-range">
-                <input
-                  id="overlay-scale-slider"
-                  class="control-range__input"
-                  type="range"
-                  min="50"
-                  max="200"
-                  step="5"
-                  value="100"
-                />
-                <span id="overlay-scale-value" class="control-range__value">100%</span>
-              </div>
-            </label>
-            <button id="check-for-updates-button" class="secondary-button" type="button">Check for updates</button>
-            <button id="open-appdata-button" class="secondary-button" type="button">Open Settings Folder</button>
-            <span class="field__hint">Theme and scale save automatically.</span>
-          </div>
         </div>
+        <nav class="atlas-tabs" role="tablist" aria-label="Dashboard sections">
+          ${DASHBOARD_TABS.map(({ id, label }) => `
+            <button id="tab-button-${id}" class="tab-button" type="button" role="tab" data-tab="${id}" aria-controls="tab-${id}" aria-selected="false" tabindex="-1">${label}</button>
+          `).join("")}
+        </nav>
       </header>
 
-      <p id="save-feedback" class="feedback" role="status" aria-live="polite"></p>
+      <p id="save-feedback" class="feedback toast" role="status" aria-live="polite"></p>
 
       <aside class="settings-save-bar" aria-label="Save settings">
         <div class="settings-save-bar__copy" role="status" aria-live="polite" aria-atomic="true">
@@ -130,279 +121,98 @@ function renderDashboard() {
         <button id="save-button" class="primary-button" type="button" disabled>Save changes</button>
       </aside>
 
-      <nav class="atlas-tabs" aria-label="Dashboard sections">
-        <button class="tab-button" type="button" data-tab="overview">Overview</button>
-        <button class="tab-button" type="button" data-tab="playback">Playback</button>
-        <button class="tab-button" type="button" data-tab="autodj">AutoDJ</button>
-        <button class="tab-button" type="button" data-tab="queue">Queue</button>
-        <button class="tab-button" type="button" data-tab="requests">Requests</button>
-        <button class="tab-button" type="button" data-tab="settings">Settings</button>
-        <button class="tab-button" type="button" data-tab="library">Library</button>
-      </nav>
-
-      <section id="tab-overview" class="atlas-view">
+      <section id="tab-overview" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-overview">
         <div class="atlas-grid atlas-grid--overview">
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Runtime</p>
-                <h2>Server and OBS</h2>
-              </div>
-            </div>
-            <div class="info-grid">
-              <article class="info-card">
-                <p class="info-card__label">Twitch status</p>
-                <p id="twitch-status-text" class="info-card__value">Waiting for configuration.</p>
-              </article>
-              <article class="info-card">
-                <p class="info-card__label">Overlay URL</p>
-                <div class="copy-row">
-                  <input id="overlay-url" class="control-input" type="text" readonly />
-                  <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
-                </div>
-              </article>
-              <article class="info-card">
-                <p class="info-card__label">OBS local loader file</p>
-                <div class="copy-row">
-                  <input id="overlay-loader-file-path" class="control-input" type="text" readonly />
-                  <button class="copy-row__button" type="button" data-copy-target="overlay-loader-file-path">Copy</button>
-                </div>
-                <p class="field__hint">In OBS, enable <strong>Local file</strong> and select this file if you want the overlay to reconnect automatically when OBS opens before the app.</p>
-              </article>
-              <article class="info-card info-card--wide">
-                <p class="info-card__label">Restart notice</p>
-                <p id="restart-note" class="info-card__body">Port changes are applied immediately when you restart the app.</p>
-              </article>
-            </div>
-          </section>
-
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Playback</p>
-                <h2>Now playing</h2>
-              </div>
-              <div class="playback-panel__header-actions">
+          <div class="stack-layout">
+            <section class="panel now-playing" aria-labelledby="now-playing-heading">
+              <div class="panel__header">
+                <h2 id="now-playing-heading" class="panel__eyebrow">Now playing</h2>
                 <span id="playback-state-pill" class="status-pill status-pill--idle">Idle</span>
-                <button id="overview-gui-player-toggle" class="secondary-button" type="button">Activate GUI player</button>
               </div>
-            </div>
-            <div class="playback-card">
-              <p id="current-track-title" class="playback-card__title">Waiting for a track</p>
-              <p id="current-track-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
+              <p id="current-track-title" class="now-playing__title">Waiting for a track</p>
+              <p id="current-track-meta" class="now-playing__meta">Queue is empty. Fallback playlist will play automatically.</p>
               <div id="overview-progress" class="playback-progress" hidden>
+                <div class="playback-progress__track" aria-hidden="true">
+                  <div id="overview-progress-fill" class="playback-progress__fill"></div>
+                </div>
                 <div class="playback-progress__labels">
                   <span id="overview-progress-elapsed">0:00</span>
                   <span id="overview-progress-duration">0:00</span>
                 </div>
-                <div class="playback-progress__track" aria-hidden="true">
-                  <div id="overview-progress-fill" class="playback-progress__fill"></div>
-                </div>
               </div>
-              <div class="playback-controls">
+              <div class="playback-controls" role="group" aria-label="Playback controls">
                 <button id="overview-play-pause" class="primary-button" type="button">Play</button>
                 <button id="overview-stop" class="secondary-button" type="button">Stop</button>
-                <button id="overview-next" class="ghost-button" type="button">Next track</button>
+                <button id="overview-next" class="secondary-button" type="button">Next track</button>
+                <button id="playback-restart-stopped" class="ghost-button" type="button">Restart stopped track</button>
               </div>
               <p id="overview-playback-owner" class="field__hint" hidden></p>
-              <form id="overview-queue-form" class="queue-add-form">
-                <input id="overview-queue-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
-                <div class="overview-queue-actions">
-                  <button id="overview-queue-button" class="secondary-button" type="submit">Add to queue</button>
-                  <button id="overview-search-button" class="ghost-button" type="button">Search</button>
-                </div>
-              </form>
-              <p class="field__hint">Paste a direct link to queue it immediately, or search first and choose a result.</p>
-              <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
-              <div id="overview-search-results" class="history-list" hidden></div>
-              <ul id="queue-preview" class="queue-preview"></ul>
-            </div>
-          </section>
-        </div>
-      </section>
-
-      <section id="tab-playback" class="atlas-view" hidden>
-        <p class="panel-note">Playback and OBS settings apply with Save changes below. Player activation and volume save automatically.</p>
-        <div class="stack-layout">
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Playback</p>
-                <h2>Desktop player and transport</h2>
-              </div>
-              <div class="playback-panel__header-actions">
-                <span id="playback-tab-pill" class="status-pill status-pill--idle">Idle</span>
-                <button id="playback-restart-stopped" class="secondary-button" type="button">Restart stopped track</button>
-              </div>
-            </div>
-            <div class="playback-card">
-              <p id="playback-tab-title" class="playback-card__title">Waiting for a track</p>
-              <p id="playback-tab-meta" class="playback-card__meta">Queue is empty. Fallback playlist will play automatically.</p>
-              <section class="overview-player-panel">
-                <div class="overview-player-panel__header">
-                  <div>
-                    <p class="panel__eyebrow">GUI player</p>
-                    <p id="overview-gui-player-status" class="overview-player-panel__copy">Inactive. Activate it to play inside the desktop app without OBS.</p>
-                  </div>
-                </div>
-                <label class="overview-player-volume">
-                  <span class="overview-player-volume__label">Volume</span>
-                  <div class="overview-player-volume__controls">
-                    <input id="overview-gui-player-volume" class="overview-player-volume__slider" type="range" min="0" max="100" step="1" value="100" />
-                    <span id="overview-gui-player-volume-value" class="overview-player-volume__value">100%</span>
-                  </div>
-                </label>
-                <div id="overview-player-frame-wrap" class="overview-player-frame-wrap" hidden>
-                  <iframe
-                    id="overview-player-frame"
-                    class="overview-player-frame"
-                    title="Embedded desktop player"
-                    allow="autoplay"
-                  ></iframe>
-                </div>
-              </section>
-              <div class="request-limit-grid">
-                <label class="field">
-                  <span class="field__label">Player startup timeout (seconds)</span>
-                  <input id="playback-startup-timeout-seconds" class="control-input" type="number" min="0" step="1" />
-                  <span class="field__hint">If YouTube or SoundCloud never actually starts, the embedded player reports an error after this many seconds. Set to 0 to disable the timeout.</span>
-                </label>
-              </div>
-              <section class="overview-player-panel">
-                <div class="overview-player-panel__header">
-                  <div>
-                    <p class="panel__eyebrow">YouTube OBS fallback</p>
-                    <p id="youtube-fallback-status" class="overview-player-panel__copy">Use an OBS Browser Source for YouTube videos that block embedded playback.</p>
-                  </div>
-                  <button id="youtube-fallback-login" class="secondary-button" type="button">Open YouTube Login Page</button>
-                </div>
-                <p id="youtube-fallback-feedback" class="feedback" role="status" aria-live="polite"></p>
-                <label class="toggle-card" for="youtube-fallback-enabled-toggle">
-                  <span class="toggle-card__copy">
-                    <span class="toggle-card__title">Use OBS fallback for blocked YouTube videos</span>
-                    <span class="toggle-card__body">When YouTube blocks the embedded player, the app changes a configured OBS Browser Source to the normal YouTube page.</span>
-                  </span>
-                  <input id="youtube-fallback-enabled-toggle" type="checkbox" />
-                </label>
-                <div class="request-limit-grid">
-                  <label class="field">
-                    <span class="field__label">OBS WebSocket URL</span>
-                    <input id="obs-websocket-url" class="control-input" type="text" placeholder="ws://127.0.0.1:4455" />
-                  </label>
-                  <label class="field">
-                    <span class="field__label">OBS Browser Source name</span>
-                    <input id="obs-youtube-source-name" class="control-input" type="text" placeholder="YouTube Fallback" />
-                  </label>
-                  <label class="field">
-                    <span class="field__label">OBS WebSocket password</span>
-                    <input id="obs-websocket-password" class="control-input" type="password" autocomplete="new-password" />
-                  </label>
-                </div>
-              </section>
-            </div>
-          </section>
-
-          <section class="panel card-panel queue-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">History</p>
-                <h2>Recent playback</h2>
-              </div>
-            </div>
-            <div id="history-list" class="history-list"></div>
-          </section>
-
-          <section class="panel card-panel queue-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Admin</p>
-                <h2>Recent control activity</h2>
-              </div>
-            </div>
-            <div id="admin-event-list" class="history-list"></div>
-          </section>
-        </div>
-      </section>
-
-      <section id="tab-autodj" class="atlas-view" hidden>
-        <p class="panel-note">Connection settings apply with Save changes or when you resume AutoDJ. Play normally in Overview pauses AutoDJ and keeps this connection saved.</p>
-        <div class="stack-layout">
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Standalone service</p>
-                <h2>AutoDJ controller</h2>
-              </div>
-              <div class="status-strip status-strip--compact">
-                <span id="autodj-connection-pill" class="status-pill status-pill--idle">Unconfigured</span>
-                <span id="autodj-activation-pill" class="status-pill status-pill--idle">Disabled</span>
-              </div>
-            </div>
-            <p class="panel-note">AutoDJ owns local music, analysis, selection, transitions, mixing, and browser output. This app sends authenticated control requests only.</p>
-            <div class="form-grid">
-              <label class="field field--full">
-                <span class="field__label">AutoDJ service URL</span>
-                <input id="autodj-service-url" class="control-input" type="url" placeholder="http://127.0.0.1:3100" autocomplete="off" />
-              </label>
-              <label class="field field--full">
-                <span class="field__label">Browser output URL (optional override)</span>
-                <input id="autodj-browser-output-url" class="control-input" type="url" autocomplete="off" />
-              </label>
-              <label class="field">
-                <span class="field__label">Bearer token</span>
-                <input id="autodj-service-token" class="control-input" type="password" autocomplete="off" />
-              </label>
-              <label class="field field--narrow">
-                <span class="field__label">Lease duration (seconds)</span>
-                <input id="autodj-lease-seconds" class="control-input" type="number" min="15" max="300" step="1" />
-              </label>
-            </div>
-            <div class="button-row button-row--wrap">
-              <button id="autodj-discover" class="secondary-button" type="button">Find AutoDJ</button>
-              <button id="autodj-refresh" class="ghost-button" type="button">Refresh status</button>
-              <button id="autodj-activation" class="primary-button" type="button">Enable AutoDJ</button>
-              <button id="autodj-mix-next" class="secondary-button" type="button">Mix Next</button>
-              <a id="autodj-output-link" class="ghost-button" href="/autodj-output" target="_blank" rel="noopener noreferrer">Open browser output</a>
-            </div>
-            <p id="autodj-feedback" class="feedback" role="status" aria-live="polite"></p>
-            <div id="autodj-pairing-requests" class="history-list"></div>
-          </section>
-          <div class="atlas-grid atlas-grid--overview">
-            <section class="panel card-panel">
-              <div class="panel__header"><div><p class="panel__eyebrow">Live state</p><h2>Now playing</h2></div></div>
-              <p id="autodj-current-track" class="playback-card__title">No AutoDJ state received.</p>
-              <p id="autodj-last-seen" class="playback-card__meta">Last seen: never</p>
-              <p id="autodj-takeover" class="panel-note">Viewer-request takeover inactive.</p>
             </section>
-            <section class="panel card-panel">
-              <div class="panel__header"><div><p class="panel__eyebrow">Upcoming</p><h2>AutoDJ queue</h2></div></div>
-              <div id="autodj-upcoming" class="history-list"><p class="empty-state">No upcoming tracks reported.</p></div>
+
+            <section class="panel" aria-labelledby="add-to-queue-heading">
+              <h2 id="add-to-queue-heading" class="panel__title">Add to queue</h2>
+              <form id="overview-queue-form" class="inline-form">
+                <input id="overview-queue-input" class="control-input" type="text" aria-label="Track link or search text" aria-describedby="overview-queue-hint" placeholder="Paste a YouTube, SoundCloud, Spotify, or Suno link \u2014 or type a search" autocomplete="off" />
+                <button id="overview-queue-button" class="primary-button" type="submit">Add</button>
+                <button id="overview-search-button" class="secondary-button" type="button">Search</button>
+              </form>
+              <p id="overview-queue-hint" class="field__hint">Links are queued right away. Use Search to pick from results first.</p>
+              <p id="overview-feedback" class="feedback" role="status" aria-live="polite"></p>
+              <div id="overview-search-results" class="history-list" aria-label="Search results" hidden></div>
+            </section>
+          </div>
+
+          <div class="stack-layout">
+            <section class="panel" aria-labelledby="up-next-heading">
+              <div class="panel__header">
+                <h2 id="up-next-heading" class="panel__title">Up next</h2>
+                <button class="link-button" type="button" data-tab-link="queue">Manage queue</button>
+              </div>
+              <ol id="queue-preview" class="queue-preview"></ol>
+            </section>
+
+            <section class="panel" aria-labelledby="desktop-player-heading">
+              <div class="panel__header">
+                <h2 id="desktop-player-heading" class="panel__title">Desktop player</h2>
+                <button id="overview-gui-player-toggle" class="secondary-button" type="button">Activate GUI player</button>
+              </div>
+              <p id="overview-gui-player-status" class="field__hint">Inactive. Activate it to play inside the desktop app without OBS.</p>
+              <label class="range-field">
+                <span class="field__label">Volume</span>
+                <input id="overview-gui-player-volume" class="range-field__input" type="range" min="0" max="100" step="1" value="100" />
+                <span id="overview-gui-player-volume-value" class="range-field__value">100%</span>
+              </label>
+              <div id="overview-player-frame-wrap" class="overview-player-frame-wrap" hidden>
+                <iframe
+                  id="overview-player-frame"
+                  class="overview-player-frame"
+                  title="Embedded desktop player"
+                  allow="autoplay"
+                ></iframe>
+              </div>
+              <p class="field__hint">Player activation and volume save automatically.</p>
             </section>
           </div>
         </div>
       </section>
 
-      <section id="tab-queue" class="atlas-view" hidden>
+      <section id="tab-queue" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-queue" hidden>
         <div class="stack-layout">
-          <section class="panel card-panel queue-panel">
+          <section class="panel" aria-labelledby="queue-heading">
             <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Queue</p>
-                <h2>Live request queue</h2>
-              </div>
-              <div class="button-row">
-                <button id="queue-clear-button" class="ghost-button" type="button">Clear queue</button>
-              </div>
+              <h2 id="queue-heading" class="panel__title">Request queue</h2>
+              <button id="queue-clear-button" class="ghost-button ghost-button--danger" type="button">Clear queue</button>
             </div>
             <p id="queue-feedback" class="feedback" role="status" aria-live="polite"></p>
-            <div class="queue-table-wrap">
-              <table class="playlist-table">
+            <div class="table-wrap">
+              <table class="data-table">
                 <thead>
                   <tr>
+                    <th scope="col" class="data-table__index">#</th>
                     <th scope="col">Title</th>
                     <th scope="col">Requester</th>
-                    <th scope="col">Provider</th>
-                    <th scope="col" class="playlist-table__actions queue-table__actions">Actions</th>
+                    <th scope="col">Source</th>
+                    <th scope="col" class="data-table__actions">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="queue-table-body"></tbody>
@@ -410,19 +220,27 @@ function renderDashboard() {
               <div id="queue-empty-state" class="empty-state" hidden>No queued requests yet.</div>
             </div>
           </section>
+
+          <div class="atlas-grid atlas-grid--halves">
+            <section class="panel" aria-labelledby="history-heading">
+              <h2 id="history-heading" class="panel__title">Recent playback</h2>
+              <div id="history-list" class="history-list"></div>
+            </section>
+            <section class="panel" aria-labelledby="admin-events-heading">
+              <h2 id="admin-events-heading" class="panel__title">Control activity</h2>
+              <div id="admin-event-list" class="history-list"></div>
+            </section>
+          </div>
         </div>
       </section>
 
-      <section id="tab-requests" class="atlas-view" hidden>
+      <section id="tab-requests" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-requests" hidden>
         <p id="requests-save-note" class="panel-note">Request controls and chat commands apply with Save changes below.</p>
         <div class="stack-layout">
-          <section class="panel card-panel">
+          <section class="panel" aria-labelledby="requests-access-heading">
             <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Requests</p>
-                <h2>Viewer request controls</h2>
-              </div>
-              <div class="button-row button-row--compact request-header-actions">
+              <h2 id="requests-access-heading" class="panel__title">Song requests</h2>
+              <div class="button-row">
                 <span id="requests-tab-pill" class="status-pill status-pill--idle">Requests loading</span>
                 <button
                   id="requests-autosave-button"
@@ -434,142 +252,139 @@ function renderDashboard() {
                 </button>
               </div>
             </div>
-            <div class="request-policy-row">
-              <label class="toggle-card" for="requests-enabled-toggle">
+            <div class="form-grid form-grid--3">
+              <label class="toggle-card field--full" for="requests-enabled-toggle">
                 <span class="toggle-card__copy">
                   <span class="toggle-card__title">Accept song requests</span>
                   <span id="requests-status-copy" class="toggle-card__body">Viewer requests can be queued from chat.</span>
                 </span>
-                <input id="requests-enabled-toggle" type="checkbox" />
+                <input id="requests-enabled-toggle" class="switch" type="checkbox" role="switch" />
               </label>
-            </div>
-            <div class="request-limit-grid">
               <label class="field">
                 <span class="field__label">Who can request</span>
-                <select id="requests-access-level" class="control-input">
+                <select id="requests-access-level" class="control-input" aria-describedby="requests-access-level-hint">
                   <option value="everyone">Everyone</option>
                   <option value="subscriber">Subscribers and above</option>
                   <option value="vip">VIPs and above</option>
                   <option value="moderator">Moderators only</option>
                   <option value="broadcaster">Broadcaster only</option>
                 </select>
-                <span class="field__hint">Moderators and the broadcaster always bypass request caps.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Max queued requests</span>
-                <input id="requests-max-queue-length" class="control-input" type="number" min="0" step="1" />
-                <span class="field__hint">Set to 0 for no queue-length cap.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Max active requests per user</span>
-                <input id="requests-max-per-user" class="control-input" type="number" min="0" step="1" />
-                <span class="field__hint">Counts queued, playing, and stopped queue tracks. Set to 0 for no per-user cap.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Recent duplicate window (tracks)</span>
-                <input id="requests-duplicate-history-count" class="control-input" type="number" min="0" step="1" />
-                <span class="field__hint">Set to 0 to allow repeats from history. Higher values reject tracks that appeared in the most recent playback history entries.</span>
-              </label>
-            </div>
-            <div class="request-limit-grid">
-              <label class="field">
-                <span class="field__label">Per-user cooldown (seconds)</span>
-                <input id="requests-cooldown-seconds" class="control-input" type="number" min="0" step="1" />
-                <span class="field__hint">Set to 0 to disable the cooldown between successful requests from the same viewer.</span>
-              </label>
-              <label class="field">
-                <span class="field__label">Max track duration (seconds)</span>
-                <input id="requests-max-duration-seconds" class="control-input" type="number" min="0" step="1" />
-                <span class="field__hint">Set to 0 for no duration cap. Duration checks apply when provider metadata exposes a track length.</span>
-              </label>
-              <label class="toggle-card" for="requests-allow-search-toggle">
-                <span class="toggle-card__copy">
-                  <span class="toggle-card__title">Allow text-search requests</span>
-                  <span class="toggle-card__body">If disabled, chat requests must use direct YouTube, SoundCloud, Spotify, or Suno links.</span>
-                </span>
-                <input id="requests-allow-search-toggle" type="checkbox" />
-              </label>
-            </div>
-            <div class="request-limit-grid">
-              <label class="toggle-card" for="requests-reject-live-toggle">
-                <span class="toggle-card__copy">
-                  <span class="toggle-card__title">Block live streams</span>
-                  <span class="toggle-card__body">Reject live or upcoming YouTube streams before they can enter the request queue.</span>
-                </span>
-                <input id="requests-reject-live-toggle" type="checkbox" />
+                <span id="requests-access-level-hint" class="field__hint">Moderators and the broadcaster always bypass request caps.</span>
               </label>
               <label class="field">
                 <span class="field__label">YouTube safe search</span>
-                <select id="requests-safe-search" class="control-input">
+                <select id="requests-safe-search" class="control-input" aria-describedby="requests-safe-search-hint">
                   <option value="none">None</option>
                   <option value="moderate">Moderate</option>
                   <option value="strict">Strict</option>
                 </select>
-                <span class="field__hint">Used for chat search requests only. Direct links are still allowed.</span>
+                <span id="requests-safe-search-hint" class="field__hint">Applies to chat search requests. Direct links are still allowed.</span>
+              </label>
+              <fieldset class="field provider-fieldset">
+                <legend class="field__label">Allowed providers</legend>
+                <div class="chip-checks">
+                  <label class="chip-check"><input id="requests-provider-youtube" type="checkbox" /><span>YouTube</span></label>
+                  <label class="chip-check"><input id="requests-provider-soundcloud" type="checkbox" /><span>SoundCloud</span></label>
+                  <label class="chip-check"><input id="requests-provider-spotify" type="checkbox" /><span>Spotify</span></label>
+                  <label class="chip-check"><input id="requests-provider-suno" type="checkbox" /><span>Suno</span></label>
+                </div>
+              </fieldset>
+              <label class="toggle-card" for="requests-allow-search-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Allow text-search requests</span>
+                  <span class="toggle-card__body">When off, chat requests must be direct links.</span>
+                </span>
+                <input id="requests-allow-search-toggle" class="switch" type="checkbox" role="switch" />
+              </label>
+              <label class="toggle-card" for="requests-reject-live-toggle">
+                <span class="toggle-card__copy">
+                  <span class="toggle-card__title">Block live streams</span>
+                  <span class="toggle-card__body">Reject live or upcoming YouTube streams.</span>
+                </span>
+                <input id="requests-reject-live-toggle" class="switch" type="checkbox" role="switch" />
               </label>
             </div>
-            <div class="request-limit-grid">
-              <fieldset class="field fieldset-card">
-                <legend class="field__label">Allowed providers</legend>
-                <label class="checkbox-row">
-                  <input id="requests-provider-youtube" type="checkbox" />
-                  <span>YouTube</span>
-                </label>
-                <label class="checkbox-row">
-                  <input id="requests-provider-soundcloud" type="checkbox" />
-                  <span>SoundCloud</span>
-                </label>
-                <label class="checkbox-row">
-                  <input id="requests-provider-spotify" type="checkbox" />
-                  <span>Spotify</span>
-                </label>
-                <label class="checkbox-row">
-                  <input id="requests-provider-suno" type="checkbox" />
-                  <span>Suno</span>
-                </label>
-              </fieldset>
+          </section>
+
+          <section class="panel" aria-labelledby="requests-limits-heading">
+            <h2 id="requests-limits-heading" class="panel__title">Limits</h2>
+            <p class="panel-note">Set any limit to 0 to turn it off.</p>
+            <div class="form-grid form-grid--3">
+              <label class="field">
+                <span class="field__label">Max queued requests</span>
+                <input id="requests-max-queue-length" class="control-input" type="number" min="0" step="1" />
+              </label>
+              <label class="field">
+                <span class="field__label">Max active requests per user</span>
+                <input id="requests-max-per-user" class="control-input" type="number" min="0" step="1" aria-describedby="requests-max-per-user-hint" />
+                <span id="requests-max-per-user-hint" class="field__hint">Counts queued, playing, and stopped tracks.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Per-user cooldown (seconds)</span>
+                <input id="requests-cooldown-seconds" class="control-input" type="number" min="0" step="1" aria-describedby="requests-cooldown-hint" />
+                <span id="requests-cooldown-hint" class="field__hint">Time between successful requests from one viewer.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Max track duration (seconds)</span>
+                <input id="requests-max-duration-seconds" class="control-input" type="number" min="0" step="1" aria-describedby="requests-max-duration-hint" />
+                <span id="requests-max-duration-hint" class="field__hint">Checked when the provider reports a track length.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Recent duplicate window (tracks)</span>
+                <input id="requests-duplicate-history-count" class="control-input" type="number" min="0" step="1" aria-describedby="requests-duplicate-hint" />
+                <span id="requests-duplicate-hint" class="field__hint">Rejects tracks found in this many recent history entries.</span>
+              </label>
+            </div>
+          </section>
+
+          <section class="panel" aria-labelledby="requests-blocklists-heading">
+            <h2 id="requests-blocklists-heading" class="panel__title">Block lists</h2>
+            <p class="panel-note">One entry per line. Matching ignores upper and lower case.</p>
+            <div class="form-grid form-grid--3">
               <label class="field">
                 <span class="field__label">Blocked usernames</span>
                 <textarea id="requests-blocked-users" class="control-input control-input--multiline" rows="4" placeholder="viewerone&#10;viewertwo"></textarea>
-                <span class="field__hint">One username per line. Matching is case-insensitive.</span>
               </label>
-            </div>
-            <div class="request-limit-grid">
+              <label class="field">
+                <span class="field__label">Blocked phrases</span>
+                <textarea id="requests-blocked-phrases" class="control-input control-input--multiline" rows="4" placeholder="artist name&#10;banned phrase" aria-describedby="requests-blocked-phrases-hint"></textarea>
+                <span id="requests-blocked-phrases-hint" class="field__hint">Requests containing a phrase are rejected.</span>
+              </label>
+              <label class="field">
+                <span class="field__label">Blocked direct-link domains</span>
+                <textarea id="requests-blocked-domains" class="control-input control-input--multiline" rows="4" placeholder="example.com" aria-describedby="requests-blocked-domains-hint"></textarea>
+                <span id="requests-blocked-domains-hint" class="field__hint">Hostnames; subdomains are blocked too.</span>
+              </label>
               <label class="field">
                 <span class="field__label">Blocked YouTube channels</span>
-                <textarea id="requests-blocked-youtube-channels" class="control-input control-input--multiline" rows="4" placeholder="UC1234567890abcdef&#10;@channelhandle&#10;https://www.youtube.com/@channelhandle"></textarea>
-                <span class="field__hint">Use a channel ID, handle, custom path, or channel URL. Matching is case-insensitive.</span>
+                <textarea id="requests-blocked-youtube-channels" class="control-input control-input--multiline" rows="4" placeholder="UC1234567890abcdef&#10;@channelhandle" aria-describedby="requests-blocked-youtube-hint"></textarea>
+                <span id="requests-blocked-youtube-hint" class="field__hint">Channel ID, handle, custom path, or channel URL.</span>
               </label>
               <label class="field">
                 <span class="field__label">Blocked SoundCloud users</span>
-                <textarea id="requests-blocked-soundcloud-users" class="control-input control-input--multiline" rows="4" placeholder="artistname&#10;https://soundcloud.com/artistname"></textarea>
-                <span class="field__hint">Use the profile URL, username slug, or author name you want to block.</span>
-              </label>
-            </div>
-            <div class="request-limit-grid">
-              <label class="field">
-                <span class="field__label">Blocked direct-link domains</span>
-                <textarea id="requests-blocked-domains" class="control-input control-input--multiline" rows="4" placeholder="youtube.com&#10;youtu.be"></textarea>
-                <span class="field__hint">Use one hostname per line. Direct links from matching domains or subdomains are rejected before they can be queued.</span>
-              </label>
-              <label class="field field--full">
-                <span class="field__label">Blocked phrases</span>
-                <textarea id="requests-blocked-phrases" class="control-input control-input--multiline" rows="4" placeholder="artist name&#10;banned phrase"></textarea>
-                <span class="field__hint">If a chat request contains one of these phrases, it is rejected before it can be queued.</span>
+                <textarea id="requests-blocked-soundcloud-users" class="control-input control-input--multiline" rows="4" placeholder="artistname&#10;https://soundcloud.com/artistname" aria-describedby="requests-blocked-soundcloud-hint"></textarea>
+                <span id="requests-blocked-soundcloud-hint" class="field__hint">Profile URL, username slug, or author name.</span>
               </label>
             </div>
             <p id="requests-feedback" class="feedback" role="status" aria-live="polite"></p>
           </section>
 
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Chat commands</p>
-                <h2>Reconfigure command triggers</h2>
-              </div>
+          <section class="panel" aria-labelledby="chat-bot-heading">
+            <h2 id="chat-bot-heading" class="panel__title">Chat bot</h2>
+            <div class="form-grid form-grid--3">
+              <label class="field">
+                <span class="field__label">Announce now playing</span>
+                <select id="twitch-track-announcement-mode" class="control-input" aria-describedby="track-announcement-hint">
+                  <option value="all">All tracks</option>
+                  <option value="requests">Song requests only</option>
+                  <option value="off">Off</option>
+                </select>
+              </label>
+              <p id="track-announcement-hint" class="field__hint form-grid__span-2">Which tracks the bot announces in chat. Song requests only skips playlist fallbacks, radio, and automatic AutoDJ tracks. Current-song commands and request replies always work.</p>
             </div>
-            <div class="playlist-table-wrap">
-              <table class="playlist-table command-table">
+            <h3 class="panel__subtitle">Chat commands</h3>
+            <div class="table-wrap">
+              <table class="data-table command-table">
                 <thead>
                   <tr>
                     <th scope="col">Command</th>
@@ -586,298 +401,402 @@ function renderDashboard() {
         </div>
       </section>
 
-      <section id="tab-settings" class="atlas-view" hidden>
-        <p class="panel-note">Changes on this tab apply when you click Save changes below. You can keep editing or switch tabs first.</p>
-        <form id="settings-form" class="stack-layout">
-          <section class="panel card-panel">
+      <section id="tab-library" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-library" hidden>
+        <div class="stack-layout">
+          <section class="panel" aria-labelledby="library-heading">
             <div class="panel__header">
               <div>
-                <p class="panel__eyebrow">Twitch login</p>
-                <h2>Connect the bot account</h2>
+                <h2 id="library-heading" class="panel__title">Fallback library</h2>
+                <p class="panel-note">Plays automatically when the request queue is empty.</p>
               </div>
               <div class="button-row">
-                <button id="twitch-auth-start" class="secondary-button" type="button">Connect bot with Twitch</button>
-                <button id="twitch-auth-cancel" class="ghost-button" type="button">Cancel</button>
+                <button id="playlist-import-append" class="ghost-button" type="button">Import CSV</button>
+                <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
+                <button id="playlist-export-button" class="ghost-button" type="button">Export CSV</button>
+                <button id="playlist-fresh-button" class="ghost-button ghost-button--danger" type="button">Start fresh library</button>
               </div>
             </div>
-            <p id="twitch-auth-status-text" class="panel-note">Use the bundled Twitch Client ID to start the in-app bot login flow.</p>
-            <div id="twitch-auth-details" class="detail-grid" hidden>
-              <div class="detail-card">
-                <span class="detail-card__label">Activation code</span>
-                <div class="copy-row">
-                  <input id="twitch-auth-code" class="control-input" type="text" readonly />
-                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-code">Copy</button>
-                </div>
+            <div class="form-grid form-grid--halves">
+              <form id="playlist-add-form" class="inline-form">
+                <input id="playlist-add-input" class="control-input" type="text" aria-label="Track link or search text to add to the library" placeholder="Add a track: link or search text" autocomplete="off" />
+                <button id="playlist-add-button" class="primary-button" type="submit">Add to library</button>
+              </form>
+              <form id="playlist-youtube-form" class="inline-form">
+                <input id="playlist-youtube-input" class="control-input" type="url" aria-label="YouTube playlist URL" aria-describedby="playlist-youtube-help" placeholder="https://www.youtube.com/playlist?list=..." autocomplete="off" required />
+                <button id="playlist-youtube-button" class="secondary-button" type="submit">Import playlist</button>
+              </form>
+            </div>
+            <p id="playlist-youtube-help" class="field__hint">Imports a public or unlisted YouTube playlist, skipping duplicates and unavailable videos. Requires a YouTube API key in Settings.</p>
+            <p id="playlist-youtube-feedback" class="feedback" role="status" aria-live="polite"></p>
+            <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
+            <input id="playlist-import-file" type="file" accept=".csv,text/csv" hidden />
+
+            <div class="table-toolbar">
+              <div class="table-toolbar__filters">
+                <label class="field field--inline">
+                  <span class="field__label">Search</span>
+                  <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
+                </label>
+                <label class="field field--inline">
+                  <span class="field__label">Sort</span>
+                  <select id="playlist-sort-select" class="control-input">
+                    <option value="recent">Recently added</option>
+                    <option value="title">Title</option>
+                    <option value="provider">Provider</option>
+                  </select>
+                </label>
+                <span class="library-summary" aria-live="polite"><span id="playlist-count">0 tracks</span></span>
               </div>
-              <div class="detail-card">
-                <span class="detail-card__label">Verification page</span>
-                <div class="copy-row copy-row--triple">
-                  <input id="twitch-auth-url" class="control-input" type="text" readonly />
-                  <button class="copy-row__button" type="button" data-open-url-target="twitch-auth-url">Open</button>
-                  <button class="copy-row__button" type="button" data-copy-target="twitch-auth-url">Copy</button>
-                </div>
+              <div class="button-row" role="group" aria-label="Selected tracks">
+                <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
+                <button id="playlist-export-selected-button" class="ghost-button" type="button">Export selected</button>
+                <button id="playlist-bulk-delete-button" class="ghost-button ghost-button--danger" type="button">Delete selected</button>
               </div>
             </div>
+            <div class="table-wrap">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col" class="data-table__checkbox">
+                      <input id="playlist-select-page" type="checkbox" aria-label="Select all tracks on this page" />
+                    </th>
+                    <th scope="col">Title</th>
+                    <th scope="col">Source</th>
+                    <th scope="col">Link</th>
+                    <th scope="col" class="data-table__actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="playlist-table-body"></tbody>
+              </table>
+              <div id="playlist-empty-state" class="empty-state" hidden>No playlist tracks matched this search.</div>
+            </div>
+            <nav class="pagination-row" aria-label="Library pages">
+              <button id="playlist-prev-page" class="ghost-button" type="button">Previous</button>
+              <span id="playlist-page-info">Page 1 of 1</span>
+              <button id="playlist-next-page" class="ghost-button" type="button">Next</button>
+            </nav>
           </section>
-          <section class="panel card-panel">
+
+          <section class="panel" aria-labelledby="library-review-heading">
             <div class="panel__header">
               <div>
-                <p class="panel__eyebrow">Bot messages</p>
-                <h2>Track announcements</h2>
+                <h2 id="library-review-heading" class="panel__title">Health review</h2>
+                <p class="panel-note">Tracks that fail playback or metadata refreshes stay here until they recover or are removed.</p>
+              </div>
+              <div class="button-row">
+                <span id="playlist-review-flagged-count" class="status-pill status-pill--warn">0 flagged</span>
+                <span id="playlist-review-total-failures" class="status-pill status-pill--idle">0 failures</span>
               </div>
             </div>
-            <label class="field">
-              <span class="field__label">Announce now playing</span>
-              <select id="twitch-track-announcement-mode" class="control-input" aria-describedby="track-announcement-hint">
-                <option value="all">All tracks</option>
-                <option value="requests">Song requests only</option>
-                <option value="off">Off</option>
-              </select>
-            </label>
-            <p id="track-announcement-hint" class="panel-note">Choose which tracks the bot announces automatically in Twitch chat. Song requests only skips playlist fallbacks, radio, and automatic AutoDJ tracks. Current-song commands and request replies still work.</p>
+            <div id="playlist-review-list" class="history-list"></div>
           </section>
-          <div class="atlas-grid atlas-grid--connection">
-            <section class="panel card-panel">
+        </div>
+      </section>
+
+      <section id="tab-autodj" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-autodj" hidden>
+        <div class="stack-layout">
+          <section class="panel" aria-labelledby="autodj-heading">
+            <div class="panel__header">
+              <div>
+                <p class="panel__eyebrow">Standalone service</p>
+                <h2 id="autodj-heading" class="panel__title">AutoDJ</h2>
+              </div>
+              <div class="button-row">
+                <span id="autodj-connection-pill" class="status-pill status-pill--idle">Unconfigured</span>
+                <span id="autodj-activation-pill" class="status-pill status-pill--idle">Disabled</span>
+              </div>
+            </div>
+            <p class="panel-note">AutoDJ handles local music, track selection, mixing, and browser output. This app only sends it authenticated control requests. Play normally on Now Playing pauses AutoDJ and keeps this connection saved.</p>
+            <div class="button-row">
+              <button id="autodj-activation" class="primary-button" type="button">Enable AutoDJ</button>
+              <button id="autodj-mix-next" class="secondary-button" type="button">Mix Next</button>
+              <a id="autodj-output-link" class="ghost-button" href="/autodj-output" target="_blank" rel="noopener noreferrer">Open browser output</a>
+            </div>
+            <p id="autodj-feedback" class="feedback" role="status" aria-live="polite"></p>
+            <div id="autodj-pairing-requests" class="history-list"></div>
+          </section>
+
+          <div class="atlas-grid atlas-grid--halves">
+            <section class="panel" aria-labelledby="autodj-now-heading">
+              <h2 id="autodj-now-heading" class="panel__title">Now playing</h2>
+              <p id="autodj-current-track" class="now-playing__title now-playing__title--small">No AutoDJ state received.</p>
+              <p id="autodj-last-seen" class="now-playing__meta">Last seen: never</p>
+              <p id="autodj-takeover" class="field__hint">Viewer-request takeover inactive.</p>
+            </section>
+            <section class="panel" aria-labelledby="autodj-upcoming-heading">
+              <h2 id="autodj-upcoming-heading" class="panel__title">Upcoming</h2>
+              <div id="autodj-upcoming" class="history-list"><p class="empty-state">No upcoming tracks reported.</p></div>
+            </section>
+          </div>
+
+          <section class="panel" aria-labelledby="autodj-connection-heading">
+            <div class="panel__header">
+              <h2 id="autodj-connection-heading" class="panel__title">Connection</h2>
+              <div class="button-row">
+                <button id="autodj-discover" class="secondary-button" type="button">Find AutoDJ</button>
+                <button id="autodj-refresh" class="ghost-button" type="button">Refresh status</button>
+              </div>
+            </div>
+            <p class="panel-note">Applies with Save changes below, or when you resume AutoDJ.</p>
+            <div class="form-grid form-grid--4">
+              <label class="field form-grid__span-2">
+                <span class="field__label">AutoDJ service URL</span>
+                <input id="autodj-service-url" class="control-input" type="url" placeholder="http://127.0.0.1:3100" autocomplete="off" />
+              </label>
+              <label class="field form-grid__span-2">
+                <span class="field__label">Browser output URL (optional override)</span>
+                <input id="autodj-browser-output-url" class="control-input" type="url" autocomplete="off" />
+              </label>
+              <label class="field form-grid__span-2">
+                <span class="field__label">Bearer token</span>
+                <input id="autodj-service-token" class="control-input" type="password" autocomplete="off" />
+              </label>
+              <label class="field">
+                <span class="field__label">Lease duration (seconds)</span>
+                <input id="autodj-lease-seconds" class="control-input" type="number" min="15" max="300" step="1" />
+              </label>
+            </div>
+          </section>
+        </div>
+      </section>
+
+      <section id="tab-settings" class="atlas-view" role="tabpanel" aria-labelledby="tab-button-settings" hidden>
+        <div class="settings-layout">
+          <nav class="settings-nav" aria-label="Settings sections">
+            <a href="#settings-twitch">Twitch</a>
+            <a href="#settings-youtube">YouTube</a>
+            <a href="#settings-obs">Overlay &amp; OBS</a>
+            <a href="#settings-playback">Playback</a>
+            <a href="#settings-categories">Category rules</a>
+            <a href="#settings-app">App</a>
+          </nav>
+          <form id="settings-form" class="stack-layout">
+            <p class="panel-note">Changes here apply when you click Save changes below. Items marked \u201Csaves automatically\u201D apply right away.</p>
+
+            <section id="settings-twitch" class="panel settings-section" aria-labelledby="settings-twitch-heading">
               <div class="panel__header">
-                <div>
-                  <p class="panel__eyebrow">Credentials</p>
-                  <h2>Manual entry</h2>
+                <h2 id="settings-twitch-heading" class="panel__title">Twitch</h2>
+                <div class="button-row">
+                  <button id="twitch-auth-start" class="primary-button" type="button">Connect bot with Twitch</button>
+                  <button id="twitch-auth-cancel" class="ghost-button" type="button">Cancel</button>
                 </div>
               </div>
-              <div class="form-grid">
+              <p id="twitch-status-text" class="status-line">Waiting for configuration.</p>
+              <p id="twitch-auth-status-text" class="panel-note">Use the bundled Twitch Client ID to start the in-app bot login flow.</p>
+              <div id="twitch-auth-details" class="form-grid form-grid--halves" hidden>
+                <div class="field">
+                  <label class="field__label" for="twitch-auth-code">Activation code</label>
+                  <div class="copy-row">
+                    <input id="twitch-auth-code" class="control-input" type="text" readonly />
+                    <button class="copy-row__button" type="button" data-copy-target="twitch-auth-code">Copy</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field__label" for="twitch-auth-url">Verification page</label>
+                  <div class="copy-row copy-row--triple">
+                    <input id="twitch-auth-url" class="control-input" type="text" readonly />
+                    <button class="copy-row__button" type="button" data-open-url-target="twitch-auth-url">Open</button>
+                    <button class="copy-row__button" type="button" data-copy-target="twitch-auth-url">Copy</button>
+                  </div>
+                </div>
+              </div>
+              <h3 class="panel__subtitle">Manual credentials</h3>
+              <div class="form-grid form-grid--halves">
                 <label class="field">
                   <span class="field__label">Twitch channel</span>
-                  <input id="twitchChannel" name="twitchChannel" class="control-input" type="text" autocomplete="off" />
-                  <span class="field__hint">Usually the streamer name without #.</span>
+                  <input id="twitchChannel" name="twitchChannel" class="control-input" type="text" autocomplete="off" aria-describedby="twitch-channel-hint" />
+                  <span id="twitch-channel-hint" class="field__hint">Usually the streamer name without #.</span>
                 </label>
                 <label class="field">
                   <span class="field__label">Bot username</span>
-                  <input id="twitchUsername" name="twitchUsername" class="control-input" type="text" autocomplete="off" />
-                  <span class="field__hint">The Twitch account that joins chat.</span>
+                  <input id="twitchUsername" name="twitchUsername" class="control-input" type="text" autocomplete="off" aria-describedby="twitch-username-hint" />
+                  <span id="twitch-username-hint" class="field__hint">The Twitch account that joins chat.</span>
                 </label>
                 <label class="field field--full">
                   <span class="field__label">Bot OAuth token</span>
-                  <input id="twitchOauthToken" name="twitchOauthToken" class="control-input" type="password" autocomplete="off" />
-                  <span class="field__hint">Manual tokens should keep the oauth: prefix and include chat scopes. <a class="field__link" href="https://dev.twitch.tv/docs/irc/authenticate-bot" target="_blank" rel="noopener noreferrer">How to get this token</a></span>
+                  <input id="twitchOauthToken" name="twitchOauthToken" class="control-input" type="password" autocomplete="off" aria-describedby="twitch-token-hint" />
+                  <span id="twitch-token-hint" class="field__hint">Manual tokens keep the oauth: prefix and need chat scopes. <a class="field__link" href="https://dev.twitch.tv/docs/irc/authenticate-bot" target="_blank" rel="noopener noreferrer">How to get this token</a></span>
                 </label>
                 <label class="field">
                   <span class="field__label">Twitch Client ID</span>
-                  <input id="twitchClientId" name="twitchClientId" class="control-input" type="text" autocomplete="off" />
-                  <span class="field__hint">Used for Twitch API calls. Leave bundled value unless using your own Twitch app.</span>
+                  <input id="twitchClientId" name="twitchClientId" class="control-input" type="text" autocomplete="off" aria-describedby="twitch-client-id-hint" />
+                  <span id="twitch-client-id-hint" class="field__hint">Leave the bundled value unless you use your own Twitch app.</span>
                 </label>
                 <label class="field">
                   <span class="field__label">Twitch Client Secret</span>
-                  <input id="twitchClientSecret" name="twitchClientSecret" class="control-input" type="password" autocomplete="off" />
-                  <span class="field__hint">Needed only for source-only Shared Chat messages.</span>
+                  <input id="twitchClientSecret" name="twitchClientSecret" class="control-input" type="password" autocomplete="off" aria-describedby="twitch-client-secret-hint" />
+                  <span id="twitch-client-secret-hint" class="field__hint">Only needed for source-only Shared Chat messages.</span>
                 </label>
                 <label class="toggle-card field--full" for="twitch-shared-chat-source-only-toggle">
                   <span class="toggle-card__copy">
                     <span class="toggle-card__title">Source-only Shared Chat messages</span>
-                    <span class="toggle-card__body">Bot replies stay in the configured channel during Shared Chat. Requires a Twitch Client Secret and updated bot login scopes.</span>
+                    <span class="toggle-card__body">Bot replies stay in your channel during Shared Chat. Requires a Client Secret and updated bot login scopes.</span>
                   </span>
-                  <input id="twitch-shared-chat-source-only-toggle" type="checkbox" />
-                </label>
-                <div class="field field--full">
-                  <label class="field__label" for="youtubeApiKey">YouTube API key</label>
-                  <div class="copy-row">
-                    <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" aria-describedby="youtube-api-help youtube-api-feedback" />
-                    <button id="youtube-api-check" class="secondary-button" type="button">Check API key</button>
-                  </div>
-                  <span id="youtube-api-help" class="field__hint">Needed for text searches, Spotify matching, playlist imports, and metadata repair. Checking does not save changes; use Save changes to apply a new key. Each check uses 1 API quota unit.</span>
-                  <span class="field__hint"><a class="field__link" href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">Enable YouTube Data API v3</a> \xB7 <a class="field__link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Manage API keys</a></span>
-                  <p id="youtube-api-feedback" class="feedback" role="status" aria-live="polite">Not checked. Click Check API key to test access.</p>
-                </div>
-                <label class="field field--narrow">
-                  <span class="field__label">Local port</span>
-                  <input id="port" name="port" class="control-input" type="number" min="1" max="65535" />
-                  <span class="field__hint">Used for the local dashboard and OBS overlay URL.</span>
+                  <input id="twitch-shared-chat-source-only-toggle" class="switch" type="checkbox" role="switch" />
                 </label>
               </div>
             </section>
-            <section class="panel card-panel">
-              <div class="panel__header">
-                <div>
-                  <p class="panel__eyebrow">Category rules</p>
-                  <h2>Suppression</h2>
+
+            <section id="settings-youtube" class="panel settings-section" aria-labelledby="settings-youtube-heading">
+              <h2 id="settings-youtube-heading" class="panel__title">YouTube</h2>
+              <div class="field">
+                <label class="field__label" for="youtubeApiKey">YouTube API key</label>
+                <div class="copy-row">
+                  <input id="youtubeApiKey" name="youtubeApiKey" class="control-input" type="password" autocomplete="off" aria-describedby="youtube-api-help youtube-api-feedback" />
+                  <button id="youtube-api-check" class="secondary-button" type="button">Check API key</button>
                 </div>
+                <span id="youtube-api-help" class="field__hint">Needed for text searches, Spotify matching, playlist imports, and metadata repair. Checking uses 1 quota unit and does not save; use Save changes to apply a new key.</span>
+                <span class="field__hint"><a class="field__link" href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">Enable YouTube Data API v3</a> \xB7 <a class="field__link" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Manage API keys</a></span>
+                <p id="youtube-api-feedback" class="feedback" role="status" aria-live="polite">Not checked. Click Check API key to test access.</p>
               </div>
-              <div class="rule-grid">
-                <article class="rule-card">
-                  <p class="rule-card__title">Suppress chat messages</p>
-                  <p class="rule-card__body">The bot stops sending replies and now-playing messages while your stream is in any of these Twitch games or categories.</p>
+            </section>
+
+            <section id="settings-obs" class="panel settings-section" aria-labelledby="settings-obs-heading">
+              <h2 id="settings-obs-heading" class="panel__title">Overlay &amp; OBS</h2>
+              <div class="form-grid form-grid--halves">
+                <div class="field">
+                  <label class="field__label" for="overlay-url">Overlay URL (OBS Browser Source)</label>
+                  <div class="copy-row">
+                    <input id="overlay-url" class="control-input" type="text" readonly />
+                    <button class="copy-row__button" type="button" data-copy-target="overlay-url">Copy</button>
+                  </div>
+                </div>
+                <div class="field">
+                  <label class="field__label" for="overlay-loader-file-path">OBS local loader file</label>
+                  <div class="copy-row">
+                    <input id="overlay-loader-file-path" class="control-input" type="text" readonly aria-describedby="overlay-loader-hint" />
+                    <button class="copy-row__button" type="button" data-copy-target="overlay-loader-file-path">Copy</button>
+                  </div>
+                  <span id="overlay-loader-hint" class="field__hint">In OBS, enable <strong>Local file</strong> and pick this file so the overlay reconnects when OBS opens before the app.</span>
+                </div>
+                <label class="field">
+                  <span class="field__label">Overlay theme <span class="auto-badge">saves automatically</span></span>
+                  <select id="theme-select" class="control-input"></select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Overlay scale <span class="auto-badge">saves automatically</span></span>
+                  <span class="range-field range-field--bare">
+                    <input id="overlay-scale-slider" class="range-field__input" type="range" min="50" max="200" step="5" value="100" />
+                    <span id="overlay-scale-value" class="range-field__value">100%</span>
+                  </span>
+                </label>
+              </div>
+
+              <div class="panel__header panel__header--sub">
+                <div>
+                  <h3 class="panel__subtitle">YouTube OBS fallback</h3>
+                  <p id="youtube-fallback-status" class="field__hint">Use an OBS Browser Source for YouTube videos that block embedded playback.</p>
+                </div>
+                <button id="youtube-fallback-login" class="secondary-button" type="button">Open YouTube Login Page</button>
+              </div>
+              <p id="youtube-fallback-feedback" class="feedback" role="status" aria-live="polite"></p>
+              <div class="form-grid form-grid--3">
+                <label class="toggle-card field--full" for="youtube-fallback-enabled-toggle">
+                  <span class="toggle-card__copy">
+                    <span class="toggle-card__title">Use OBS fallback for blocked YouTube videos</span>
+                    <span class="toggle-card__body">When YouTube blocks the embedded player, the app switches a configured OBS Browser Source to the normal YouTube page.</span>
+                  </span>
+                  <input id="youtube-fallback-enabled-toggle" class="switch" type="checkbox" role="switch" />
+                </label>
+                <label class="field">
+                  <span class="field__label">OBS WebSocket URL</span>
+                  <input id="obs-websocket-url" class="control-input" type="text" placeholder="ws://127.0.0.1:4455" />
+                </label>
+                <label class="field">
+                  <span class="field__label">OBS WebSocket password</span>
+                  <input id="obs-websocket-password" class="control-input" type="password" autocomplete="new-password" />
+                </label>
+                <label class="field">
+                  <span class="field__label">OBS Browser Source name</span>
+                  <input id="obs-youtube-source-name" class="control-input" type="text" placeholder="YouTube Fallback" />
+                </label>
+              </div>
+            </section>
+
+            <section id="settings-playback" class="panel settings-section" aria-labelledby="settings-playback-heading">
+              <h2 id="settings-playback-heading" class="panel__title">Playback</h2>
+              <div class="form-grid form-grid--3">
+                <label class="toggle-card" for="radio-mode-enabled-toggle">
+                  <span class="toggle-card__copy">
+                    <span class="toggle-card__title">Automatic radio</span>
+                    <span class="toggle-card__body">Queue related tracks after the last viewer request finishes.</span>
+                  </span>
+                  <input id="radio-mode-enabled-toggle" class="switch" type="checkbox" role="switch" />
+                </label>
+                <label class="field">
+                  <span class="field__label">Radio songs</span>
+                  <input id="radio-track-count" class="control-input" type="number" min="1" max="10" step="1" aria-describedby="radio-track-count-hint" />
+                  <span id="radio-track-count-hint" class="field__hint">Automatic tracks queued after the last request.</span>
+                </label>
+                <label class="field">
+                  <span class="field__label">Player startup timeout (seconds)</span>
+                  <input id="playback-startup-timeout-seconds" class="control-input" type="number" min="0" step="1" aria-describedby="playback-startup-timeout-hint" />
+                  <span id="playback-startup-timeout-hint" class="field__hint">Report an error if YouTube or SoundCloud never starts. 0 turns this off.</span>
+                </label>
+              </div>
+            </section>
+
+            <section id="settings-categories" class="panel settings-section" aria-labelledby="settings-categories-heading">
+              <h2 id="settings-categories-heading" class="panel__title">Category rules</h2>
+              <p class="panel-note">Pause chat messages or music while your stream is in specific Twitch games or categories.</p>
+              <div class="form-grid form-grid--halves">
+                <fieldset class="rule-card">
+                  <legend class="rule-card__title">Suppress chat messages</legend>
+                  <p class="field__hint">The bot stops sending replies and now-playing messages.</p>
                   <div class="copy-row copy-row--triple">
-                    <input id="chat-category-input" class="control-input" type="text" placeholder="Add category" />
+                    <input id="chat-category-input" class="control-input" type="text" placeholder="Add category" aria-label="Category to suppress chat messages in" />
                     <button id="chat-category-add" class="copy-row__button" type="button">Add</button>
-                    <button id="chat-category-delete" class="copy-row__button" type="button">Delete</button>
+                    <button id="chat-category-delete" class="copy-row__button" type="button">Remove selected</button>
                   </div>
                   <label class="field">
                     <span class="field__label">Suppressed games / categories</span>
                     <select id="chat-category-select" class="control-input"></select>
                   </label>
-                </article>
-                <article class="rule-card">
-                  <p class="rule-card__title">Suppress music playback</p>
-                  <p class="rule-card__body">Playback stops completely while your stream is in any of these Twitch games or categories.</p>
+                </fieldset>
+                <fieldset class="rule-card">
+                  <legend class="rule-card__title">Suppress music playback</legend>
+                  <p class="field__hint">Playback stops completely.</p>
                   <div class="copy-row copy-row--triple">
-                    <input id="playback-category-input" class="control-input" type="text" placeholder="Add category" />
+                    <input id="playback-category-input" class="control-input" type="text" placeholder="Add category" aria-label="Category to suppress music playback in" />
                     <button id="playback-category-add" class="copy-row__button" type="button">Add</button>
-                    <button id="playback-category-delete" class="copy-row__button" type="button">Delete</button>
+                    <button id="playback-category-delete" class="copy-row__button" type="button">Remove selected</button>
                   </div>
                   <label class="field">
                     <span class="field__label">Suppressed games / categories</span>
                     <select id="playback-category-select" class="control-input"></select>
                   </label>
-                </article>
+                </fieldset>
               </div>
             </section>
-          </div>
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Radio</p>
-                <h2>Automatic radio</h2>
-              </div>
-            </div>
-            <div class="request-limit-grid">
-              <label class="toggle-card" for="radio-mode-enabled-toggle">
-                <span class="toggle-card__copy">
-                  <span class="toggle-card__title">Automatic radio</span>
-                  <span class="toggle-card__body">Queue related tracks after the last viewer request finishes.</span>
-                </span>
-                <input id="radio-mode-enabled-toggle" type="checkbox" />
-              </label>
-              <label class="field">
-                <span class="field__label">Radio songs</span>
-                <input id="radio-track-count" class="control-input" type="number" min="1" max="10" step="1" />
-                <span class="field__hint">Queues this many automatic tracks after the last viewer request.</span>
-              </label>
-            </div>
-          </section>
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Desktop</p>
-                <h2>Windows startup</h2>
-              </div>
-            </div>
-            <div class="request-policy-row">
-              <label class="toggle-card" for="start-with-windows-toggle">
-                <span class="toggle-card__copy">
-                  <span class="toggle-card__title">Start with Windows</span>
-                  <span id="start-with-windows-copy" class="toggle-card__body">Launch the desktop app automatically when you sign in to Windows.</span>
-                </span>
-                <input id="start-with-windows-toggle" type="checkbox" />
-              </label>
-            </div>
-            <p id="start-with-windows-note" class="panel-note">Only available in the packaged Windows desktop app.</p>
-          </section>
-          <section class="panel card-panel">
-            <div class="panel__header">
-              <div>
-                <p class="panel__eyebrow">Diagnostics</p>
-                <h2>Export a runtime snapshot</h2>
-              </div>
-              <button id="export-diagnostics-button" class="secondary-button" type="button">Export diagnostics</button>
-            </div>
-            <p class="panel-note">Downloads the current settings, runtime status, playback state, history, and admin activity as JSON for debugging.</p>
-          </section>
-        </form>
-      </section>
 
-      <section id="tab-library" class="atlas-view" hidden>
-        <section class="panel card-panel library-review-panel">
-          <div class="panel__header">
-            <div>
-              <p class="panel__eyebrow">Health review</p>
-              <h2>Flagged library tracks</h2>
-            </div>
-            <div class="status-strip status-strip--compact">
-              <span id="playlist-review-flagged-count" class="status-pill status-pill--warn">0 flagged</span>
-              <span id="playlist-review-total-failures" class="status-pill status-pill--idle">0 failures</span>
-            </div>
-          </div>
-          <p class="panel-note">Saved tracks that fail playback or metadata refreshes stay here until they recover or are removed.</p>
-          <div id="playlist-review-list" class="history-list"></div>
-        </section>
-
-        <section class="panel card-panel playlist-panel">
-          <div class="panel__header panel__header--playlist">
-            <div>
-              <p class="panel__eyebrow">Playlist</p>
-              <h2>Fallback track library</h2>
-            </div>
-          </div>
-          <div class="playlist-tools">
-            <form id="playlist-add-form" class="playlist-add-form">
-              <input id="playlist-add-input" class="control-input" type="text" placeholder="YouTube / SoundCloud / Spotify / Suno URL or search text" autocomplete="off" />
-              <button id="playlist-add-button" class="primary-button" type="submit">Add to playlist</button>
-            </form>
-            <form id="playlist-youtube-form" class="playlist-add-form">
-              <input id="playlist-youtube-input" class="control-input" type="url" aria-label="YouTube playlist URL" aria-describedby="playlist-youtube-help" placeholder="https://www.youtube.com/playlist?list=..." autocomplete="off" required />
-              <button id="playlist-youtube-button" class="secondary-button" type="submit">Import YouTube playlist</button>
-            </form>
-            <p id="playlist-youtube-help" class="panel-note">Append a public or unlisted YouTube playlist. Duplicates and unavailable videos are skipped. Requires a YouTube API key in Settings.</p>
-            <p id="playlist-youtube-feedback" class="feedback" role="status" aria-live="polite"></p>
-            <div class="playlist-tools__body">
-              <div class="playlist-tools__actions">
-                <div class="button-row button-row--wrap">
-                  <button id="playlist-import-append" class="secondary-button" type="button">Import and append CSV</button>
-                  <button id="playlist-import-replace" class="ghost-button" type="button">Replace from CSV</button>
-                  <button id="playlist-export-button" class="secondary-button" type="button">Export CSV</button>
-                  <button id="playlist-fresh-button" class="ghost-button ghost-button--danger" type="button">Start fresh library</button>
-                </div>
-                <div class="button-row button-row--wrap">
-                  <button id="playlist-bulk-queue-button" class="secondary-button" type="button">Queue selected</button>
-                  <button id="playlist-export-selected-button" class="secondary-button" type="button">Export selected</button>
-                  <button id="playlist-bulk-delete-button" class="ghost-button ghost-button--danger" type="button">Delete selected</button>
+            <section id="settings-app" class="panel settings-section" aria-labelledby="settings-app-heading">
+              <h2 id="settings-app-heading" class="panel__title">App</h2>
+              <div class="form-grid form-grid--halves">
+                <label class="field">
+                  <span class="field__label">Local port</span>
+                  <input id="port" name="port" class="control-input control-input--narrow" type="number" min="1" max="65535" aria-describedby="restart-note" />
+                  <span id="restart-note" class="field__hint">Port changes are applied immediately when you restart the app.</span>
+                </label>
+                <div class="field">
+                  <label class="toggle-card" for="start-with-windows-toggle">
+                    <span class="toggle-card__copy">
+                      <span class="toggle-card__title">Start with Windows</span>
+                      <span id="start-with-windows-copy" class="toggle-card__body">Launch the desktop app automatically when you sign in to Windows.</span>
+                    </span>
+                    <input id="start-with-windows-toggle" class="switch" type="checkbox" role="switch" />
+                  </label>
+                  <span id="start-with-windows-note" class="field__hint">Only available in the packaged Windows desktop app.</span>
                 </div>
               </div>
-              <div class="library-toolbar library-toolbar--right">
-                <div class="library-toolbar__grid">
-                  <label class="control-field">
-                    <span class="control-field__label">Search</span>
-                    <input id="playlist-search-input" class="control-input" type="search" placeholder="Title, link, or provider" autocomplete="off" />
-                  </label>
-                  <label class="control-field">
-                    <span class="control-field__label">Sort</span>
-                    <select id="playlist-sort-select" class="control-input">
-                      <option value="recent">Recently added</option>
-                      <option value="title">Title</option>
-                      <option value="provider">Provider</option>
-                    </select>
-                  </label>
-                </div>
+              <div class="button-row">
+                <button id="check-for-updates-button" class="secondary-button" type="button">Check for updates</button>
+                <button id="open-appdata-button" class="ghost-button" type="button">Open settings folder</button>
+                <button id="export-diagnostics-button" class="ghost-button" type="button">Export diagnostics</button>
               </div>
-            </div>
-          </div>
-          <p id="playlist-feedback" class="feedback" role="status" aria-live="polite"></p>
-          <input id="playlist-import-file" type="file" accept=".csv,text/csv" hidden />
-          <div class="library-summary">
-            <span id="playlist-count">0 tracks</span>
-            <span id="playlist-page-info">Page 1 of 1</span>
-          </div>
-          <div class="playlist-table-wrap">
-            <table class="playlist-table">
-              <thead>
-                <tr>
-                  <th scope="col" class="playlist-table__checkbox">
-                    <input id="playlist-select-page" type="checkbox" />
-                  </th>
-                  <th scope="col">Title</th>
-                  <th scope="col">Provider</th>
-                  <th scope="col">Link</th>
-                  <th scope="col" class="playlist-table__actions">Action</th>
-                </tr>
-              </thead>
-              <tbody id="playlist-table-body"></tbody>
-            </table>
-            <div id="playlist-empty-state" class="empty-state" hidden>No playlist tracks matched this search.</div>
-          </div>
-          <div class="pagination-row">
-            <button id="playlist-prev-page" class="ghost-button" type="button">Previous</button>
-            <button id="playlist-next-page" class="ghost-button" type="button">Next</button>
-          </div>
-        </section>
+              <p class="field__hint">Diagnostics download the current settings, runtime status, playback state, history, and admin activity as JSON.</p>
+            </section>
+          </form>
+        </div>
       </section>
     </div>
   `;
@@ -892,9 +811,17 @@ function setFeedback(message, tone = "") {
     return;
   }
   feedback.textContent = message;
-  feedback.className = "feedback";
+  feedback.className = "feedback toast";
   if (tone) {
     feedback.classList.add(`is-${tone}`);
+  }
+  window.clearTimeout(saveFeedbackTimer);
+  if (message && tone) {
+    saveFeedbackTimer = window.setTimeout(() => {
+      if (feedback.textContent === message) {
+        feedback.textContent = "";
+      }
+    }, tone === "error" ? 15e3 : 6e3);
   }
 }
 function setPlaylistFeedback(message, tone = "") {
@@ -953,17 +880,35 @@ function setRequestsFeedback(message, tone = "") {
   }
 }
 function applyTabState() {
-  ["overview", "playback", "autodj", "queue", "requests", "settings", "library"].forEach((tabId) => {
+  DASHBOARD_TABS.forEach(({ id: tabId }) => {
     const button = root.querySelector(`[data-tab="${tabId}"]`);
     const view = el(`tab-${tabId}`);
     const isActive = activeTab === tabId;
     if (button) {
       button.classList.toggle("is-active", isActive);
+      button.setAttribute("aria-selected", isActive ? "true" : "false");
+      button.tabIndex = isActive ? 0 : -1;
     }
     if (view) {
       view.hidden = !isActive;
     }
   });
+}
+function selectTab(tabId, { focus = false } = {}) {
+  if (!DASHBOARD_TABS.some(({ id }) => id === tabId)) {
+    return;
+  }
+  activeTab = tabId;
+  applyTabState();
+  if (focus) {
+    root.querySelector(`[data-tab="${tabId}"]`)?.focus();
+  }
+  if (activeTab === "library") {
+    void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
+  }
+  if (activeTab === "autodj") {
+    void loadAutoDjStatus().catch((error) => setText("autodj-feedback", error?.message || "Could not load AutoDJ status."));
+  }
 }
 function parseRequestPolicyList(value) {
   return String(value ?? "").split(/[\n,]/).map((item) => item.trim()).filter(Boolean);
@@ -1431,9 +1376,9 @@ function updateSettingsSaveState() {
   root.querySelectorAll("[data-tab]").forEach((tab) => {
     const changed = sections.has(tab.dataset.tab);
     tab.classList.toggle("has-unsaved-settings", changed);
-    tab.setAttribute("aria-label", `${tab.textContent}${changed ? " (unsaved changes)" : ""}`);
+    tab.setAttribute("aria-label", `${tab.textContent.trim()}${changed ? " (unsaved changes)" : ""}`);
   });
-  const sectionNames = [...sections].filter(Boolean).map((name) => name === "autodj" ? "AutoDJ" : name[0].toUpperCase() + name.slice(1));
+  const sectionNames = DASHBOARD_TABS.filter(({ id }) => sections.has(id)).map(({ label }) => label);
   const title = busy ? "Saving changes\u2026" : settingsSaveError ? "Changes could not be saved" : automatic ? "Saving automatically\u2026" : entries.length ? "Unsaved changes" : "All changes saved";
   const detail = settingsSaveError || (entries.length ? `${sectionNames.join(", ")} \xB7 ${automatic ? "Request autosave is on." : "Click Save changes to apply your edits."}` : settingsSaveNotice || "You\u2019re up to date. Controls marked automatic save as you change them.");
   setText("settings-save-status", title);
@@ -1810,6 +1755,7 @@ function applyRuntimeState() {
   setValue("overlay-loader-file-path", runtime.overlayLoaderFilePath || "");
   if (twitchPill) {
     twitchPill.className = "status-pill";
+    twitchPill.title = twitchStatus?.message || "";
     if (statusState === "connected") {
       twitchPill.classList.add("status-pill--ok");
       twitchPill.textContent = "Chat connected";
@@ -1869,7 +1815,7 @@ function applyRuntimeState() {
     startWithWindowsCopy.textContent = desktopIntegration?.supported === true ? "Launch the desktop app automatically when you sign in to Windows." : desktopIntegration?.reason || "Only available in the packaged Windows desktop app.";
   }
   if (startWithWindowsNote) {
-    startWithWindowsNote.textContent = desktopIntegration?.supported === true ? desktopIntegration.enabled === true ? "Windows will launch the desktop app automatically at sign-in." : "Disabled. Turn this on and click Save changes below to register the app with Windows startup." : desktopIntegration?.reason || "Only available in the packaged Windows desktop app.";
+    startWithWindowsNote.textContent = desktopIntegration?.supported === true ? desktopIntegration.enabled === true ? "Windows will launch the desktop app automatically at sign-in." : "Disabled. Turn this on and click Save changes below to register the app with Windows startup." : "";
   }
   applyRequestPolicyState();
   applyGuiPlayerState();
@@ -2029,22 +1975,25 @@ function renderFullQueue(queue) {
   tableBody.innerHTML = "";
   queue.forEach((track, index) => {
     const requester = track.origin === "radio" ? "radio" : track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
-    const durationLabel = Number.isFinite(track.durationSeconds) && track.durationSeconds > 0 ? ` \u2022 ${formatDuration(track.durationSeconds)}` : "";
+    const durationLabel = Number.isFinite(track.durationSeconds) && track.durationSeconds > 0 ? formatDuration(track.durationSeconds) : "";
     const row = document.createElement("tr");
     const isBusy = queueActionTrackId === track.id;
+    const trackId = htmlEscape(track.id);
+    const title = htmlEscape(track.title);
     row.innerHTML = `
+      <td class="data-table__index">${index + 1}</td>
       <td>
-        <strong>${htmlEscape(track.title)}</strong>
-        <div class="command-table__description">${htmlEscape(`#${index + 1} in queue${durationLabel}`)}</div>
+        <strong>${title}</strong>
+        ${durationLabel ? `<div class="command-table__description">${htmlEscape(durationLabel)}</div>` : ""}
       </td>
       <td>${htmlEscape(requester)}</td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
-      <td class="playlist-table__actions queue-table__actions">
-        <div class="button-row button-row--compact">
-          <button class="ghost-button" type="button" data-queue-action="move-up" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy || index === 0 ? "disabled" : ""}>Up</button>
-          <button class="ghost-button" type="button" data-queue-action="move-down" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy || index === queue.length - 1 ? "disabled" : ""}>Down</button>
-          <button class="ghost-button" type="button" data-queue-action="promote" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Move to top</button>
-          <button class="ghost-button ghost-button--danger" type="button" data-queue-action="remove" data-queue-track-id="${htmlEscape(track.id)}" ${isBusy ? "disabled" : ""}>Remove</button>
+      <td class="data-table__actions">
+        <div class="row-actions">
+          <button class="icon-button" type="button" data-queue-action="move-up" data-queue-track-id="${trackId}" aria-label="Move ${title} up" title="Move up" ${isBusy || index === 0 ? "disabled" : ""}>\u2191</button>
+          <button class="icon-button" type="button" data-queue-action="move-down" data-queue-track-id="${trackId}" aria-label="Move ${title} down" title="Move down" ${isBusy || index === queue.length - 1 ? "disabled" : ""}>\u2193</button>
+          <button class="small-button" type="button" data-queue-action="promote" data-queue-track-id="${trackId}" aria-label="Move ${title} to top" ${isBusy || index === 0 ? "disabled" : ""}>Top</button>
+          <button class="small-button small-button--danger" type="button" data-queue-action="remove" data-queue-track-id="${trackId}" aria-label="Remove ${title}" ${isBusy ? "disabled" : ""}>Remove</button>
         </div>
       </td>
     `;
@@ -2096,6 +2045,15 @@ function historyStatusLabel(status) {
   }
   return "Finished";
 }
+function historyStatusTone(status) {
+  if (status === "error") {
+    return "status-pill--error";
+  }
+  if (status === "skipped" || status === "deleted") {
+    return "status-pill--warn";
+  }
+  return status === "stopped" ? "status-pill--idle" : "status-pill--ok";
+}
 function renderHistory(history) {
   const historyList = el("history-list");
   if (!historyList) {
@@ -2119,7 +2077,7 @@ function renderHistory(history) {
         <div class="command-table__description">${htmlEscape(requester)} \u2022 ${htmlEscape(entry.track?.provider || "unknown")}</div>
       </div>
       <div class="history-item__meta">
-        <span class="provider-chip">${htmlEscape(historyStatusLabel(entry.status))}</span>
+        <span class="status-pill ${historyStatusTone(entry.status)}">${htmlEscape(historyStatusLabel(entry.status))}</span>
         <time class="history-item__time" datetime="${htmlEscape(entry.completedAt || "")}">${htmlEscape(new Date(entry.completedAt || Date.now()).toLocaleString())}</time>
       </div>
     `;
@@ -2189,7 +2147,6 @@ function renderAdminEvents(adminEvents) {
         <div class="command-table__description">${htmlEscape(entry.triggeredBy || "unknown")}${htmlEscape(trackTitle)}${htmlEscape(detailText)}</div>
       </div>
       <div class="history-item__meta">
-        <span class="provider-chip">${htmlEscape(entry.action)}</span>
         <time class="history-item__time" datetime="${htmlEscape(entry.createdAt || "")}">${htmlEscape(new Date(entry.createdAt || Date.now()).toLocaleString())}</time>
       </div>
     `;
@@ -2209,17 +2166,9 @@ function applyPlaybackState() {
   const playbackStatus = playbackState?.playbackStatus || "idle";
   const visibleTrack = currentTrack || stoppedTrack;
   const playbackPill = el("playback-state-pill");
-  const playbackTabPill = el("playback-tab-pill");
   const pillState = playbackPillState(playbackStatus);
   setText("current-track-title", visibleTrack?.title || "Waiting for a track");
   setText("current-track-meta", describePlaybackMeta({
-    currentTrack,
-    stoppedTrack,
-    playbackStatus,
-    queueLength: queue.length
-  }));
-  setText("playback-tab-title", visibleTrack?.title || "Waiting for a track");
-  setText("playback-tab-meta", describePlaybackMeta({
     currentTrack,
     stoppedTrack,
     playbackStatus,
@@ -2229,10 +2178,6 @@ function applyPlaybackState() {
   if (playbackPill) {
     playbackPill.className = pillState.className;
     playbackPill.textContent = pillState.text;
-  }
-  if (playbackTabPill) {
-    playbackTabPill.className = pillState.className;
-    playbackTabPill.textContent = pillState.text;
   }
   const playPauseButton = el("overview-play-pause");
   const stopButton = el("overview-stop");
@@ -2262,6 +2207,7 @@ function applyPlaybackState() {
     searchButton.disabled = isQueueSubmitting || isOverviewSearchPending;
   }
   if (restartStoppedButton) {
+    restartStoppedButton.hidden = !stoppedTrack;
     restartStoppedButton.disabled = isPlaybackCommandPending || !stoppedTrack;
   }
   const guiPlayerToggle = el("overview-gui-player-toggle");
@@ -2279,12 +2225,19 @@ function applyPlaybackState() {
     item.textContent = "No queued requests yet.";
     queueList.appendChild(item);
   } else {
-    queue.slice(0, 4).forEach((track) => {
-      const requester = track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+    queue.slice(0, 5).forEach((track) => {
+      const requester = track.origin === "radio" ? "radio" : track.requestedBy?.displayName || track.requestedBy?.username || "playlist";
+      const durationLabel = Number.isFinite(track.durationSeconds) && track.durationSeconds > 0 ? ` \u2022 ${formatDuration(track.durationSeconds)}` : "";
       const item = document.createElement("li");
-      item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(requester)}</span>`;
+      item.innerHTML = `<span class="queue-preview__title">${htmlEscape(track.title)}</span><span class="queue-preview__meta">${htmlEscape(`${requester}${durationLabel}`)}</span>`;
       queueList.appendChild(item);
     });
+    if (queue.length > 5) {
+      const more = document.createElement("li");
+      more.className = "queue-preview__more";
+      more.textContent = `+${queue.length - 5} more in the queue`;
+      queueList.appendChild(more);
+    }
   }
   renderFullQueue(queue);
   renderHistory(history);
@@ -2357,7 +2310,7 @@ function renderOverviewSearchResults() {
       </div>
       <div class="history-item__meta">
         <span class="provider-chip">${htmlEscape(track.provider || "unknown")}</span>
-        <button class="secondary-button" type="button" data-overview-search-add-index="${index}">Add</button>
+        <button class="small-button" type="button" data-overview-search-add-index="${index}" aria-label="Add ${htmlEscape(track.title || "Unknown track")} to queue">Add</button>
       </div>
     `;
     searchResults.appendChild(item);
@@ -2406,6 +2359,9 @@ function renderPlaylistReview() {
   const flaggedCount = playlistReviewPayload?.summary?.flaggedCount || 0;
   const totalFailures = playlistReviewPayload?.summary?.totalFailureCount || 0;
   setText("playlist-review-flagged-count", `${flaggedCount} flagged`);
+  if (el("playlist-review-flagged-count")) {
+    el("playlist-review-flagged-count").className = `status-pill ${flaggedCount > 0 ? "status-pill--warn" : "status-pill--idle"}`;
+  }
   setText("playlist-review-total-failures", `${totalFailures} failure${totalFailures === 1 ? "" : "s"}`);
   if (!reviewList) {
     return;
@@ -2436,10 +2392,10 @@ function renderPlaylistReview() {
       </div>
       <div class="history-item__meta library-review-meta">
         <time class="history-item__time" datetime="${htmlEscape(health.lastFailureAt || "")}">${htmlEscape(lastFailureText)}</time>
-        <div class="button-row button-row--compact library-review-actions">
-          <button class="ghost-button" type="button" data-playlist-review-action="queue" data-playlist-review-key="${htmlEscape(track.key)}">Queue</button>
-          <button class="ghost-button" type="button" data-playlist-review-action="refresh" data-playlist-review-key="${htmlEscape(track.key)}">Refresh</button>
-          <button class="ghost-button ghost-button--danger" type="button" data-playlist-review-action="delete" data-playlist-review-key="${htmlEscape(track.key)}">Delete</button>
+        <div class="row-actions library-review-actions">
+          <button class="small-button" type="button" data-playlist-review-action="queue" data-playlist-review-key="${htmlEscape(track.key)}" aria-label="Queue ${htmlEscape(track.title)}">Queue</button>
+          <button class="small-button" type="button" data-playlist-review-action="refresh" data-playlist-review-key="${htmlEscape(track.key)}" aria-label="Refresh metadata for ${htmlEscape(track.title)}">Refresh</button>
+          <button class="small-button small-button--danger" type="button" data-playlist-review-action="delete" data-playlist-review-key="${htmlEscape(track.key)}" aria-label="Delete ${htmlEscape(track.title)}">Delete</button>
         </div>
       </div>
     `;
@@ -2517,25 +2473,25 @@ function applyPlaylistState() {
     const isFlagged = track.health?.flagged === true;
     const healthSummary = isFlagged ? `<div class="command-table__description command-table__description--warn">${htmlEscape(formatLibraryFailureSummary(track.health))} \u2022 ${htmlEscape(formatLibraryHealthReason(track.health?.lastFailureReason))}</div>` : "";
     const row = document.createElement("tr");
+    const title = htmlEscape(track.title);
     row.innerHTML = `
-      <td class="playlist-table__checkbox">
-        <input type="checkbox" data-playlist-select-key="${htmlEscape(track.key)}" ${playlistSelectedKeys.has(track.key) ? "checked" : ""} />
+      <td class="data-table__checkbox">
+        <input type="checkbox" data-playlist-select-key="${htmlEscape(track.key)}" aria-label="Select ${title}" ${playlistSelectedKeys.has(track.key) ? "checked" : ""} />
       </td>
       <td>
         <div class="library-track-heading">
-          <strong>${htmlEscape(track.title)}</strong>
+          <strong>${title}</strong>
           ${isFlagged ? '<span class="status-pill status-pill--warn library-flag-pill">Flagged</span>' : ""}
         </div>
-        <div class="command-table__description">${htmlEscape(track.key)}</div>
         ${healthSummary}
       </td>
       <td><span class="provider-chip">${htmlEscape(track.provider)}</span></td>
       <td><a class="playlist-link" href="${htmlEscape(track.url)}" target="_blank" rel="noopener noreferrer">${htmlEscape(track.url)}</a></td>
-      <td class="playlist-table__actions playlist-table__actions--wide">
-        <div class="button-row button-row--compact playlist-row-actions">
-          <button class="ghost-button" type="button" data-playlist-edit-key="${htmlEscape(track.key)}" data-playlist-title="${htmlEscape(track.title)}">Edit</button>
-          <button class="ghost-button" type="button" data-playlist-refresh-key="${htmlEscape(track.key)}">Refresh</button>
-          <button class="ghost-button ghost-button--danger" type="button" data-playlist-delete-key="${htmlEscape(track.key)}">Delete</button>
+      <td class="data-table__actions">
+        <div class="row-actions">
+          <button class="small-button" type="button" data-playlist-edit-key="${htmlEscape(track.key)}" data-playlist-title="${title}" aria-label="Edit title of ${title}">Edit</button>
+          <button class="small-button" type="button" data-playlist-refresh-key="${htmlEscape(track.key)}" aria-label="Refresh metadata for ${title}">Refresh</button>
+          <button class="small-button small-button--danger" type="button" data-playlist-delete-key="${htmlEscape(track.key)}" aria-label="Delete ${title}">Delete</button>
         </div>
       </td>
     `;
@@ -3721,15 +3677,23 @@ root.addEventListener("click", (event) => {
   if (!(event.target instanceof Element)) {
     return;
   }
-  const tabButton = event.target.closest("[data-tab]");
+  const tabButton = event.target.closest("[data-tab], [data-tab-link]");
   if (tabButton) {
-    activeTab = tabButton.getAttribute("data-tab") || "overview";
-    applyTabState();
-    if (activeTab === "library") {
-      void loadPlaylist().catch((error) => setPlaylistFeedback(error?.message || "Could not load playlist.", "error"));
-    }
-    if (activeTab === "autodj") {
-      void loadAutoDjStatus().catch((error) => setText("autodj-feedback", error?.message || "Could not load AutoDJ status."));
+    selectTab(tabButton.getAttribute("data-tab") || tabButton.getAttribute("data-tab-link") || "overview", {
+      focus: tabButton.hasAttribute("data-tab-link")
+    });
+    return;
+  }
+  const settingsLink = event.target.closest(".settings-nav a[href^='#']");
+  if (settingsLink) {
+    event.preventDefault();
+    const section = el(settingsLink.getAttribute("href").slice(1));
+    const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    section?.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    const heading = section?.querySelector("h2");
+    if (heading) {
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
     }
     return;
   }
@@ -4068,6 +4032,13 @@ root.addEventListener("input", (event) => {
 root.addEventListener("keydown", (event) => {
   const target = event.target;
   if (!(target instanceof HTMLElement)) {
+    return;
+  }
+  if (target.matches('[role="tab"]') && ["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) {
+    event.preventDefault();
+    const index = DASHBOARD_TABS.findIndex(({ id }) => id === target.dataset.tab);
+    const nextIndex = event.key === "Home" ? 0 : event.key === "End" ? DASHBOARD_TABS.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + DASHBOARD_TABS.length) % DASHBOARD_TABS.length;
+    selectTab(DASHBOARD_TABS[nextIndex].id, { focus: true });
     return;
   }
   if (event.key === "Enter" && target.id === "chat-category-input") {

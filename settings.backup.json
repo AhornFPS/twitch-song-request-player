@@ -1,0 +1,167 @@
+{
+  "twitchChannel": "ahorn",
+  "twitchUsername": "hornbots",
+  "twitchOauthToken": "oauth:n6kb4yerrq4okluyi0fpvbjvdl4xk7",
+  "twitchRefreshToken": "iaes651vslofmwiy6n2jzyvntc8oll44nyvrwqwnkytlvjwlii",
+  "twitchClientId": "scgl14pryt1u8g8fd11fah85x624j1",
+  "twitchClientSecret": "your_twitch_app_client_secret",
+  "twitchSharedChatForSourceOnly": false,
+  "twitchTrackAnnouncementMode": "all",
+  "chatSuppressedCategories": [
+    "Music",
+    "DJs"
+  ],
+  "playbackSuppressedCategories": [],
+  "youtubeApiKey": "AIzaSyApaxjQkOj9xz_XcOdOGfn33CbNX4_tS_w",
+  "port": 3000,
+  "startWithWindows": false,
+  "guiPlayerEnabled": true,
+  "guiPlayerVolume": 15,
+  "overlayScalePercent": 100,
+  "playerStartupTimeoutSeconds": 15,
+  "obsYoutubeFallbackEnabled": false,
+  "obsWebSocketUrl": "ws://127.0.0.1:4455",
+  "obsWebSocketPassword": "",
+  "obsYoutubeFallbackSourceName": "",
+  "autoDjEnabled": false,
+  "autoDjServiceUrl": "",
+  "autoDjBrowserOutputUrl": "",
+  "autoDjServiceToken": "",
+  "autoDjServiceLeaseSeconds": 90,
+  "radioModeEnabled": false,
+  "radioTrackCount": 3,
+  "requestPolicyAutosaveEnabled": true,
+  "requestPolicy": {
+    "requestsEnabled": true,
+    "accessLevel": "everyone",
+    "maxQueueLength": 0,
+    "maxRequestsPerUser": 0,
+    "duplicateHistoryCount": 0,
+    "cooldownSeconds": 0,
+    "maxTrackDurationSeconds": 0,
+    "rejectLiveStreams": false,
+    "allowSearchRequests": true,
+    "youtubeSafeSearch": "none",
+    "allowedProviders": [
+      "youtube",
+      "soundcloud"
+    ],
+    "blockedYouTubeChannelIds": [],
+    "blockedSoundCloudUsers": [],
+    "blockedUsers": [],
+    "blockedDomains": [],
+    "blockedPhrases": []
+  },
+  "chatCommands": {
+    "song_request": {
+      "id": "song_request",
+      "label": "Song request",
+      "description": "Queue a YouTube, SoundCloud, Spotify, or Suno track from chat.",
+      "enabled": true,
+      "trigger": "!sr",
+      "aliases": [],
+      "permission": "everyone"
+    },
+    "current_song": {
+      "id": "current_song",
+      "label": "Current song",
+      "description": "Show the track that is playing right now.",
+      "enabled": true,
+      "trigger": "!currentsong",
+      "aliases": [],
+      "permission": "everyone"
+    },
+    "queue_status": {
+      "id": "queue_status",
+      "label": "Queue status",
+      "description": "Show a short summary of the live request queue.",
+      "enabled": true,
+      "trigger": "!queue",
+      "aliases": [],
+      "permission": "everyone"
+    },
+    "queue_position": {
+      "id": "queue_position",
+      "label": "Queue position",
+      "description": "Show where your next queued request sits in line.",
+      "enabled": true,
+      "trigger": "!position",
+      "aliases": [],
+      "permission": "everyone"
+    },
+    "remove_own_request": {
+      "id": "remove_own_request",
+      "label": "Remove own request",
+      "description": "Remove your earliest queued request from the queue.",
+      "enabled": true,
+      "trigger": "!unrequest",
+      "aliases": [],
+      "permission": "everyone"
+    },
+    "skip_current": {
+      "id": "skip_current",
+      "label": "Skip current",
+      "description": "Skip the active track.",
+      "enabled": true,
+      "trigger": "!skip",
+      "aliases": [],
+      "permission": "vip"
+    },
+    "delete_current": {
+      "id": "delete_current",
+      "label": "Delete current",
+      "description": "Delete the active track from the fallback playlist.",
+      "enabled": true,
+      "trigger": "!delete",
+      "aliases": [],
+      "permission": "vip"
+    },
+    "save_current": {
+      "id": "save_current",
+      "label": "Save current",
+      "description": "Save the active track to the fallback playlist.",
+      "enabled": true,
+      "trigger": "!save",
+      "aliases": [],
+      "permission": "vip"
+    },
+    "import_youtube_playlist": {
+      "id": "import_youtube_playlist",
+      "label": "Import YouTube playlist",
+      "description": "Import every track from a YouTube playlist into the fallback playlist.",
+      "enabled": true,
+      "trigger": "!addplaylist",
+      "aliases": [],
+      "permission": "moderator"
+    },
+    "open_requests": {
+      "id": "open_requests",
+      "label": "Open requests",
+      "description": "Re-open viewer song requests.",
+      "enabled": true,
+      "trigger": "!sropen",
+      "aliases": [],
+      "permission": "moderator"
+    },
+    "close_requests": {
+      "id": "close_requests",
+      "label": "Close requests",
+      "description": "Close viewer song requests.",
+      "enabled": true,
+      "trigger": "!srclose",
+      "aliases": [],
+      "permission": "moderator"
+    },
+    "clear_queue": {
+      "id": "clear_queue",
+      "label": "Clear queue",
+      "description": "Remove every queued request at once.",
+      "enabled": true,
+      "trigger": "!clearqueue",
+      "aliases": [],
+      "permission": "moderator"
+    }
+  },
+  "theme": "kiosk",
+  "dashboardLayout": "atlas"
+}

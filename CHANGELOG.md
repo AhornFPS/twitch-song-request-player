@@ -4,6 +4,10 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Redesign the dashboard with a compact sticky header and six tabs: Now Playing, Queue & History, Requests & Chat, Library, AutoDJ, and Settings. Overlay theme and scale, OBS URLs and fallback, startup timeout, and app actions move into Settings sections with quick links; track announcements move next to chat commands; history and control activity move next to the queue.
+
+- Improve dashboard accessibility: keyboard-navigable tabs, visible focus outlines, switch-style toggles, labelled queue and library row actions, and no more full-page screen-reader announcements on every update. Status messages appear as a self-clearing notice, and empty message areas no longer take up space.
+
 - Let normal Play pause connected AutoDJ and switch to regular playback without removing the saved connection; also play normally when AutoDJ is closed, and stop the normal player before resuming AutoDJ.
 
 ## 2.11.1 - 2026-10-08
