@@ -4,6 +4,8 @@ This file is maintained between releases and should be updated as work is comple
 
 ## Unreleased
 
+- Keep settings backups and runtime snapshots out of Git, and block detected credentials in commits, pushes, builds, and releases.
+
 ## 3.1.0 - 2026-10-12
 
 - Add a Save button to Now Playing to keep the current track in the fallback library, with a Saved state for existing tracks.

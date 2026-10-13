@@ -205,6 +205,11 @@ async function main() {
   }
 
   ensureCleanGitTree();
+  // Run even with --skip-build, before changing the version or publishing.
+  run(process.execPath, ["scripts/check-secrets.mjs"]);
+  if (options.skipBuild) {
+    run(process.execPath, ["scripts/check-secrets.mjs", "--package"]);
+  }
 
   run(getNpmCommand(), ["version", nextVersion, "--no-git-tag-version"]);
   await rollChangelogRelease(changelogPath, nextVersion, releaseDate);
@@ -214,6 +219,7 @@ async function main() {
   await fs.writeFile(releaseNotesPath, releaseNotes, "utf8");
 
   const artifactPaths = await ensureArtifacts(nextVersion, options.skipBuild);
+  run(process.execPath, ["scripts/check-secrets.mjs", "--package"]);
 
   run("git", ["add", "package.json", "package-lock.json", "CHANGELOG.md"]);
   run("git", ["commit", "-m", `release: ${tag}`]);

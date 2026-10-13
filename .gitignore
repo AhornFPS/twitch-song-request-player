@@ -1,8 +1,12 @@
 # Dependencies and machine-local settings
 node_modules/
 .env
-settings.json
-queue-state.json
+.env.*
+!.env.example
+settings*.json*
+queue-state*.json*
+request-log*.json*
+playlist-health*.json*
 npm-debug.log*
 
 # Generated application packages

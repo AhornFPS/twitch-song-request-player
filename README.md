@@ -23,6 +23,10 @@ npm start
 
 Copy `.env.example` to `.env` or configure the same values in the dashboard. A YouTube API key is needed for text searches, Spotify matching, playlist imports, and metadata repair; individual direct provider URLs do not require it.
 
+`npm install` installs Git commit and push checks automatically. Credentials belong in local `.env` or dashboard settings. Settings backups, environment variants, queues, request logs, and health snapshots are ignored and rejected by the checks even if force-added. Keep real keys out of source, examples, screenshots, and test fixtures; construct synthetic token-shaped test values at runtime.
+
+Run `npm run check:secrets` to scan tracked working files. Commits scan the actual staged bytes; pushes and GitHub CI also scan introduced commits, including a key added and removed before the final commit. Builds check packaged files, and releases run both checks even with `--skip-build`. Output shows paths and rule names without printing credentials. Existing custom Git hooks are preserved and must integrate the checks explicitly.
+
 The dashboard has six tabs: **Now Playing** (transport, add to queue, up next, desktop player), **Queue & History** (queue editing, recent playback, control activity), **Requests & Chat** (request rules, block lists, track announcements, chat commands), **Library** (fallback tracks and health review), **AutoDJ**, and **Settings** (Twitch, YouTube, Overlay & OBS, Playback, Category rules, App).
 
 In **Now Playing**, click **Save** beside the playback controls to add the current track to the fallback library immediately, including while paused. The button shows **Saved** for tracks already in the library and is disabled when no track is active. Manual saving works even when automatic saving of completed requests is off.
